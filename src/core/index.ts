@@ -32,6 +32,7 @@ export type {
 export { ARM_NAME, armSchema } from './arm.js';
 export { dependenciesOf, foldText, linesOf, satisfies, satisfiesWords } from './check-text.js';
 export { leakScanSchema } from './leak-scan.js';
+export { fencedLines, hasUnclosedFence, toLf } from './markdown.js';
 export type { LeakScanDeclarations } from './leak-scan.js';
 export type { Arm, ArmFile } from './arm.js';
 export {

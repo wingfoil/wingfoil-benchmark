@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { basename, relative, resolve, sep } from 'node:path';
+import { basename, join, relative, resolve, sep } from 'node:path';
 
 import {
   ARM_NAME,
   checkFileSchema,
   dependenciesOf,
   fail,
+  hasUnclosedFence,
   linesOf,
   ok,
   parseWith,
@@ -44,6 +45,9 @@ interface Declared {
  */
 export function loadScenario(scenariosRoot: string, id: string, version: string): Result<Scenario> {
   const dir = resolve(scenariosRoot, id, version);
+  const links = existsSync(dir) ? linksUnder(dir) : [];
+  if (links.length > 0)
+    return fail(links.map((link) => ({ path: link, message: `'${link}' is a symbolic link` })));
   const read = readYamlFile(resolve(dir, SCENARIO_FILE));
   if (!read.ok) return read;
   const parsed = parseWith(scenarioSchema, read.value, SCENARIO_FILE);
@@ -58,6 +62,7 @@ export function loadScenario(scenariosRoot: string, id: string, version: string)
     ...suiteStepIssues(spec),
     ...fileIssues([seed, ...others], dir),
     ...arms.issues,
+    ...fenceIssues(arms.declared, dir),
   ];
   if (issues.length === 0) issues.push(...overlapIssues(seed, others, arms.declared, dir));
   if (issues.length === 0) issues.push(...vendoredIssues(spec, dir));
@@ -414,6 +419,39 @@ function armEntries(dir: string): { declared: Declared[]; issues: Issue[] } {
     else declared.push({ path: `${ARMS_DIR}.${name}`, relative, kind: 'directory' });
   }
   return { declared, issues };
+}
+
+/**
+ * Every symbolic link under a scenario version, as a path relative to it, sorted (bug-034, task-139): a version holds
+ * none (REQ-FMT-04 as amended in 1.51), so that what is read, hashed and copied is what the directory holds.
+ */
+function linksUnder(dir: string, prefix = ''): string[] {
+  return readdirSync(join(dir, prefix), { withFileTypes: true })
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .flatMap((entry) => {
+      const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+      if (entry.isSymbolicLink()) return [relative];
+      return entry.isDirectory() ? linksUnder(dir, relative) : [];
+    });
+}
+
+/** Every Markdown file of an arm's configuration whose code fence is left open (REQ-FMT-14 as amended in 1.51). */
+function fenceIssues(arms: readonly Declared[], dir: string): Issue[] {
+  return arms.flatMap(({ path, relative }) =>
+    markdownUnder(resolve(dir, relative), relative)
+      .filter((file) => hasUnclosedFence(readFileSync(resolve(dir, file), 'utf8')))
+      .map((file) => ({ path, message: `'${file}' has an unclosed code fence` })),
+  );
+}
+
+function markdownUnder(directory: string, relative: string): string[] {
+  return readdirSync(directory, { withFileTypes: true })
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .flatMap((entry) => {
+      const path = `${relative}/${entry.name}`;
+      if (entry.isDirectory()) return markdownUnder(join(directory, entry.name), path);
+      return entry.isFile() && entry.name.endsWith('.md') ? [path] : [];
+    });
 }
 
 function fileIssues(declared: readonly Declared[], dir: string): Issue[] {

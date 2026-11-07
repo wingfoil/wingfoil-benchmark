@@ -279,9 +279,8 @@ describe('loadScenario', () => {
     const files = COMPLETE_FILES.filter((file) => !file.startsWith('seed/'));
     const root = writeScenario(completeScenarioYaml(), files);
     symlinkSync(tempDir('bench-outside-'), join(root, 'S9', '1.0', 'seed'));
-    expect(issuesOf(root)).toEqual([
-      { path: 'seed', message: "'seed' leads outside the scenario directory" },
-    ]);
+    // A link is refused as a link, before anything is read through it (task-139, bug-034).
+    expect(issuesOf(root)).toEqual([{ path: 'seed', message: "'seed' is a symbolic link" }]);
   });
 
   it('explains that an unquoted version is read as a number', () => {
@@ -337,7 +336,10 @@ describe('loadScenario', () => {
     const dir = join(root, 'S9', '1.0');
     mkdirSync(join(dir, 'arms'));
     make(dir);
-    expect(issuesOf(root)).toEqual([{ path: 'arms', message }]);
+    // A link anywhere under the version is refused as itself, first (task-139, bug-034).
+    expect(issuesOf(root)).toEqual([
+      { path: /symbolic link/.test(message) ? 'arms/wingfoil' : 'arms', message },
+    ]);
   });
 
   it("keeps the seed and the prompts apart from an arm's configuration: the baseline must not see a rule", () => {
@@ -400,13 +402,7 @@ describe('loadScenario', () => {
     const files = COMPLETE_FILES.filter((file) => !file.startsWith('seed/'));
     const root = writeScenario(completeScenarioYaml(), files);
     symlinkSync(join(root, 'S9', '1.0', 'oracle'), join(root, 'S9', '1.0', 'seed'));
-    expect(issuesOf(root)).toEqual([
-      { path: 'seed', message: "'seed' overlaps oracle.suites[0].dir" },
-      { path: 'seed', message: "'seed' overlaps oracle.suites[1].dir" },
-      { path: 'seed', message: "'seed' overlaps oracle.checks[0]" },
-      { path: 'seed', message: "'seed' overlaps oracle.third_party[0].files[0]" },
-      { path: 'seed', message: "'seed' overlaps oracle.third_party[1].files[0]" },
-    ]);
+    expect(issuesOf(root)).toEqual([{ path: 'seed', message: "'seed' is a symbolic link" }]);
   });
 
   it.each([
@@ -575,9 +571,7 @@ describe('loadScenario — oracle suites (dl-001)', () => {
     const files = COMPLETE_FILES.filter((file) => !file.startsWith('oracle/all/'));
     const root = writeScenario(completeScenarioYaml(), files);
     symlinkSync(join(root, 'S9', '1.0', 'oracle', 'first'), join(root, 'S9', '1.0', 'oracle', 'all'));
-    expect(issuesOf(root)).toEqual([
-      { path: 'oracle.suites[1].dir', message: "'oracle.suites[1].dir' overlaps oracle.suites[0].dir" },
-    ]);
+    expect(issuesOf(root)).toEqual([{ path: 'oracle/all', message: "'oracle/all' is a symbolic link" }]);
   });
 
   it('refuses a check inside a suite: a check is a pattern file, not a test to run', () => {
@@ -704,10 +698,7 @@ describe('loadScenario — third-party material (dl-002)', () => {
     writeFileSync(outside, '');
     symlinkSync(outside, join(root, 'S9', '1.0', 'oracle/first/link.json'));
     expect(issuesOf(root)).toEqual([
-      {
-        path: 'oracle.third_party[0].files[0]',
-        message: "'oracle/first/link.json' leads outside the scenario directory",
-      },
+      { path: 'oracle/first/link.json', message: "'oracle/first/link.json' is a symbolic link" },
     ]);
   });
 
@@ -891,7 +882,9 @@ describe('symbolic links and directive files (task-139, bug-034)', () => {
     writeFileSync(outside, readFileSync(join(dir, 'scenario.yaml')));
     rmSync(join(dir, 'scenario.yaml'));
     symlinkSync(outside, join(dir, 'scenario.yaml'));
-    expect(issuesOf(root)).toEqual([{ path: 'scenario.yaml', message: "'scenario.yaml' is a symbolic link" }]);
+    expect(issuesOf(root)).toEqual([
+      { path: 'scenario.yaml', message: "'scenario.yaml' is a symbolic link" },
+    ]);
   });
 
   it('refuses a symbolic link anywhere under the version, naming each', () => {
