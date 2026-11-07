@@ -2,7 +2,7 @@
 id: task-139-bug-034-symlinks-spaces-and-line-endings-handled-one-way
 type: task
 title: "bug-034: symlinks, spaces and line endings handled one way"
-status: approved
+status: done
 release: v0.3
 wave: W18
 features: [F3.1, F4.2, F7.1]
