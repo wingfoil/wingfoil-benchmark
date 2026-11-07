@@ -45,7 +45,11 @@ interface Declared {
  */
 export function loadScenario(scenariosRoot: string, id: string, version: string): Result<Scenario> {
   const dir = resolve(scenariosRoot, id, version);
-  const links = existsSync(dir) ? linksUnder(dir) : [];
+  // A version that is itself a link is refused; one that is not a directory fails below, reading its scenario.yaml.
+  if (existsSync(dir) && lstatSync(dir).isSymbolicLink()) {
+    return fail([{ path: SCENARIO_FILE, message: `'${id}/${version}' is a symbolic link` }]);
+  }
+  const links = existsSync(dir) && statSync(dir).isDirectory() ? linksUnder(dir) : [];
   if (links.length > 0)
     return fail(links.map((link) => ({ path: link, message: `'${link}' is a symbolic link` })));
   const read = readYamlFile(resolve(dir, SCENARIO_FILE));
@@ -411,6 +415,7 @@ function armEntries(dir: string): { declared: Declared[]; issues: Issue[] } {
   for (const name of readdirSync(root).sort()) {
     const relative = `${ARMS_DIR}/${name}`;
     const stats = lstatSync(resolve(root, name));
+    // Defensive: linksUnder has refused every link before this runs (task-139).
     if (stats.isSymbolicLink()) issues.push({ path: ARMS_DIR, message: `'${relative}' is a symbolic link` });
     else if (!stats.isDirectory())
       issues.push({ path: ARMS_DIR, message: `'${relative}' is not a directory` });
@@ -459,6 +464,7 @@ function fileIssues(declared: readonly Declared[], dir: string): Issue[] {
   return declared.flatMap(({ path, relative, kind }): Issue[] => {
     const target = resolve(dir, relative);
     if (!exists(target, kind)) return [{ path, message: `${kind} '${relative}' does not exist` }];
+    // Defensive: with no link (linksUnder) and no `..` (the schema), a declared path cannot lead outside.
     if (!isInside(realpathSync(target), root)) {
       return [{ path, message: `'${relative}' leads outside the scenario directory` }];
     }

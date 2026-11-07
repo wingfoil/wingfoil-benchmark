@@ -103,14 +103,17 @@ function unquote(text: string): string {
 /**
  * The paths a stored patch touches, on either side (task-139, bug-034): each `diff --git` header's two paths, quoted
  * or not, spaces included (an unquoted header names the same path twice unless the file was renamed or copied, and
- * then its `rename`/`copy` lines name both), and every `---`/`+++` path.
+ * then its `rename`/`copy` lines name both), and every `---`/`+++` path of a file's extended header, never a hunk's line.
  */
 export function patchPaths(patch: string): Set<string> {
   const paths = new Set<string>();
   const add = (path: string) => {
     if (path !== '/dev/null') paths.add(path);
   };
+  // Only a file's extended header names paths: from its `diff --git` line to its first hunk or binary patch.
+  let header = false;
   for (const line of patch.split('\n')) {
+    if (line.startsWith('@@') || line.startsWith('GIT binary patch')) header = false;
     const quoted = /^diff --git ("(?:[^"\\]|\\.)*"|a\/\S*) ("(?:[^"\\]|\\.)*"|b\/.*)$/.exec(line);
     if (line.startsWith('diff --git ')) {
       const rest = line.slice('diff --git '.length);
@@ -125,8 +128,10 @@ export function patchPaths(patch: string): Set<string> {
       ) {
         add(rest.slice(2, half));
       }
+      header = true;
       continue;
     }
+    if (!header) continue;
     const named =
       /^(?:rename|copy) (?:from|to) (.*)$/.exec(line) ?? /^(?:---|\+\+\+) [ab]\/(.*?)\t?$/.exec(line);
     if (named !== null) add(unquote(named[1] as string));

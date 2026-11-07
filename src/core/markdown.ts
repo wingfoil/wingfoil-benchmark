@@ -2,7 +2,9 @@
  * Markdown text as the benchmark reads a directive file (bug-034, task-139): line endings as LF, and its code fences.
  * A fence opens on a line that starts with three or more backticks or tildes, after up to three spaces (a backtick
  * fence's info string holds no backtick), and closes on a later line of the same character, at least as long, with
- * nothing after it but spaces. Every reader of a directive file reads its fences this one way.
+ * nothing after it but spaces. Every reader of a directive file reads its fences this one way. Container blocks are
+ * not read: a fence inside a list item indented four spaces, after a tab or in a blockquote is not seen as one (the
+ * review's round 1; no file of the repository has one), which a configured arm's directive must respect.
  */
 export function toLf(text: string): string {
   return text.replace(/\r\n?/g, '\n');

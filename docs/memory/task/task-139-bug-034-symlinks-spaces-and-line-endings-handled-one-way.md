@@ -95,6 +95,22 @@ Code and tests only: no real-agent session, nothing spent.
   loader refusing a link anywhere and the digest hashing it by its target; `digest.ts`'s comment says so.
 - No directive, manual or arm file of the repository has a heading with trailing spaces, a fence, a link or CRLF, so
   no generated output and no digest changes.
+- **Every Markdown file of a scenario's `arms/<arm>/` is checked for an open fence**, not only the files a generator
+  reads: deliberate, as REQ-FMT-04 as amended in 1.51 states, so that an agent-written configuration (F7.5) is
+  checked whole.
 - `requirements.md` 1.51.
 
 ## Review
+
+Independent reviews (dl-020), each a fresh read-only agent on a clone under `/tmp/claude-1000/`; main's HEAD and
+reflog checked unchanged after each.
+
+**Round 1** (`71f13618`): 0 blockers, 1 should-fix, 4 nits; all taken.
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | should-fix: `---`/`+++` matched inside hunks, so a removed line `-- a/sql` read as a path | read only in a file's extended header; a red test first; published patches still 0 differences |
+| 2 | the fence reading ignores container blocks (list items, tabs, blockquotes) | stated in `markdown.ts` and REQ-FMT-14 as amended in 1.51 |
+| 3 | every `.md` of a scenario's arms is checked, not only the generators' | kept, deliberate, stated in the Execution notes |
+| 4 | the arms-link and "leads outside" branches are now unreachable | marked defensive |
+| 5 | a version path that is a file throws; a linked version directory is followed | a linked version refused; a non-directory left to `scenario.yaml`'s read |

@@ -887,6 +887,14 @@ describe('symbolic links and directive files (task-139, bug-034)', () => {
     ]);
   });
 
+  it('refuses a version directory that is itself a symbolic link (review round 1)', () => {
+    const real = writeScenario();
+    const root = tempDir('bench-linked-');
+    mkdirSync(join(root, 'S9'));
+    symlinkSync(join(real, 'S9', '1.0'), join(root, 'S9', '1.0'));
+    expect(issuesOf(root)).toEqual([{ path: 'scenario.yaml', message: "'S9/1.0' is a symbolic link" }]);
+  });
+
   it('refuses a symbolic link anywhere under the version, naming each', () => {
     const root = writeScenario();
     const dir = join(root, 'S9', '1.0');
