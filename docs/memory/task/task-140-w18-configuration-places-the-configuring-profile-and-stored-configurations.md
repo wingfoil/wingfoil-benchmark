@@ -2,7 +2,7 @@
 id: task-140-w18-configuration-places-the-configuring-profile-and-stored-configurations
 type: task
 title: "W18: configuration places, the configuring profile and stored configurations"
-status: backlog
+status: in-progress
 release: v0.3
 wave: W18
 features: [F7.5]
