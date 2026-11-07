@@ -2,7 +2,7 @@
 id: bug-034-symlinks-spaces-and-line-endings-in-scenario-and-arm-files-are-handled-inconsistently
 type: bug
 title: "Symlinks, spaces and line endings in scenario and arm files are handled inconsistently"
-status: approved
+status: fixed
 fixed_by: task-139-bug-034-symlinks-spaces-and-line-endings-handled-one-way
 tags: ["v0.3"]
 ---
