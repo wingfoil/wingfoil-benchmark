@@ -26,6 +26,7 @@ export const configuredRecordSchema = z
     }),
     base_arm_digest: z.string().regex(/^[0-9a-f]{12}$/, 'must be an arm digest'),
     rules_sha256: sha256.nullable(),
+    // A step's usage (`SessionUsage` of src/agents/claude-code.ts); a unit test keeps the two the same.
     usage: z.strictObject({
       inputTokens: amount,
       outputTokens: amount,

@@ -5,7 +5,7 @@ import { configuringProfileSchema, parseWith, readYamlFile } from '../core/index
 import type { ConfiguringProfile, Issue, LeakScanDeclarations, Result, Scenario } from '../core/index.js';
 
 import type { HoldoutAdditions } from './holdout.js';
-import { filesUnder, harnessMentions, oracleLiterals } from './leak-scan.js';
+import { harnessMentions, oracleFiles, oracleLiterals } from './leak-scan.js';
 
 /** The configuring agent's profile, from the repository's root (REQ-ARC-03 as amended in 1.50). */
 export const CONFIGURING_PROFILE = 'configuring/profile.yaml';
@@ -36,9 +36,7 @@ export function scanConfiguringPrompt(
     message: `names the harness '${mention}'`,
   }));
   const sources = [
-    ...scenario.oracle.suites
-      .flatMap((suite) => filesUnder(suite.dir))
-      .map((file) => ({ label: relative(scenario.dir, file), path: file })),
+    ...oracleFiles(scenario).map((file) => ({ label: relative(scenario.dir, file), path: file })),
     ...(holdout === undefined
       ? []
       : holdout.files.map((file) => ({ label: `the hold-out file ${file}`, path: join(holdout.dir, file) }))),

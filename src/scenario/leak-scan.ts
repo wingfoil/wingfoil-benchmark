@@ -164,7 +164,7 @@ export function scanScenario(
  * their patterns are the words the prompts themselves use, and the loader refuses a check that a
  * step's prompt satisfies, which is the leak that matters for them (REQ-SCO-06 as amended in 1.12).
  */
-function oracleFiles(scenario: Scenario): string[] {
+export function oracleFiles(scenario: Scenario): string[] {
   return scenario.oracle.suites.flatMap((suite) => filesUnder(suite.dir));
 }
 

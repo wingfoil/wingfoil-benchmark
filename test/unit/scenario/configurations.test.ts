@@ -1,6 +1,9 @@
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+
+import type { SessionUsage } from '../../../src/agents/claude-code.js';
+import type { ConfiguredRecord } from '../../../src/core/index.js';
 
 import { loadScenario, scenarioHash } from '../../../src/scenario/index.js';
 import { configuredRecord, refusedRecord, writeConfiguration } from '../../support/configured-fixture.js';
@@ -284,5 +287,14 @@ describe('configurations: review round 1 (task-140)', () => {
         .map((issue) => issue.message)
         .join('\n'),
     ).toContain(message);
+  });
+});
+
+describe("a record's usage (review round 2, task-140)", () => {
+  it("has a step's shape: SessionUsage", () => {
+    // The same keys, each assignable both ways (SessionUsage's are readonly, the parsed record's are not).
+    expectTypeOf<keyof ConfiguredRecord['usage']>().toEqualTypeOf<keyof SessionUsage>();
+    expectTypeOf<ConfiguredRecord['usage']>().toExtend<SessionUsage>();
+    expectTypeOf<SessionUsage>().toExtend<ConfiguredRecord['usage']>();
   });
 });

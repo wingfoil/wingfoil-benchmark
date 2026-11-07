@@ -376,6 +376,29 @@ describe('loadArm: configuration and state places (REQ-FMT-05 as amended in 1.50
     ]);
   });
 
+  it("accepts a state place inside WingFoil's directives place, an index say (task-138's drafted scenario)", () => {
+    const root = withPlaces({
+      configuration: [{ glob: '.wingfoil/directives/custom/**', source: 'a' }],
+      state: [{ glob: '.wingfoil/directives/custom/.index/**', source: 'b' }],
+    });
+
+    expect(loadArm(root, 'wingfoil').ok).toBe(true);
+  });
+
+  it("refuses a state glob that makes every subdirectory of WingFoil's directives place state", () => {
+    const root = withPlaces({
+      configuration: [{ glob: '.wingfoil/directives/custom/**', source: 'a' }],
+      state: [{ glob: '.wingfoil/directives/custom/*/**', source: 'b' }],
+    });
+
+    expect(issuesOf(root)).toEqual([
+      {
+        path: 'configuration',
+        message: "does not include the place of the project rules, '.wingfoil/directives/custom/'",
+      },
+    ]);
+  });
+
   it.each([
     ['speckit', '.specify/memory/constitution.md'],
     ['openspec', 'openspec/config.yaml'],

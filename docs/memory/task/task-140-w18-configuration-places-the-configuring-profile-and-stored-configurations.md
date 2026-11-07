@@ -145,3 +145,13 @@ Main's HEAD and reflog the same before and after (`d989138f`).
 | nit        | The profile loader does not check `harnesses` keys or the effort against `models.default`      | Left to the next task's command, which reads the profile with the arms; noted here                            |
 | nit        | The prompt's step 2 could lead the agent to the agent's own settings, outside every place      | A line added: new files only where the tool's documentation puts its configuration, not the agent's settings or MCP setup |
 
+### Round 2 (a fresh read-only agent, clone `/tmp/claude-1000/review2-t140-*`, at `4143f3ec`)
+
+Round 1's outcomes verified; nits only, so no further round. Main's HEAD and reflog the same (`d989138f`).
+
+| Severity | Finding                                                                                  | Outcome                                                                     |
+| -------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| nit      | No test of a state place inside WingFoil's directives place, which 1.52 states allowed  | Tests added: the drafted scenario's index accepted, `custom/*/**` refused  |
+| nit      | The prompt scan repeated the leak scan's list of oracle files                            | `oracleFiles` exported and reused                                           |
+| nit      | A record's `usage` not tied to a step's `SessionUsage`                                   | A type test keeps the keys the same and each assignable to the other       |
+
