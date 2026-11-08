@@ -1,10 +1,10 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { parseConfigureArguments } from '../../../src/cli/configure.js';
-import { checkConfigure } from '../../../src/runner/configure.js';
+import { checkConfigure, runConfigure } from '../../../src/runner/configure.js';
 import {
   benchConfigure,
   configurePorts,
@@ -12,7 +12,7 @@ import {
   writeFiles,
 } from '../../support/configure-fixture.js';
 import { writeArmAt } from '../../support/arm-fixture.js';
-import { writeConfiguration } from '../../support/configured-fixture.js';
+import { configuredRecord, writeConfiguration } from '../../support/configured-fixture.js';
 
 beforeEach(() => {
   vi.stubEnv('BENCH_WINGFOIL_REPO', '/clones/wingfoil');
@@ -197,5 +197,184 @@ describe("the records' clock (task-141)", () => {
         Date.parse('2026-11-08T10:00:00Z'),
       ).ok,
     ).toBe(true);
+  });
+});
+
+describe('the configuring session: review round 1 (task-141)', () => {
+  const RULE = { '.wingfoil/directives/custom/r9.md': '# Rule\n' };
+  const usage = (costEur: number) => ({
+    inputTokens: 1,
+    outputTokens: 1,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+    costUsd: costEur,
+    costEur,
+    turns: 1,
+    durationMs: 1,
+  });
+  const records = (root: string) =>
+    JSON.parse(
+      readFileSync(join(root, 'scenarios', 'S1', '1.1', 'configured', 'wingfoil-configured.json'), 'utf8'),
+    ) as Record<string, unknown>[];
+
+  async function session(
+    root: string,
+    ports: ReturnType<typeof configurePorts>,
+    options: Partial<Parameters<typeof runConfigure>[1]> = {},
+    replace = false,
+  ) {
+    const checked = checkConfigure({ id: 'S1', version: '1.1', arm: 'wingfoil', replace }, root);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    return {
+      checked: checked.value,
+      summary: await runConfigure(checked.value, {
+        ...ports,
+        harnessSources: { wingfoil: '/clones/wingfoil' },
+        ...options,
+      }),
+    };
+  }
+
+  it('scrubs the credential from the transcript, the patch and the reason, and refuses a file holding it', async () => {
+    const secret = 's3cr3t-token-value';
+    const root = configureRepo(['S1@1.1'], ['wingfoil']);
+    const ports = configurePorts('wingfoil', {
+      session: (workspace) => writeFiles(workspace, { '.wingfoil/directives/custom/r9.md': `# ${secret}\n` }),
+      doubles: { transcriptOf: () => [`{"said":"${secret}"}`] },
+    });
+    const { summary } = await session(root, ports, { secrets: [secret] });
+
+    expect(summary.record).toMatchObject({
+      outcome: 'refused',
+      reason: expect.stringContaining('holds a credential'),
+    });
+    expect(readFileSync(summary.transcript, 'utf8')).not.toContain(secret);
+    expect(JSON.stringify(records(root))).not.toContain(secret);
+    expect(existsSync(join(root, 'scenarios', 'S1', '1.1', 'arms', 'wingfoil-configured'))).toBe(false);
+
+    const clean = configureRepo(['S1@1.1'], ['wingfoil']);
+    const writing = configurePorts('wingfoil', {
+      session: (workspace) => writeFiles(workspace, RULE),
+      doubles: { patchOf: () => `+ ${secret}\n` },
+    });
+    await session(clean, writing, { secrets: [secret] });
+    const patch = readFileSync(
+      join(clean, 'scenarios', 'S1', '1.1', 'configured', 'wingfoil-configured.patch'),
+      'utf8',
+    );
+    expect(patch).not.toContain(secret);
+  });
+
+  it('keeps the reported usage when something fails after the session returned', async () => {
+    const root = configureRepo(['S1@1.1'], ['wingfoil']);
+    const ports = configurePorts('wingfoil', {
+      session: (workspace) => writeFiles(workspace, RULE),
+      doubles: { usageOf: () => usage(0.09) },
+    });
+    const { summary } = await session(root, {
+      ...ports,
+      git: { ...ports.git, changesBetween: () => Promise.reject(new Error('git broke')) },
+    });
+    expect(summary.record).toMatchObject({ outcome: 'failed', cost_eur: 0.09, reason: 'git broke' });
+    expect(summary.record).not.toHaveProperty('cost_reported');
+  });
+
+  it('records a failed session at its reported cost, and an interrupted one at its bound', async () => {
+    const failing = configureRepo(['S1@1.1'], ['wingfoil']);
+    const failed = await session(
+      failing,
+      configurePorts('wingfoil', {
+        doubles: { usageOf: () => usage(0.2), errorOf: () => 'the agent crashed' },
+      }),
+    );
+    expect(failed.summary.record).toMatchObject({
+      outcome: 'failed',
+      cost_eur: 0.2,
+      reason: 'the agent crashed',
+    });
+
+    const stopping = configureRepo(['S1@1.1'], ['wingfoil']);
+    const controller = new AbortController();
+    const interrupted = await session(
+      stopping,
+      configurePorts('wingfoil', { session: () => controller.abort() }),
+      { signal: controller.signal },
+    );
+    expect(interrupted.summary.record).toMatchObject({
+      outcome: 'interrupted',
+      cost_eur: 5,
+      cost_reported: false,
+    });
+  });
+
+  it('fails a session that completed with no reported cost, and refuses one that changed nothing', async () => {
+    const unknown = configureRepo(['S1@1.1'], ['wingfoil']);
+    const ports = configurePorts('wingfoil', { session: (workspace) => writeFiles(workspace, RULE) });
+    const costUnknown = {
+      ...ports,
+      agent: {
+        ...ports.agent,
+        runStep: async (request: Parameters<typeof ports.agent.runStep>[0]) => ({
+          ...(await ports.agent.runStep(request)),
+          costUnknown: true as const,
+        }),
+      },
+    };
+    const first = await session(unknown, costUnknown);
+    expect(first.summary.record).toMatchObject({ outcome: 'failed', cost_eur: 5, cost_reported: false });
+
+    const idle = configureRepo(['S1@1.1'], ['wingfoil']);
+    const second = await session(idle, configurePorts('wingfoil'));
+    expect(second.summary.record).toMatchObject({
+      outcome: 'refused',
+      reason: 'the session added or changed no configuration file',
+    });
+  });
+
+  it('writes no record when the setup fails, and leaves nothing that refuses the next session', async () => {
+    const root = configureRepo(['S1@1.1'], ['wingfoil']);
+    const ports = configurePorts('wingfoil', {
+      doubles: {
+        execResultOf: (command) =>
+          command[0] === 'bash' ? { code: 3, stdout: '', stderr: 'no tool\n' } : undefined,
+      },
+    });
+    const result = await benchConfigure(root, ['S1@1.1', '--arm', 'wingfoil', '--allow-spending'], ports);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('the setup of arm wingfoil failed with code 3');
+    expect(ports.recorded.steps).toEqual([]);
+    expect(existsSync(join(root, 'scenarios', 'S1', '1.1', 'configured'))).toBe(false);
+    expect(existsSync(join(root, 'runs', 'configuring', 'S1@1.1', 'wingfoil', '1'))).toBe(false);
+    expect(checkConfigure({ id: 'S1', version: '1.1', arm: 'wingfoil', replace: false }, root).ok).toBe(true);
+  });
+
+  it('replaces a configuration with --replace, keeps both records, and keeps an executable bit', async () => {
+    const root = configureRepo(['S1@1.1'], ['wingfoil']);
+    const dir = join(root, 'scenarios', 'S1', '1.1');
+    writeConfiguration(dir, 'wingfoil-configured', RULE, [
+      configuredRecord(RULE, { date: '2026-11-01T10:00:00Z' }),
+    ]);
+    const ports = configurePorts('wingfoil', {
+      session: (workspace) => {
+        writeFiles(workspace, { '.wingfoil/hooks/check.sh': '#!/bin/sh\nexit 0\n' });
+        chmodSync(join(workspace, '.wingfoil', 'hooks', 'check.sh'), 0o755);
+      },
+    });
+    const { summary } = await session(root, ports, {}, true);
+
+    expect(summary.record.outcome).toBe('written');
+    expect(records(root).map((record) => record.outcome)).toEqual(['written', 'written']);
+    const configured = join(dir, 'arms', 'wingfoil-configured');
+    expect(existsSync(join(configured, '.wingfoil', 'directives', 'custom', 'r9.md'))).toBe(false);
+    expect(statSync(join(configured, '.wingfoil', 'hooks', 'check.sh')).mode & 0o111).not.toBe(0);
+    expect(summary.loadIssues).toEqual([]);
+  });
+
+  it('restores the manual after a refused session too', async () => {
+    const root = configureRepo(['S1@1.1'], ['wingfoil']);
+    const ports = configurePorts('wingfoil', { doubles: { errorOf: () => 'crashed' } });
+    const { checked } = await session(root, ports);
+    expect(existsSync(join(checked.workDir, 'workspace', 'CLAUDE.md'))).toBe(true);
+    expect(existsSync(join(checked.workDir, 'manual-aside'))).toBe(false);
   });
 });

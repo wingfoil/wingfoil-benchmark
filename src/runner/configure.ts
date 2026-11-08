@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
 import { agentProfile, scrub } from '../agents/index.js';
@@ -17,6 +17,7 @@ import {
   loadLeakScanDeclarations,
   loadScenario,
   prepareWorkspace,
+  relativeFiles,
   scanConfiguringPrompt,
 } from '../scenario/index.js';
 import type { HoldoutAdditions } from '../scenario/index.js';
@@ -147,7 +148,7 @@ export function checkConfigure(
       },
     ]);
   }
-  const clashes = seedClashes(arm, filesUnder(scenario.value.seedDir));
+  const clashes = seedClashes(arm, relativeFiles(scenario.value.seedDir));
   if (clashes.length > 0) {
     return fail(
       clashes.map(({ glob, file }) => ({
@@ -184,7 +185,9 @@ export function checkConfigure(
     return fail([
       {
         path: 'configure',
-        message: `${relative(root, workDir)} exists: an earlier session of this configuration wrote no record; remove it`,
+        message:
+          `${relative(root, workDir)} exists: an earlier session of this configuration wrote no record; ` +
+          'remove it',
       },
     ]);
   }
@@ -253,8 +256,8 @@ interface Ending {
   harnessCommit?: string;
   wallTimeMs: number;
   transcript?: readonly string[];
-  /** The written files' paths, with their content, on `written`. */
-  files?: { path: string; content: Buffer }[];
+  /** The written files' paths, with their content and whether git records them executable, on `written`. */
+  files?: { path: string; content: Buffer; executable: boolean }[];
   patch?: string;
 }
 
@@ -288,6 +291,16 @@ export async function runConfigure(
   let started: number | undefined;
   /** What stopped the command before its session started: no session ran, so no record is written. */
   let before: unknown;
+  /** Whether the session's step returned: after it, what fails is no longer the agent's, and its usage stands. */
+  let returned = false;
+  const manual = join(workspace, manualFile);
+  const aside = join(workDir, 'manual-aside');
+  /** The merged manual back at its path, whatever the agent left there (REQ-RUN-20); idempotent. */
+  const restoreManual = () => {
+    if (!existsSync(aside)) return;
+    rmSync(manual, { recursive: true, force: true });
+    renameSync(aside, manual);
+  };
   try {
     await buildRunImage(checked.id, profile.agent, options);
     const harnesses = await prepareHarnesses(
@@ -335,8 +348,6 @@ export async function runConfigure(
     const identityBefore = identityOf(arm.requires, workspace);
 
     // What instructs the agent is the prompt alone: the merged manual is moved aside for the session (REQ-RUN-20).
-    const manual = join(workspace, manualFile);
-    const aside = join(workDir, 'manual-aside');
     renameSync(manual, aside);
     started = now();
     const step = await executeStep(
@@ -355,6 +366,7 @@ export async function runConfigure(
       },
       options,
     );
+    returned = true;
     ending.wallTimeMs = now() - started;
     if (step === CAP_REACHED) {
       ending.outcome = 'killed';
@@ -375,8 +387,7 @@ export async function runConfigure(
     if (ending.outcome === 'written') {
       // A file at the manual's path refuses the result; then the manual is restored, and the workspace compared.
       const manualWritten = existsSync(manual);
-      rmSync(manual, { force: true });
-      renameSync(aside, manual);
+      restoreManual();
       await options.git.commitAll(workspace, 'configured', { allowEmpty: true });
       const tree = await options.git.tree(workspace, 'HEAD');
       const changes = await options.git.changesBetween(workspace, setup.commit as string, 'HEAD');
@@ -391,6 +402,7 @@ export async function runConfigure(
             ? identityBefore.file
             : undefined,
         workspace,
+        secrets: secretsNow(options),
       });
       if (offences.length > 0) {
         ending.outcome = 'refused';
@@ -402,6 +414,7 @@ export async function runConfigure(
         ending.files = changes.map((change) => ({
           path: change.path,
           content: readFileSync(join(workspace, change.path)),
+          executable: change.mode === '100755',
         }));
         ending.patch = scrub(
           await options.git.patchOf(workspace, setup.tree as string, tree),
@@ -414,14 +427,20 @@ export async function runConfigure(
     else if (ending.wallTimeMs === 0) ending.wallTimeMs = now() - started;
     ending.outcome = interrupted() ? 'interrupted' : 'failed';
     ending.reason = reasonOf(error);
-    // A session that started and threw reported nothing: it counts at its bound, the session's ceiling.
-    if (started !== undefined) ending.costBoundUsd = profile.caps.run_cost_eur / rate;
+    // A session whose step threw reported nothing: it counts at its bound, the session's ceiling. Once the step
+    // returned, its reported usage stands, whatever fails after it.
+    if (started !== undefined && !returned) ending.costBoundUsd = profile.caps.run_cost_eur / rate;
     options.logError?.(`configure ${scenario.id}@${scenario.version} for ${arm.name}: ${ending.reason}`);
   } finally {
     options.signal?.removeEventListener('abort', kill);
     if (container !== undefined) await (removal ?? remove(container, options));
+    if (existsSync(workspace)) restoreManual();
   }
-  if (started === undefined) throw before;
+  if (started === undefined) {
+    // No session ran: what this invocation made under runs/ goes, so that the next one is not refused for it.
+    rmSync(workDir, { recursive: true, force: true });
+    throw before;
+  }
   return store(checked, ending, date, options);
 }
 
@@ -493,26 +512,11 @@ function store(
     wall_time_s: round(ending.wallTimeMs / 1000, 1),
     date,
     outcome: ending.outcome,
-    ...(ending.reason === undefined ? {} : { reason: ending.reason }),
+    // Scrubbed as a patch is: an error can quote what the agent's environment holds (REQ-NFR-01).
+    ...(ending.reason === undefined ? {} : { reason: scrub(ending.reason, secretsNow(options)) }),
     ...(files === undefined || ending.outcome !== 'written' ? {} : { files }),
   };
-  // A record this runner would refuse to load is a defect of the runner: said, never written.
-  const valid = configuredRecordSchema.safeParse(record);
-  if (!valid.success) throw new Error(`the configuring record is not valid: ${valid.error.message}`);
-
-  if (ending.outcome === 'written' && ending.files !== undefined && ending.patch !== undefined) {
-    rmSync(configurationDir, { recursive: true, force: true });
-    for (const file of ending.files) {
-      mkdirSync(dirname(join(configurationDir, file.path)), { recursive: true });
-      writeFileSync(join(configurationDir, file.path), file.content);
-    }
-    mkdirSync(recordsDir, { recursive: true });
-    writeFileSync(join(recordsDir, `${configured}.patch`), ending.patch);
-  }
-  mkdirSync(recordsDir, { recursive: true });
-  const earlier = existsSync(recordFile) ? (JSON.parse(readFileSync(recordFile, 'utf8')) as unknown[]) : [];
-  writeFileSync(recordFile, `${JSON.stringify([...earlier, record], undefined, 2)}\n`);
-
+  // The transcript first: whatever follows, what the session said is kept.
   const transcript = join(
     repoRoot,
     'results',
@@ -525,6 +529,26 @@ function store(
   mkdirSync(dirname(transcript), { recursive: true });
   const lines = (ending.transcript ?? []).map((line) => `${line}\n`).join('');
   writeFileSync(transcript, scrub(lines, secretsNow(options)));
+  // A record this runner would refuse to load is a defect of the runner: said, never written.
+  const valid = configuredRecordSchema.safeParse(record);
+  if (!valid.success) throw new Error(`the configuring record is not valid: ${valid.error.message}`);
+
+  if (ending.outcome === 'written' && ending.files !== undefined && ending.patch !== undefined) {
+    rmSync(configurationDir, { recursive: true, force: true });
+    for (const file of ending.files) {
+      mkdirSync(dirname(join(configurationDir, file.path)), { recursive: true });
+      writeFileSync(join(configurationDir, file.path), file.content, {
+        mode: file.executable ? 0o755 : 0o644,
+      });
+      if (file.executable) chmodSync(join(configurationDir, file.path), 0o755);
+    }
+    mkdirSync(recordsDir, { recursive: true });
+    writeFileSync(join(recordsDir, `${configured}.patch`), ending.patch);
+  }
+  mkdirSync(recordsDir, { recursive: true });
+  const earlier = existsSync(recordFile) ? (JSON.parse(readFileSync(recordFile, 'utf8')) as unknown[]) : [];
+  writeFileSync(recordFile, `${JSON.stringify([...earlier, record], undefined, 2)}\n`);
+
   const reloaded = loadScenario(join(repoRoot, 'scenarios'), scenario.id, scenario.version);
   return {
     record,
@@ -542,14 +566,6 @@ function store(
  */
 function readRecords(file: string): readonly { readonly date: string }[] {
   return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as { date: string }[]) : [];
-}
-
-/** Every file under `dir`, by its path from `dir` with forward slashes: a scenario version's seed files. */
-function filesUnder(dir: string, prefix = ''): string[] {
-  return readdirSync(join(dir, prefix), { withFileTypes: true }).flatMap((entry) => {
-    const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
-    return entry.isDirectory() ? filesUnder(dir, path) : [path];
-  });
 }
 
 function sha256(content: string | Buffer): string {

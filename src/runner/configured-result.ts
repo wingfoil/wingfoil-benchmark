@@ -25,8 +25,10 @@ export interface ResultToCheck {
   readonly manualWritten: boolean;
   /** The identity file, when the members or roles it declares changed (REQ-RUN-17). */
   readonly identityChanged: string | undefined;
-  /** The workspace, where a changed Markdown file is read. */
+  /** The workspace, where a changed file is read. */
   readonly workspace: string;
+  /** The values no stored file may hold (REQ-NFR-01): the credential's. */
+  readonly secrets: readonly string[];
 }
 
 /** The modes of a regular file in git: a configuration is files, never links or submodules. */
@@ -50,11 +52,13 @@ export function offencesOf(result: ResultToCheck): Offence[] {
   }
   for (const change of result.changes) {
     const { path } = change;
+    const file = join(result.workspace, path);
     if (change.status === 'D') add(path, 'was deleted');
     else if (change.mode === LINK) add(path, 'is a symbolic link');
     else if (!REGULAR.has(change.mode)) add(path, 'is not a regular file');
+    else if (change.status === 'T') add(path, 'changed its type');
+    else if (holdsSecret(file, result.secrets)) add(path, 'holds a credential value');
     else if (isConfigurationPath(result.arm, path)) {
-      const file = join(result.workspace, path);
       if (path.endsWith('.md') && existsSync(file) && hasUnclosedFence(readFileSync(file, 'utf8'))) {
         add(path, 'leaves a code fence open');
       }
@@ -63,6 +67,14 @@ export function offencesOf(result: ResultToCheck): Offence[] {
     } else add(path, 'is outside the configuration places');
   }
   return [...found].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([path, why]) => ({ path, why }));
+}
+
+/** Whether `file` holds one of `secrets`: a configuration is committed, and never scrubbed (REQ-NFR-01). */
+function holdsSecret(file: string, secrets: readonly string[]): boolean {
+  const values = secrets.filter((secret) => secret !== '');
+  if (values.length === 0 || !existsSync(file)) return false;
+  const content = readFileSync(file, 'utf8');
+  return values.some((secret) => content.includes(secret));
 }
 
 /** A refused result's reason, as its record states it: every offending path, named. */

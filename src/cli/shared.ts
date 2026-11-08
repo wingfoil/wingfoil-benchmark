@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import {
   claudeCodeAgent,
   codexAgent,
+  codexFileSecrets,
   codexSecrets,
   loadAgentToken,
   loadFakeScript,
@@ -12,7 +13,7 @@ import type { AgentPort } from '../agents/index.js';
 import { fakeAgent } from '../agents/index.js';
 import { dockerCli, gitCli, systemProcess } from '../core/index.js';
 import type { DockerPort, GitPort, ImagePort, Issue, PublishPort, Result } from '../core/index.js';
-import type { RunPins } from '../runner/index.js';
+import type { RunnerOptions, RunPins } from '../runner/index.js';
 
 import {
   CODEX_AUTH_VARIABLE,
@@ -162,6 +163,28 @@ export interface Spending {
   readonly secrets?: readonly string[];
   /** The local clone of each harness tool the execution builds (REQ-RUN-14). */
   readonly harnessSources?: Readonly<Record<string, string>>;
+}
+
+/**
+ * What a run of the agent gets of `spending` and of the command line (REQ-RUN-15, REQ-NFR-01): the harness clones,
+ * the log lines, and the credential, which reaches the container here and nowhere else, its values scrubbed; Codex's
+ * a file the runner mounts (dl-019), its values read again whenever something is stored.
+ */
+export function spendingOptions(spending: Spending, io: Io): Partial<RunnerOptions> {
+  const { credential, credentialFile, secrets, harnessSources } = spending;
+  return {
+    ...(harnessSources === undefined ? {} : { harnessSources }),
+    log: (line) => io.stdout(`${line}\n`),
+    logError: (line) => io.stderr(`${line}\n`),
+    ...(credential === undefined ? {} : { containerEnv: credential, secrets: Object.values(credential) }),
+    ...(credentialFile === undefined
+      ? {}
+      : {
+          credentialFile,
+          secrets: secrets ?? [],
+          refreshSecrets: () => codexFileSecrets(credentialFile),
+        }),
+  };
 }
 
 /**

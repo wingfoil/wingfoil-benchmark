@@ -1,6 +1,5 @@
 import { relative } from 'node:path';
 
-import { codexFileSecrets } from '../agents/index.js';
 import { effortRefusal, missingEffort, reasonOf } from '../core/index.js';
 import { checkConfigure, runConfigure } from '../runner/index.js';
 import type { ConfigureRequest } from '../runner/index.js';
@@ -9,7 +8,16 @@ import type { HoldoutAdditions } from '../scenario/index.js';
 
 import { HOLDOUT_VARIABLE } from './preflight.js';
 import { parseScenarioRef } from './scenario.js';
-import { checkSpending, EXIT, portsFor, report, SPENDING_FLAG, USAGE, withInterrupt } from './shared.js';
+import {
+  checkSpending,
+  EXIT,
+  portsFor,
+  report,
+  SPENDING_FLAG,
+  spendingOptions,
+  USAGE,
+  withInterrupt,
+} from './shared.js';
 import type { Io, Ports } from './shared.js';
 
 /** `bench scenario configure`'s arguments (REQ-CLI-14). */
@@ -113,7 +121,7 @@ export async function configureCommand(
     refusal: { path: 'configure', message: '' },
   });
   if (!spending.ok) return report(spending.issues, io);
-  const { credential, credentialFile, secrets, harnessSources } = spending.value;
+  const { credential, credentialFile } = spending.value;
   const resolved = ports
     ? { ok: true as const, value: ports }
     : portsFor(profile, credential, credentialFile);
@@ -126,18 +134,7 @@ export async function configureCommand(
     summary = await withInterrupt(io, (signal) =>
       runConfigure(checked.value, {
         ...resolved.value,
-        ...(harnessSources === undefined ? {} : { harnessSources }),
-        log: (line) => io.stdout(`${line}\n`),
-        logError: (line) => io.stderr(`${line}\n`),
-        // The credential reaches the container here and nowhere else (REQ-RUN-15, REQ-NFR-01).
-        ...(credential === undefined ? {} : { containerEnv: credential, secrets: Object.values(credential) }),
-        ...(credentialFile === undefined
-          ? {}
-          : {
-              credentialFile,
-              secrets: secrets ?? [],
-              refreshSecrets: () => codexFileSecrets(credentialFile),
-            }),
+        ...spendingOptions(spending.value, io),
         signal,
       }),
     );

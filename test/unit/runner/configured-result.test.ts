@@ -34,6 +34,7 @@ function offences(changes: readonly TreeChange[], extra: Partial<Parameters<type
     manualWritten: false,
     identityChanged: undefined,
     workspace: workspace(),
+    secrets: [],
     ...extra,
   });
 }
@@ -149,5 +150,23 @@ describe('the identities a configuring session must not change (REQ-RUN-17, REQ-
     expect(identityOf('wingfoil', workspace({ '.wingfoil/dna.yaml': ': : :\n' }))?.value).toBe('unreadable');
     expect(identityOf('speckit', workspace())).toBeUndefined();
     expect(identityOf('openspec', workspace())).toBeUndefined();
+  });
+});
+
+describe("a configuring session's result: review round 1 (task-141)", () => {
+  it('refuses a type change to a regular file, as a setup-made link replaced by a file', () => {
+    expect(offences([{ status: 'T', path: '.wingfoil/run', mode: '100644' }])).toEqual([
+      { path: '.wingfoil/run', why: 'changed its type' },
+    ]);
+  });
+
+  it("refuses a file that holds the credential's value, wherever it is (REQ-NFR-01)", () => {
+    const dir = workspace({ '.wingfoil/notes.md': 'token: s3cr3t-value\n', '.wingfoil/clean.md': 'clean\n' });
+    expect(
+      offences([added('.wingfoil/notes.md'), added('.wingfoil/clean.md')], {
+        workspace: dir,
+        secrets: ['', 's3cr3t-value'],
+      }),
+    ).toEqual([{ path: '.wingfoil/notes.md', why: 'holds a credential value' }]);
   });
 });

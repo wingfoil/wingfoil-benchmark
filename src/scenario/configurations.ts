@@ -137,7 +137,7 @@ function newestWritten(records: readonly ConfiguredRecord[]): ConfiguredRecord |
 /** The directory against its record: each file missing, extra or changed, in the paths' code-unit order. */
 function fileIssues(directory: string, record: ConfiguredRecord): string[] {
   const listed = new Map((record.files ?? []).map((file) => [file.path, file.sha256]));
-  const held = existsSync(directory) ? filesUnder(directory) : [];
+  const held = existsSync(directory) ? relativeFiles(directory) : [];
   const paths = [...new Set([...listed.keys(), ...held])].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   return paths.flatMap((path) => {
     const expected = listed.get(path);
@@ -150,10 +150,11 @@ function fileIssues(directory: string, record: ConfiguredRecord): string[] {
   });
 }
 
-function filesUnder(directory: string, prefix = ''): string[] {
+/** Every entry under `directory` that is not a directory, by its path from it with forward slashes. */
+export function relativeFiles(directory: string, prefix = ''): string[] {
   return readdirSync(join(directory, prefix), { withFileTypes: true }).flatMap((entry) => {
     const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
-    return entry.isDirectory() ? filesUnder(directory, path) : [path];
+    return entry.isDirectory() ? relativeFiles(directory, path) : [path];
   });
 }
 
