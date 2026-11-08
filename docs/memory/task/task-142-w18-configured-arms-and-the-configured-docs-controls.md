@@ -186,3 +186,13 @@ without it.
 | nit        | The configured arm's directory went into place before its base, so a concurrent reader rewrote it    | The base first                                                                                          |
 | nit        | Three message lines over 120 characters                                                              | Split                                                                                                   |
 
+### Round 3 (a fresh read-only agent, clone `/tmp/claude-1000/review3-t142-*`, at `61279e39`)
+
+Main's HEAD and reflog the same before and after (`22fb17c1`). Every round-2 outcome verified; the 13 campaign files
+validate with the same ids at `22fb17c1` and on the branch. Nits only: no further round.
+
+| Severity | Finding                                                                                                  | Outcome                                                                                             |
+| -------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| nit      | A base directory already in `.cache/arms/<commit>/` is kept unchecked, while a stale arm is replaced     | Left: reachable only by editing the cache, and the pinned digest check still refuses the result     |
+| nit      | `campaignConsistency` checks a base's `harnesses` entry by name, `checkCampaign` by the arms' definitions | A comment on the first names the second                                                             |
+

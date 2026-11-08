@@ -208,7 +208,8 @@ export function campaignConsistency(campaign: CampaignFile): Issue[] {
     issues.push({ path: formatPath(path), message });
 
   for (const arm of Object.keys(campaign.harnesses).sort()) {
-    // A configured arm's base arm holds its pin, run or not (REQ-FMT-01 as amended in 1.50).
+    // A configured arm's base arm holds its pin, run or not (REQ-FMT-01 as amended in 1.50). By name only: `checkCampaign`
+    // refuses, from the arms' definitions, an entry no arm reads by its name or as a configured arm's base.
     if (!arms.has(arm) && !arms.has(`${arm}${CONFIGURED_ARM_SUFFIX}`)) {
       issue(['harnesses', arm], "is not one of the campaign's arms, nor the base of a configured one");
     }
