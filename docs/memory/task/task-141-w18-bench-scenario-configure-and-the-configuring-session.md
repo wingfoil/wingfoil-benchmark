@@ -139,4 +139,9 @@ red first, unless the implementation finds a wording to correct (recorded in Exe
   written its record. Also made precise: the session's outcomes and an unreported cost, a result that changes nothing
   (refused), the members and roles compared as sets, no record for a failure before the session, the transcript's
   `<n>` from 1, the session's workspace, the records' order and clock, and `--allow-spending` whatever the agent.
+- Characterization (criterion 8): `bench campaign validate` on each of the 13 campaign files (dry-run profiles aside),
+  on main and on the branch, outputs compared by a script: 13 of 13 exit 0 on both, the outputs identical.
+- Checks: prettier, tsc and eslint clean; `scripts/pre-review.sh main` green on its second run (the first was red on
+  `test/bin/bench.test.ts`, which pins the usage text, fixed in `d58760ca`); beside it, `test/unit/campaign`,
+  `architecture`, `docs`, `arms`, `agents`, `scenarios` and every acceptance test green.
 - No real-agent session, nothing spent; no scenario version gained a configuration, so no scenario hash changed.
