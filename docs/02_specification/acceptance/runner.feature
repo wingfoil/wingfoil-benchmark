@@ -112,3 +112,18 @@ Feature: Isolated, multi-step runs of a scenario in an arm
     Then the step prompt is byte-identical in every arm
     And each arm's environment contains that arm's operating manual
     And the size of each operating manual in tokens is recorded with the run
+
+  @F7.5
+  Scenario: A configured arm runs its base arm with the scenario's configuration over it
+    Given "wingfoil-configured" declares configured_of "wingfoil"
+    And S8 1.1 holds a configuration for "wingfoil-configured"
+    When a run of "wingfoil-configured" on S8 1.1 is set up
+    Then the wingfoil setup runs, S8's wingfoil configuration is copied, and the configured one over it
+    And the arm's digest covers its own files and the wingfoil arm's
+
+  @F7.5
+  Scenario: A configured arm's copy comes after the project rules and before the setup commit
+    Given S8 1.1 holds a configuration for "speckit-configured" that extends the generated constitution
+    When a run of "speckit-configured" on S8 1.1 is set up
+    Then the workspace holds the configured constitution, and "setup/diff.patch" holds it
+    And a run whose generated rules differ from the record's is refused before step 1

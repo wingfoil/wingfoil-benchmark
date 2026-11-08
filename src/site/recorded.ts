@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join, posix } from 'node:path';
 
-import { armDigest, armDigestOf } from '../arms/index.js';
+import { armDigest, armDigestOf, configuredOfIn } from '../arms/index.js';
 import type { HistoryPort } from '../core/index.js';
 
 /**
@@ -31,8 +31,27 @@ export async function recordedArm(
   const path = posix.join('arms', arm);
   if (existsSync(join(root, path)) && armDigest(root, arm) === digest)
     return { source: 'tree', dir: join(root, path) };
-  for (const commit of await history.commitsTouching(root, path)) {
-    const files = await history.filesAt(root, commit, path);
+  // A configured arm's digest covers its base arm's files too (REQ-FMT-13 as amended in 1.50, task-142): the commits
+  // touching it or any base an arm.yaml of its history names, so that one since removed or rebased still resolves.
+  const own = await history.commitsTouching(root, path);
+  const commits = new Set(own);
+  const bases = new Set<string>();
+  for (const commit of own) {
+    const yaml = (await history.filesAt(root, commit, path)).get(posix.join(path, 'arm.yaml'));
+    const named = yaml === undefined ? undefined : configuredOfIn(yaml);
+    if (named !== undefined && named !== arm) bases.add(named);
+  }
+  for (const base of [...bases].sort()) {
+    for (const commit of await history.commitsTouching(root, posix.join('arms', base))) commits.add(commit);
+  }
+  for (const commit of commits) {
+    const ownFiles = await history.filesAt(root, commit, path);
+    const yaml = ownFiles.get(posix.join(path, 'arm.yaml'));
+    const baseArm = yaml === undefined ? undefined : configuredOfIn(yaml);
+    const files =
+      baseArm === undefined || baseArm === arm
+        ? ownFiles
+        : new Map([...ownFiles, ...(await history.filesAt(root, commit, posix.join('arms', baseArm)))]);
     if (files.size === 0 || armDigestOf(files) !== digest) continue;
     const base = mkdtempSync(join(tmpdir(), 'bench-recorded-arm-'));
     for (const [file, content] of files) {

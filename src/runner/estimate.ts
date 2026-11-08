@@ -1,6 +1,6 @@
 import { relative } from 'node:path';
 
-import { fail, ok } from '../core/index.js';
+import { baseArmOf, fail, ok } from '../core/index.js';
 import type { Issue, Result, Scenario } from '../core/index.js';
 import { findDryRuns, harnessKey } from '../results/index.js';
 import type { DryRunRecord } from '../results/index.js';
@@ -174,14 +174,16 @@ export function campaignKeys({ campaign, scenarios }: CheckedCampaign): Campaign
  * the campaign's commit pin does not name. A harness pinned by a released version cannot be compared
  * with a commit, and is not flagged.
  */
-function provenance({ campaign }: CheckedCampaign, arm: string, dryRun: DryRunRecord): string[] {
+function provenance({ campaign, arms }: CheckedCampaign, arm: string, dryRun: DryRunRecord): string[] {
   const notes: string[] = [];
   const { agent, harnesses } = campaign.spec;
   if (dryRun.agent.name !== agent.name || dryRun.agent.version !== agent.version) {
     const pinned = dryRun.agent.name === agent.name ? agent.version : `${agent.name} ${agent.version}`;
     notes.push(`agent ${dryRun.agent.name} ${dryRun.agent.version}, the campaign pins ${pinned}`);
   }
-  const harness = harnesses[arm];
+  // A configured arm's pin is its base arm's entry (REQ-FMT-01 as amended in 1.50).
+  const definition = arms.find((candidate) => candidate.name === arm);
+  const harness = harnesses[definition === undefined ? arm : baseArmOf(definition)];
   const pin = harness?.commit ?? harness?.version;
   if (harness !== undefined && pin !== undefined && dryRun.harnessCommit !== undefined && COMMIT.test(pin)) {
     if (!dryRun.harnessCommit.startsWith(pin)) {

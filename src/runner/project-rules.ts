@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
 import { docsGeneratorOf, RULES_SOURCE_ARM, rulesGeneratorOf } from '../arms/index.js';
 import type { DocsGenerator } from '../arms/index.js';
+import { baseArmOf } from '../core/index.js';
 import type { Arm, DockerPort, GitPort, Scenario } from '../core/index.js';
 
 import type { HarnessArtefact } from './harness.js';
@@ -97,7 +99,8 @@ async function snapshot(
   mkdirSync(workspace, { recursive: true });
   cpSync(source.dir, join(build, 'arm'), { recursive: true });
   cpSync(harness.installed, join(build, 'harness.tgz'));
-  const overlay = scenario.armDirs[source.name];
+  // A configured arm's setup gets its base arm's configuration (REQ-RUN-03 as amended in 1.50).
+  const overlay = scenario.armDirs[baseArmOf(source)];
   if (overlay !== undefined) cpSync(overlay, join(build, 'scenario'), { recursive: true });
   // The repository the source arm's runs start from: one commit, and the agent's identity.
   await options.git.init(workspace);
@@ -126,6 +129,7 @@ async function snapshot(
   // The scenario's rules, as a run of the source arm gets them after its setup (REQ-FMT-14).
   const rulesGenerator = rulesGeneratorOf(source.requires);
   const declared = scenario.armDirs[RULES_SOURCE_ARM];
+  let rulesSha256: string | null = null;
   if (rulesGenerator !== undefined && declared !== undefined) {
     const text = rulesGenerator.render(
       new Map(
@@ -138,7 +142,22 @@ async function snapshot(
     if (text !== undefined) {
       mkdirSync(dirname(join(workspace, rulesGenerator.path)), { recursive: true });
       writeFileSync(join(workspace, rulesGenerator.path), text);
+      rulesSha256 = createHash('sha256').update(text).digest('hex');
     }
+  }
+  // A configured arm's configuration over the rules, as its run copies it (REQ-RUN-11 as amended in 1.50), refused as
+  // the run is when the rules differ from those its record says it was written over.
+  if (source.configuredOf !== undefined) {
+    const configuration = scenario.configurations[source.name];
+    if (configuration === undefined) throw new Error(`${key} holds no configuration for ${source.name}`);
+    if (rulesSha256 !== configuration.record.rules_sha256) {
+      throw new Error(
+        `the ${control.name} arm of ${key}: the project rules its ${source.name} setup generated ` +
+          `(${rulesSha256 ?? 'none'}) differ from those the configuration was written over ` +
+          `(${configuration.record.rules_sha256 ?? 'none'})`,
+      );
+    }
+    cpSync(configuration.dir, workspace, { recursive: true });
   }
 
   const kept = join(generated, source.name);

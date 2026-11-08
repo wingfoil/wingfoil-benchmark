@@ -148,3 +148,10 @@ Feature: Scoring runs with defined, reproducible metrics
     Then every one of their paths is read, and none is measured
     Given a snapshot holding a symbolic link to a file and one to a directory
     Then neither is listed or entered
+
+  @F7.5
+  Scenario: The configuring cost counts once in M-K3, every session's
+    Given S1 1.1's records for "wingfoil-configured": a refused session of 0.10 EUR and a written one of 0.40 EUR
+    When the execution is aggregated
+    Then M-K3 of "wingfoil-configured" and "baseline-docs-configured" on S1 1.1 include 0.50 EUR once
+    And M-K3 of "wingfoil" does not

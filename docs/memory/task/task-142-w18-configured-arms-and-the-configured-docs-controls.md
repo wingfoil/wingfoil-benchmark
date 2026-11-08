@@ -2,7 +2,7 @@
 id: task-142-w18-configured-arms-and-the-configured-docs-controls
 type: task
 title: "W18: configured arms and the configured docs controls"
-status: in-progress
+status: approved
 release: v0.3
 wave: W18
 features: [F7.5]
@@ -19,8 +19,8 @@ acceptance:
     "scoring.feature#The configuring cost counts once in M-K3, every session's",
     "results.feature#A configured arm is compared with its configured docs control",
   ]
-requirements: [REQ-FMT-01, REQ-FMT-04, REQ-FMT-05, REQ-FMT-13, REQ-RUN-03, REQ-RUN-11, REQ-SCO-08, REQ-SCO-14,
-  REQ-RES-09]
+requirements: [REQ-FMT-01, REQ-FMT-04, REQ-FMT-05, REQ-FMT-06, REQ-FMT-13, REQ-RUN-03, REQ-RUN-11, REQ-SCO-08,
+  REQ-SCO-14, REQ-RES-09, REQ-CLI-05, REQ-CLI-14]
 fixes: []
 tags: ["v0.3","w18","f7.5"]
 ---
@@ -114,5 +114,87 @@ first, unless the implementation finds a wording to correct.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- Red first: the ten scenarios went into their `.feature` files with their tests in
+  `test/acceptance/configured-arms.test.ts` (commit `9f44336c`, the six arm directories with them), all failing before
+  the code (`f6cd1fcf`). The unit tests of the edge cases (`test/unit/arms/configured-arm.test.ts`,
+  `test/unit/runner/configured-pins.test.ts`, `test/unit/runner/configured-run.test.ts`, one in
+  `test/unit/cli/configure.test.ts`) came after the code: characterization of it, not red first.
+- Scenario wordings kept as task-138 drafted them. Two scenarios' tests read beyond the drafted text: the setup page of
+  a configured arm is checked on the page `setupHtml` renders for the loaded arm (its base arm's script, manual link and
+  rules), not on a whole site build; M-K3 is checked in two halves, the runner recording the configuration's cost in
+  `run.json` and the aggregate reading it.
+- **Decisions** (requirements 1.54): `run.json` records `configured` (`of`, `records`, `cost_eur`) for a configured
+  arm and a configured docs control, and M-K3 reads it, so that an execution aggregates from its results alone; a dry
+  run of a configured arm or docs control is refused as `validate` refuses a campaign's; `bench scenario configure`
+  refuses a configured arm as `--arm`.
+- **Where the code reads a configured arm as its base arm:** `baseArmOf` (`src/core/arm.ts`) keys the `harnesses`
+  entry (harness coverage, eligibility, the harness build, the estimate's provenance, a dry run's key) and the
+  scenario's base configuration (the run's setup, the docs control's snapshot). `campaignConsistency` accepts a
+  `harnesses` entry for the base of a configured arm the campaign runs, run or not; harness coverage refuses an entry
+  named by the configured arm itself.
+- **History:** a pinned configured arm is read from the newest commit whose two directories digest to the pin, both
+  written under `.cache/arms/<commit>/` (`armFromHistory`); the site's `recordedArm` reads both the same way. The
+  commits searched touch the configured arm or any base an `arm.yaml` of its history names, so a configured arm since
+  removed or rebased still resolves. The site's commits come from separate `commitsTouching` calls, merged: when the
+  arm and its base changed in different commits, the commit it reports among identical matches need not be the newest.
+- **Site:** a configured arm's manual page and recorded manual are its base arm's `manual.md` (REQ-FMT-05 as amended
+  in 1.50); its setup page names the base arm's directory and the configuration's copy; the method page's harness line
+  counts the configured arm's runs under the entry it shares. Checked by a site build of an execution that ran
+  `wingfoil-configured` (`test/unit/site/configured-site.test.ts`).
+- **Guards:** a configured arm whose version holds no configuration fails its run before its workspace is made,
+  rather than running as its base arm; the docs control's snapshot refuses rules other than the record's, as the run
+  does.
+- **Beyond the scope, noted:** the contest form's arm options gained the three configured arms, since a unit test
+  holds them to every harness arm of the repository; asking whether the setup or the configuration is contested stays
+  with the later publishing task. The `execution()` helper of `test/unit/results/aggregate.test.ts` moved to
+  `test/support/aggregate-fixture.ts` (with a version and extra `run.json` fields) to serve the acceptance tests.
+- Characterization (criterion 8): `bench campaign validate` on each of the 13 campaign files (dry-run profiles aside),
+  on main and on the branch, outputs compared by a script: 13 of 13 exit 0 on both, the outputs identical. No existing
+  arm's file changed, so no existing digest.
+- No real-agent session, nothing spent; no scenario version gained a configuration.
+- Full suites at `6878253a`: LINT 0, TEST 0, BUILD 0, BIN 0, DOCKER 0; unit 2291 passed and 10 skipped of 2301, in
+  138 files.
+
+## Review
+
+### Round 1 (a fresh read-only agent, clone `/tmp/claude-1000/review1-t142-*`, at `4f5518e4`)
+
+Main's HEAD and reflog the same before and after (`22fb17c1`).
+
+| Severity   | Finding                                                                                              | Outcome                                                                                                 |
+| ---------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| blocker    | The method page read a configured arm's manual at `arms/<arm>-configured/manual.md`, which never exists: a site build of an execution that ran one failed | The base arm's manual, as recorded; a site build of such an execution tested, failing first             |
+| should-fix | `armFromHistory` and `recordedArm` searched the base's commits only when the working tree still had the configured arm | Every base an `arm.yaml` of the arm's history names; test of a removed configured arm, both readers   |
+| should-fix | Two writers of the same configured arm could race on the base's directory, the loser throwing        | A base already in place, the same commit's, is used                                                     |
+| should-fix | The method page's harness line counted only the base arm's own runs                                  | The configured arm's runs counted; asserted by the site build                                           |
+| should-fix | "Before the setup commit" was checked after it, in the patch double                                 | Read at `commitAll('setup')`; a copy moved after the commit fails the test                              |
+| should-fix | Untested: the dry run's refusal, `recordedArm`'s configured branch, the base digest from the history | Tests added (characterization of the code they test)                                                    |
+| nit        | The setup page named `arms/<arm>-configured/` as the script's directory                              | Names the base arm's, and the configuration's copy                                                      |
+| nit        | `campaignConsistency` accepts a base's `harnesses` entry by the configured arm's name alone          | Left: harness coverage checks it against the arm's definition                                           |
+| nit        | The record's harness version compared as a string, so `v0.3.1` and `0.3.1` differ                   | Left: the record and the campaign pin the same tool by the same profile's spelling                     |
+| nit        | `configuredOfIn` repeated the arm-name pattern                                                       | `ARM_NAME` imported                                                                                     |
+| nit        | Two comment lines over 120 characters                                                                | Wrapped                                                                                                 |
+| nit        | `configured.of` sliced from the name for a configured arm                                            | Its `configuredOf`; a docs control's still from the configured arm's name, as the suffix rule fixes it  |
+
+### Round 2 (a fresh read-only agent, clone `/tmp/claude-1000/review2-t142-*`, at `60aff914`)
+
+Main's HEAD and reflog the same before and after (`22fb17c1`). Every round-1 outcome verified, each fix's test failing
+without it.
+
+| Severity   | Finding                                                                                              | Outcome                                                                                                 |
+| ---------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| should-fix | A `harnesses.<x>` entry passed when `<x>-configured` was a docs control's name: round 1's "harness coverage checks it" did not hold | `validate` refuses an entry no arm reads by its name or as a configured arm's base; test              |
+| should-fix | The loader accepted a configured arm named other than `<base>-configured`, which every reader keys on | Refused, naming `configured_of`; test                                                                   |
+| nit        | The configured arm's directory went into place before its base, so a concurrent reader rewrote it    | The base first                                                                                          |
+| nit        | Three message lines over 120 characters                                                              | Split                                                                                                   |
+
+### Round 3 (a fresh read-only agent, clone `/tmp/claude-1000/review3-t142-*`, at `61279e39`)
+
+Main's HEAD and reflog the same before and after (`22fb17c1`). Every round-2 outcome verified; the 13 campaign files
+validate with the same ids at `22fb17c1` and on the branch. Nits only: no further round.
+
+| Severity | Finding                                                                                                  | Outcome                                                                                             |
+| -------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| nit      | A base directory already in `.cache/arms/<commit>/` is kept unchecked, while a stale arm is replaced     | Left: reachable only by editing the cache, and the pinned digest check still refuses the result     |
+| nit      | `campaignConsistency` checks a base's `harnesses` entry by name, `checkCampaign` by the arms' definitions | A comment on the first names the second                                                             |
+

@@ -107,8 +107,10 @@ export function eligibilityIssues(
   arms: readonly ArmRequirement[],
   register: Register | undefined,
 ): Issue[] {
-  const pinned = arms.flatMap(({ name, requires }) => {
-    const harness = Object.hasOwn(harnesses, name) ? harnesses[name] : undefined;
+  const pinned = arms.flatMap(({ name, requires, configuredOf }) => {
+    // A configured arm's pin is its base arm's entry (REQ-FMT-01 as amended in 1.50).
+    const key = configuredOf ?? name;
+    const harness = Object.hasOwn(harnesses, key) ? harnesses[key] : undefined;
     return requires === undefined || harness === undefined ? [] : [{ arm: name, ...harness }];
   });
   if (pinned.length === 0) return [];

@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync, readlinkSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, readlinkSync } from 'node:fs';
 import { join, posix } from 'node:path';
+import { parse } from 'yaml';
+
+import { ARM_NAME } from '../core/index.js';
 
 /** Where arms live, from the repository root (REQ-FMT-05). */
 const ARMS = 'arms';
@@ -33,12 +36,37 @@ function contentOf({ full, kind }: { full: string; kind: 'file' | 'link' | 'othe
  * ASCII), `<path>\0<sha256 of its content>\n`, the path from the repository root. A symbolic link — which the arm
  * loader refuses wherever it lies (task-139, bug-034) — is hashed by its target, so that it cannot change unseen: the
  * digest has no channel for a refusal, and the loader gives it. A docs control's manual is a copy
- * of baseline-docs' under its own directory (task-067), so its digest covers it.
+ * of baseline-docs' under its own directory (task-067), so its digest covers it. A configured arm's lines are its own
+ * directory's and its base arm's, `arms/<base>/` (REQ-FMT-13 as amended in 1.50, task-142).
  */
 export function armDigest(repoRoot: string, arm: string): string {
+  const file = join(repoRoot, ARMS, arm, 'arm.yaml');
+  const base = existsSync(file) ? configuredOfIn(readFileSync(file, 'utf8')) : undefined;
+  // A configured arm's digest covers its own files and its base arm's (REQ-FMT-13 as amended in 1.50).
+  const dirs = [
+    arm,
+    ...(base === undefined || base === arm || !existsSync(join(repoRoot, ARMS, base)) ? [] : [base]),
+  ];
   return armDigestOf(
-    new Map(entriesUnder(repoRoot, posix.join(ARMS, arm)).map((entry) => [entry.path, contentOf(entry)])),
+    new Map(
+      dirs.flatMap((dir) =>
+        entriesUnder(repoRoot, posix.join(ARMS, dir)).map((entry) => [entry.path, contentOf(entry)] as const),
+      ),
+    ),
   );
+}
+
+/**
+ * The base arm an `arm.yaml`'s text names in `configured_of` (REQ-FMT-05 as amended in 1.50), when it is an arm name;
+ * `undefined` for any other arm, or for a file that does not parse, which the arm loader refuses.
+ */
+export function configuredOfIn(text: string): string | undefined {
+  try {
+    const value = (parse(text) as { configured_of?: unknown } | null)?.configured_of;
+    return typeof value === 'string' && ARM_NAME.test(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

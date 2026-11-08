@@ -180,3 +180,37 @@ Feature: Campaign definition, cost estimate and budget guard
     When the maintainer scores it
     Then its runs are scored but the execution is not aggregated, and it can still be resumed
     And only when the maintainer declares it final is it aggregated, the runs never started listed as not run
+
+  @F7.5
+  Scenario: A configured arm on a version with no configuration is refused
+    Given a campaign that runs "speckit-configured" on S2 1.0
+    When the campaign is validated
+    Then it is refused, naming S2 1.0 and "speckit-configured"
+
+  @F7.5
+  Scenario: A campaign over a configuration place that matches a seed file is refused
+    Given the speckit arm declares configuration "src/**"
+    And the speckit arm is otherwise valid, its state and its constitution's place declared
+    And a campaign that runs "speckit-configured" on S1 1.1
+    When the campaign is validated
+    Then it is refused, naming S1 1.1, "speckit-configured", the glob and the seed file
+
+  @F7.5
+  Scenario: A campaign whose pins differ from the configuration's record is refused
+    Given S1 1.1's record for "wingfoil-configured" pins wingfoil v0.3.1
+    And a campaign that runs "wingfoil-configured" on S1 1.1 with harnesses.wingfoil at v0.3.2
+    When the campaign is validated
+    Then it is refused, naming S1 1.1, "wingfoil-configured" and "harnesses"
+
+  @F7.5
+  Scenario Outline: A campaign whose configurations disagree with their pins is refused
+    Given a campaign that runs "wingfoil-configured" on S1 1.1 and "speckit-configured" on S2 1.1
+    And <difference>
+    When the campaign is validated
+    Then it is refused, naming the scenario, the arm and the field
+
+    Examples:
+      | difference                                                                        |
+      | S1 1.1's record names a base-arm digest the configured arm's pin does not resolve |
+      | the two records carry different prompt SHA-256                                    |
+      | a record's profile SHA-256 is held by no commit                                   |

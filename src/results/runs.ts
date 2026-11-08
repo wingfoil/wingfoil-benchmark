@@ -56,6 +56,7 @@ const storedRunSchema = z.object({
   manual: z.object({ tokens: z.number() }).optional(),
   harness: z.object({ commit: z.string() }).optional(),
   docs_of: z.string().optional(),
+  configured: z.object({ of: z.string(), records: z.number(), cost_eur: z.number() }).optional(),
   expected_failure: z.object({ missing: z.array(z.string()) }).optional(),
   steps: z.array(
     z.object({
@@ -87,6 +88,8 @@ export interface StoredRun {
   readonly harnessCommit?: string;
   /** A docs control's harness arm (REQ-RUN-11, task-068); absent in any other run, and in one stored before it. */
   readonly docsOf?: string;
+  /** What the configuration a configured arm or its docs control read cost, every session's (task-142). */
+  readonly configuredEur?: number;
   /** The capabilities the run's harness lacked (F3.6), when it was marked an expected failure. */
   readonly expectedFailure?: { readonly missing: readonly string[] };
   readonly steps: readonly StoredStep[];
@@ -137,6 +140,7 @@ export function readStoredRun(runDir: string): Result<StoredRun> {
       ...(run.manual === undefined ? {} : { manualTokens: run.manual.tokens }),
       ...(run.harness === undefined ? {} : { harnessCommit: run.harness.commit }),
       ...(run.docs_of === undefined ? {} : { docsOf: run.docs_of }),
+      ...(run.configured === undefined ? {} : { configuredEur: run.configured.cost_eur }),
       ...(run.expected_failure === undefined ? {} : { expectedFailure: run.expected_failure }),
       steps: run.steps.map((step) => ({
         n: step.n,

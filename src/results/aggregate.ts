@@ -475,6 +475,8 @@ interface ScoredRun {
   readonly harnessCommit?: string;
   /** The harness arm a docs control's `run.json` records (task-068). */
   readonly docsOf?: string;
+  /** What the configuration the run read cost (REQ-SCO-08 as amended in 1.50, task-142). */
+  readonly configuredEur?: number;
   readonly score: Score;
 }
 
@@ -584,6 +586,7 @@ function readScored(executionDir: string, runDir: string, campaign: string, exec
     model: run.value.model,
     ...(run.value.harnessCommit === undefined ? {} : { harnessCommit: run.value.harnessCommit }),
     ...(run.value.docsOf === undefined ? {} : { docsOf: run.value.docsOf }),
+    ...(run.value.configuredEur === undefined ? {} : { configuredEur: run.value.configuredEur }),
     score: parsed.value,
   });
 }
@@ -1163,7 +1166,9 @@ function mK3s(grouped: readonly ScoredRun[][]): MK3[] {
       const setup = run.score.cost.setup;
       return setup === undefined || 'not_recorded' in setup ? { name: run.name } : { name: run.name, setupEur: setup.cost_eur };
     });
-    return { scenario: first.scenario, version: first.version, arm: first.arm, ...mK3Of(setups) };
+    // The configuration's cost, recorded once per run that read it (REQ-SCO-08 as amended in 1.50): counted once.
+    const configured = runs.find((run) => run.configuredEur !== undefined)?.configuredEur;
+    return { scenario: first.scenario, version: first.version, arm: first.arm, ...mK3Of(setups, configured) };
   });
 }
 

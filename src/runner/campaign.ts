@@ -9,6 +9,7 @@ import type { Arm, Issue, Result, Scenario } from '../core/index.js';
 import { versionChange } from '../results/index.js';
 import { loadScenario } from '../scenario/index.js';
 
+import { configuredIssues } from './configured-pins.js';
 import { loadPinnedArm, pinnedDigestIssue } from './pinned-arm.js';
 
 /** A valid campaign with every scenario and every arm it names loaded, in the campaign's order. */
@@ -70,6 +71,15 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
     else arms.push(arm.value);
   });
   if (arms.length === campaign.spec.arms.length) {
+    // A `harnesses` entry no arm reads, by its name or as a configured arm's base (REQ-FMT-01 as amended in 1.50).
+    for (const key of Object.keys(campaign.spec.harnesses).sort()) {
+      if (!arms.some((arm) => arm.name === key || arm.configuredOf === key)) {
+        issues.push({
+          path: `harnesses.${key}`,
+          message: "is not one of the campaign's arms, nor the base of a configured one",
+        });
+      }
+    }
     const coverage = harnessCoverage(campaign.spec, arms);
     issues.push(...coverage);
     // Every harness arm pins a tool the eligibility register admits at that version (REQ-FMT-01, F7.4): checked once
@@ -109,6 +119,11 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
             : `the ${source.requires} harness has no docs generator`),
       });
     }
+  }
+  // A configured arm's configuration, and the pins its record holds (REQ-FMT-01 as amended in 1.50): checked once
+  // every scenario and arm loaded, so that a wrong one is reported by its own issue first.
+  if (arms.length === campaign.spec.arms.length && scenarios.length === campaign.spec.scenarios.length) {
+    issues.push(...configuredIssues(campaign.spec, scenarios, arms, campaign.repoRoot));
   }
   return issues.length > 0 ? fail(issues) : ok({ campaign, scenarios, arms });
 }

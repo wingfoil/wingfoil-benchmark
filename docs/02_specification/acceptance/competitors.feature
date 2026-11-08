@@ -116,3 +116,21 @@ Feature: Competitor arms admitted by published criteria and set up under the sam
     Then they are the same as for its LF twin, and the heading's trailing spaces are gone
     Given a directive file whose code fence is left open
     Then rendering it is refused, naming the file
+
+  @F7.5
+  Scenario Outline: A configured arm declares only its name and its base
+    Given "arms/wingfoil-configured/arm.yaml" declares configured_of "<base>" and <extra>
+    When the arm is loaded
+    Then it is refused, naming the field
+
+    Examples:
+      | base               | extra            |
+      | wingfoil           | setup "setup.sh" |
+      | speckit-configured | nothing else     |
+      | baseline           | nothing else     |
+
+  @F7.5
+  Scenario: A configured docs control is generated from the configured arm
+    Given "baseline-docs-configured" declares docs_of "wingfoil-configured"
+    When its environment is generated for S1 1.1
+    Then it renders what baseline-docs renders, read from the configured arm after its setup and copy

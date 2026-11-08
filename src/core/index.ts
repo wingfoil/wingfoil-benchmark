@@ -30,7 +30,7 @@ export type {
   ThirdParty,
   UnchangedCheck,
 } from './scenario.js';
-export { ARM_NAME, armSchema } from './arm.js';
+export { ARM_NAME, armSchema, baseArmOf, CONFIGURED_ARM_FIELDS, configuredArmSchema } from './arm.js';
 export { dependenciesOf, foldText, linesOf, satisfies, satisfiesWords } from './check-text.js';
 export { leakScanSchema } from './leak-scan.js';
 export { fencedLines, hasUnclosedFence, toLf } from './markdown.js';
