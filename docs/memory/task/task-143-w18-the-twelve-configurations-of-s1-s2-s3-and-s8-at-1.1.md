@@ -112,3 +112,10 @@ profile's cap bounds the worst case at 60 EUR; the ceiling proposed below stops 
 - **The note** (criterion 5): `docs/calibration/configuring.md`, its table printed by the new
   `scripts/configuring-reading.mjs` (one unit test, `test/unit/scripts/configuring-reading.test.ts`). The estimate
   was too high: each session cost less than its harness arm's dearest Sonnet 5.5 step.
+- **Blocked by bug-047** (found by the targeted suites, after pre-review was green): `bench scenario validate`
+  refuses S2@1.1 and S8@1.1, whose configurations hold an ordinary word an oracle file quotes as a test group's name
+  (`duplicate`, `identifiers`); `bench scenario configure` scans only the prompt, so the sessions did not see it, and
+  `bench campaign validate` passed. S1@1.1 and S3@1.1 validate. 16 tests of `test/acceptance/scenarios.test.ts` fail:
+  two validate the real 1.1 versions (task-131, task-132), one is the leak scan's (its fixture copies S2@1.1), and
+  thirteen of task-141 run `configure` on copies of S1@1.1 and S8@1.1 that now hold a configuration. The bug is filed
+  (pending, the approver's choice of fix); the configurations stay as written, no session reruns.
