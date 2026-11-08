@@ -145,6 +145,8 @@ red first, unless the implementation finds a wording to correct (recorded in Exe
   `test/bin/bench.test.ts`, which pins the usage text, fixed in `d58760ca`); beside it, `test/unit/campaign`,
   `architecture`, `docs`, `arms`, `agents`, `scenarios` and every acceptance test green.
 - No real-agent session, nothing spent; no scenario version gained a configuration, so no scenario hash changed.
+- Full suites at `db00b495`: LINT 0, TEST 0, BUILD 0, BIN 0, DOCKER 0; unit 2260 passed and 10 skipped of 2270, in
+  133 files.
 
 ## Review
 
