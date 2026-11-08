@@ -13,7 +13,9 @@ import { setupHtml } from '../../src/site/method.js';
 import { escapeHtml } from '../../src/site/render.js';
 import { execution } from '../support/aggregate-fixture.js';
 import {
+  commitAll,
   configuredRepo,
+  FIXTURE_PROMPT,
   PINS,
   sha256,
   writeFixtureConfiguration,
@@ -291,11 +293,13 @@ describe("campaign.feature, a campaign's configured arms (task-142, F7.5)", () =
     const issues = refusal(repo.file);
     // Then it is refused, naming S1 1.1, "wingfoil-configured" and "harnesses"
     expect(issues).toMatch(/harnesses\.wingfoil[^}]*S1@1\.1[^}]*wingfoil-configured[^}]*v0\.3\.1/);
-    // And the campaign at the record's pin passes that check
-    const matching = configuredRepo(['baseline', 'wingfoil-configured'], ['S1@1.1'], [configuration], {
-      harnesses: { wingfoil: { tool: 'wingfoil', version: 'v0.3.1' } },
-    });
-    expect(refusal(matching.file)).not.toMatch(/wingfoil-configured/);
+    // And a campaign at its record's pin validates
+    const matching = configuredRepo(
+      ['baseline', 'wingfoil-configured'],
+      ['S1@1.1'],
+      [{ ...configuration, record: {} }],
+    );
+    expect(refusal(matching.file)).toBe('');
   });
 
   it('@F7.5 A campaign whose configurations disagree with their pins is refused', () => {
@@ -309,32 +313,41 @@ describe("campaign.feature, a campaign's configured arms (task-142, F7.5)", () =
         ['baseline', 'wingfoil-configured', 'speckit-configured'],
         ['S1@1.1', 'S2@1.1'],
       );
-      const write = (record: Record<string, unknown> = {}) => {
+      const changed = changes as Record<string, Record<string, unknown> | undefined>;
+      // A prompt some commit held: two records differ while each is held
+      if (field === 'prompt_sha256') {
+        writeFileSync(join(repo.root, 'configuring', 'prompt.md'), 'another prompt\n');
+        commitAll(repo.root);
+        writeFileSync(join(repo.root, 'configuring', 'prompt.md'), FIXTURE_PROMPT);
+        commitAll(repo.root);
+      }
+      for (const scenario of ['S1@1.1', 'S2@1.1']) {
+        const extra = changed[scenario.slice(0, 2)] ?? {};
         writeFixtureConfiguration(repo.root, {
-          scenario: 'S1@1.1',
+          scenario,
           arm: 'wingfoil-configured',
           files: WINGFOIL_CONFIGURATION,
-          record: { ...(changes as Record<string, Record<string, unknown>>).S1, ...record },
+          record: scenario === 'S1@1.1' ? extra : {},
         });
-        for (const scenario of ['S1@1.1', 'S2@1.1'])
-          writeFixtureConfiguration(repo.root, {
-            scenario,
-            arm: 'speckit-configured',
-            files: { '.specify/memory/constitution.md': '# C\n' },
-            record: {
-              rules_sha256: sha256(generatedConstitution(repo.root, scenario)),
-              ...(scenario === 'S2@1.1' ? (changes as Record<string, Record<string, unknown>>).S2 : {}),
-            },
-          });
-      };
-      write();
+        writeFixtureConfiguration(repo.root, {
+          scenario,
+          arm: 'speckit-configured',
+          files: { '.specify/memory/constitution.md': '# C\n' },
+          record: {
+            rules_sha256: sha256(generatedConstitution(repo.root, scenario)),
+            ...(scenario === 'S2@1.1' ? extra : {}),
+          },
+        });
+      }
       // And <difference>
       // When the campaign is validated
-      const issues = refusal(repo.file);
+      const checked = checkCampaign(repo.file);
       // Then it is refused, naming the scenario, the arm and the field
       const scenario = field === 'prompt_sha256' ? 'S2@1.1' : 'S1@1.1';
       const arm = field === 'prompt_sha256' ? 'speckit-configured' : 'wingfoil-configured';
-      expect(issues).toMatch(new RegExp(`${scenario}[^}]*${arm}[^}]*${field}`));
+      expect(checked.ok, field).toBe(false);
+      for (const issue of checked.ok ? [] : checked.issues)
+        expect(issue.message, field).toMatch(new RegExp(`^${scenario}, ${arm}: [^]*${field}`));
     }
   });
 

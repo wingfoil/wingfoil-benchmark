@@ -122,6 +122,9 @@ const slice = z.strictObject({
   repetitions: z.number().int().min(1),
 });
 
+/** The suffix of a configured arm's name, after its base arm's (experiment design 1.7 §2). */
+const CONFIGURED_ARM_SUFFIX = '-configured';
+
 /** REQ-FMT-01: the campaign file `campaigns/<name>.yaml`. Unknown keys are rejected. */
 export const campaignSchema = z.strictObject({
   harnesses: z.record(z.string(), harness),
@@ -205,7 +208,10 @@ export function campaignConsistency(campaign: CampaignFile): Issue[] {
     issues.push({ path: formatPath(path), message });
 
   for (const arm of Object.keys(campaign.harnesses).sort()) {
-    if (!arms.has(arm)) issue(['harnesses', arm], "is not one of the campaign's arms");
+    // A configured arm's base arm holds its pin, run or not (REQ-FMT-01 as amended in 1.50).
+    if (!arms.has(arm) && !arms.has(`${arm}${CONFIGURED_ARM_SUFFIX}`)) {
+      issue(['harnesses', arm], "is not one of the campaign's arms, nor the base of a configured one");
+    }
   }
   if (campaign.arm_digests !== undefined) {
     for (const arm of Object.keys(campaign.arm_digests).sort()) {
@@ -250,6 +256,8 @@ export interface ArmRequirement {
   readonly name: string;
   /** The harness tool the arm needs; absent for an arm that runs the plain agent. */
   readonly requires?: string;
+  /** A configured arm's base arm, whose `harnesses` entry it shares (REQ-FMT-01 as amended in 1.50). */
+  readonly configuredOf?: string;
 }
 
 /**
@@ -263,8 +271,18 @@ export function harnessCoverage(
   arms: readonly ArmRequirement[],
 ): Issue[] {
   const issues: Issue[] = [];
-  for (const { name, requires } of arms) {
-    const harness = Object.hasOwn(campaign.harnesses, name) ? campaign.harnesses[name] : undefined;
+  for (const { name, requires, configuredOf } of arms) {
+    // A configured arm pins its harness under its base arm's entry, which it shares, and has none of its own
+    // (REQ-FMT-01 as amended in 1.50).
+    if (configuredOf !== undefined && Object.hasOwn(campaign.harnesses, name)) {
+      issues.push({
+        path: formatPath(['harnesses', name]),
+        message: `must not be set: a configured arm shares its base arm's entry, harnesses.${configuredOf}`,
+      });
+      continue;
+    }
+    const key = configuredOf ?? name;
+    const harness = Object.hasOwn(campaign.harnesses, key) ? campaign.harnesses[key] : undefined;
     if (requires === undefined) {
       if (harness !== undefined) {
         issues.push({
@@ -274,13 +292,13 @@ export function harnessCoverage(
       }
     } else if (harness === undefined) {
       issues.push({
-        path: formatPath(['harnesses', name]),
-        message: `is required: the arm requires the harness '${requires}'`,
+        path: formatPath(['harnesses', key]),
+        message: `is required: the arm${configuredOf === undefined ? '' : ` ${name}`} requires the harness '${requires}'`,
       });
     } else if (harness.tool !== requires) {
       issues.push({
-        path: formatPath(['harnesses', name, 'tool']),
-        message: `is '${harness.tool}', but the arm requires '${requires}'`,
+        path: formatPath(['harnesses', key, 'tool']),
+        message: `is '${harness.tool}', but the arm${configuredOf === undefined ? '' : ` ${name}`} requires '${requires}'`,
       });
     }
   }

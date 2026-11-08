@@ -165,13 +165,18 @@ export interface HarnessPin {
  */
 export function harnessKey(
   harnesses: Readonly<Record<string, HarnessPin>>,
-  arms: readonly { readonly name: string; readonly requires?: string; readonly docsOf?: string }[],
+  arms: readonly {
+    readonly name: string;
+    readonly requires?: string;
+    readonly docsOf?: string;
+    readonly configuredOf?: string;
+  }[],
   arm: string,
 ): { harness?: { tool: string; pin: HarnessPin } } {
   const own = arms.find((candidate) => candidate.name === arm);
   const source = own?.docsOf === undefined ? own : arms.find((candidate) => candidate.name === own.docsOf);
   if (source?.requires === undefined) return {};
-  const pinned = harnesses[source.name];
+  const pinned = harnesses[source.configuredOf ?? source.name];
   if (pinned === undefined) return {};
   const pin = { version: pinned.version, ...(pinned.commit === undefined ? {} : { commit: pinned.commit }) };
   return { harness: { tool: source.requires, pin } };

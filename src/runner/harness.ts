@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
 
+import { baseArmOf } from '../core/index.js';
 import type { Arm, CampaignFile, DockerPort, GitPort } from '../core/index.js';
 
 import { hostUser } from './identity.js';
@@ -169,7 +170,8 @@ async function prepare(
   options: HarnessOptions,
 ): Promise<HarnessArtefact> {
   // Checked by the campaign or dry-run check (harness coverage); the guard keeps the type honest.
-  const harness = target.harnesses[arm.name];
+  // A configured arm's pin is its base arm's entry (REQ-FMT-01 as amended in 1.50).
+  const harness = target.harnesses[baseArmOf(arm)];
   if (harness === undefined) throw new Error(`arm ${arm.name} requires '${tool}' and pins no harness`);
   if (Object.hasOwn(REGISTRY_PACKAGES, harness.tool))
     return prepareFromRegistry(tool, harness, target, options);

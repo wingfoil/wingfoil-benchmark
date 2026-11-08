@@ -82,6 +82,18 @@ export const armSchema = z.strictObject({
   state: z.array(placeSchema).optional(),
 });
 
+/**
+ * REQ-FMT-05 as amended in 1.50 (F7.5): a configured arm's `arm.yaml`, its name and the harness arm it runs, nothing
+ * else. Every other field is its base arm's, and declaring one is refused.
+ */
+export const configuredArmSchema = z.strictObject({
+  name: z.string().regex(ARM_NAME, 'must be kebab-case, such as wingfoil-configured'),
+  configured_of: z.string().regex(ARM_NAME, 'must be an arm name'),
+});
+
+/** The fields a configured arm declares. */
+export const CONFIGURED_ARM_FIELDS: readonly string[] = ['name', 'configured_of'];
+
 /** An `arm.yaml` as parsed, with relative paths. */
 export type ArmFile = z.infer<typeof armSchema>;
 
@@ -100,6 +112,11 @@ export interface Arm {
   readonly provides: Readonly<Record<string, boolean>>;
   /** The harness arm a docs control is generated from (REQ-FMT-05 as amended). */
   readonly docsOf?: string;
+  /**
+   * The harness arm a configured arm runs (REQ-FMT-05 as amended in 1.50): every field above is that arm's, {@link dir}
+   * included, and the scenario's configuration for it is copied after its setup (REQ-RUN-03 as amended in 1.50).
+   */
+  readonly configuredOf?: string;
   /** The directives a docs control renders: every role's, labelled, or, absent, the developer's and global ones. */
   readonly docsDirectives?: 'every-role';
   /** The settings that turn the arm's tool's telemetry off, `NAME=value` (REQ-RUN-18). */
@@ -115,4 +132,12 @@ export interface Arm {
    * the commit, and the repository-shaped root it was written under. Absent for an arm read from the working tree.
    */
   readonly from?: { readonly commit: string; readonly root: string };
+}
+
+/**
+ * The arm whose `harnesses` entry and scenario configuration an arm reads (REQ-FMT-01 and REQ-RUN-03 as amended in
+ * 1.50): a configured arm's base arm, any other arm itself.
+ */
+export function baseArmOf(arm: { readonly name: string; readonly configuredOf?: string }): string {
+  return arm.configuredOf ?? arm.name;
 }

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join, posix } from 'node:path';
 
-import { armDigest, armDigestOf } from '../arms/index.js';
+import { armDigest, armDigestOf, configuredOfIn } from '../arms/index.js';
 import type { HistoryPort } from '../core/index.js';
 
 /**
@@ -31,8 +31,22 @@ export async function recordedArm(
   const path = posix.join('arms', arm);
   if (existsSync(join(root, path)) && armDigest(root, arm) === digest)
     return { source: 'tree', dir: join(root, path) };
-  for (const commit of await history.commitsTouching(root, path)) {
-    const files = await history.filesAt(root, commit, path);
+  // A configured arm's digest covers its base arm's files too (REQ-FMT-13 as amended in 1.50, task-142).
+  const treeYaml = join(root, path, 'arm.yaml');
+  const treeBase = existsSync(treeYaml) ? configuredOfIn(readFileSync(treeYaml, 'utf8')) : undefined;
+  const commits = new Set(await history.commitsTouching(root, path));
+  if (treeBase !== undefined) {
+    for (const commit of await history.commitsTouching(root, posix.join('arms', treeBase)))
+      commits.add(commit);
+  }
+  for (const commit of commits) {
+    const own = await history.filesAt(root, commit, path);
+    const yaml = own.get(posix.join(path, 'arm.yaml'));
+    const baseArm = yaml === undefined ? undefined : configuredOfIn(yaml);
+    const files =
+      baseArm === undefined || baseArm === arm
+        ? own
+        : new Map([...own, ...(await history.filesAt(root, commit, posix.join('arms', baseArm)))]);
     if (files.size === 0 || armDigestOf(files) !== digest) continue;
     const base = mkdtempSync(join(tmpdir(), 'bench-recorded-arm-'));
     for (const [file, content] of files) {

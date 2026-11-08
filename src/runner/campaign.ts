@@ -9,6 +9,7 @@ import type { Arm, Issue, Result, Scenario } from '../core/index.js';
 import { versionChange } from '../results/index.js';
 import { loadScenario } from '../scenario/index.js';
 
+import { configuredIssues } from './configured-pins.js';
 import { loadPinnedArm, pinnedDigestIssue } from './pinned-arm.js';
 
 /** A valid campaign with every scenario and every arm it names loaded, in the campaign's order. */
@@ -109,6 +110,11 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
             : `the ${source.requires} harness has no docs generator`),
       });
     }
+  }
+  // A configured arm's configuration, and the pins its record holds (REQ-FMT-01 as amended in 1.50): checked once
+  // every scenario and arm loaded, so that a wrong one is reported by its own issue first.
+  if (arms.length === campaign.spec.arms.length && scenarios.length === campaign.spec.scenarios.length) {
+    issues.push(...configuredIssues(campaign.spec, scenarios, arms, campaign.repoRoot));
   }
   return issues.length > 0 ? fail(issues) : ok({ campaign, scenarios, arms });
 }

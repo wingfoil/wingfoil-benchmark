@@ -121,6 +121,15 @@ export function checkConfigure(
     return fail([{ path: '--arm', message: `${request.arm}: ${why}` }]);
   }
   const arm = loaded.value;
+  // A configured arm runs a configuration; its harness arm is the one configured (REQ-CLI-14, task-142).
+  if (arm.configuredOf !== undefined) {
+    return fail([
+      {
+        path: '--arm',
+        message: `${arm.name} is a configured arm: configure its harness arm, ${arm.configuredOf}`,
+      },
+    ]);
+  }
   if (arm.requires === undefined) {
     return fail([
       {

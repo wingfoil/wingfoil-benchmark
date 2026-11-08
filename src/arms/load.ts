@@ -1,7 +1,16 @@
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
-import { armSchema, fail, matchesGlob, ok, parseWith, readYamlFile } from '../core/index.js';
+import {
+  armSchema,
+  CONFIGURED_ARM_FIELDS,
+  configuredArmSchema,
+  fail,
+  matchesGlob,
+  ok,
+  parseWith,
+  readYamlFile,
+} from '../core/index.js';
 import type { Arm, ArmFile, Issue, Result } from '../core/index.js';
 import { isConfigurationPath, MANUAL_PATHS } from './places.js';
 import { rulesPlaceOf } from './rules.js';
@@ -29,6 +38,9 @@ export function loadArm(armsRoot: string, name: string): Result<Arm> {
   const dir = resolve(armsRoot, name);
   const read = readYamlFile(join(dir, ARM_FILE));
   if (!read.ok) return read;
+  if (typeof read.value === 'object' && read.value !== null && 'configured_of' in read.value) {
+    return loadConfiguredArm(armsRoot, name, read.value);
+  }
   const parsed = parseWith(armSchema, read.value, ARM_FILE);
   if (!parsed.ok) return parsed;
 
@@ -42,7 +54,12 @@ export function loadArm(armsRoot: string, name: string): Result<Arm> {
     ]);
   }
   // Only the wingfoil arm's docs generator reads the choice (review round 1): elsewhere it would move a digest alone.
-  if (spec.docs_directives !== undefined && spec.docs_of !== 'wingfoil') {
+  // A configured docs control of wingfoil's chooses as baseline-docs does (REQ-FMT-05 as amended in 1.50).
+  if (
+    spec.docs_directives !== undefined &&
+    spec.docs_of !== 'wingfoil' &&
+    spec.docs_of !== 'wingfoil-configured'
+  ) {
     return fail([
       { path: 'docs_directives', message: 'only a docs control of the wingfoil arm chooses its directives' },
     ]);
@@ -65,6 +82,45 @@ export function loadArm(armsRoot: string, name: string): Result<Arm> {
   }
   if (issues.length === 0 && spec.mcp !== undefined) issues.push(...jsonIssues(spec.mcp, dir));
   return issues.length > 0 ? fail(issues) : ok(toArm(spec, dir));
+}
+
+/**
+ * A configured arm (REQ-FMT-05 as amended in 1.50): `name` and `configured_of` only, every other field refused by
+ * name; the arm it names a harness arm (one that requires a tool) and not itself a configured arm. Loaded, it is that
+ * arm under its own name, with `configuredOf` naming it: its setup, manual and MCP configuration are the base arm's
+ * files, read where they are. Its own directory holds no link either (task-139).
+ */
+function loadConfiguredArm(armsRoot: string, name: string, data: object): Result<Arm> {
+  const extra = Object.keys(data).filter((key) => !CONFIGURED_ARM_FIELDS.includes(key));
+  if (extra.length > 0) {
+    return fail(
+      extra.sort().map((key) => ({
+        path: key,
+        message: "is the base arm's: a configured arm declares only its name and configured_of",
+      })),
+    );
+  }
+  const parsed = parseWith(configuredArmSchema, data, ARM_FILE);
+  if (!parsed.ok) return parsed;
+  const spec = parsed.value;
+  if (spec.name !== name) {
+    return fail([{ path: 'name', message: `'${spec.name}' differs from its directory '${name}'` }]);
+  }
+  const links = linksIn(resolve(armsRoot, name));
+  if (links.length > 0)
+    return fail(links.map((link) => ({ path: link, message: `'${link}' is a symbolic link` })));
+  const base = spec.configured_of;
+  const refused = (message: string): Result<Arm> =>
+    fail([{ path: 'configured_of', message: `'${base}' ${message}` }]);
+  if (base === name || !existsSync(join(armsRoot, base, ARM_FILE)))
+    return refused('is not an arm under arms/');
+  const loaded = loadArm(armsRoot, base);
+  if (!loaded.ok) {
+    return fail(loaded.issues.map((issue) => ({ ...issue, message: `${issue.message} (in ${base})` })));
+  }
+  if (loaded.value.configuredOf !== undefined) return refused('is a configured arm: name its harness arm');
+  if (loaded.value.requires === undefined) return refused('is not a harness arm: it requires no tool');
+  return ok({ ...loaded.value, name, configuredOf: base });
 }
 
 /**

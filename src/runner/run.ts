@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -16,6 +17,7 @@ import type { AgentPort, ModelsUsage, SessionUsage, StepOutcome } from '../agent
 import {
   approverPolicy,
   approximateTokens,
+  baseArmOf,
   classifyStep,
   fail,
   ok,
@@ -28,6 +30,7 @@ import type {
   ApproverPolicy,
   Arm,
   CampaignFile,
+  Configuration,
   DockerPort,
   GitPort,
   InterventionKind,
@@ -43,7 +46,7 @@ import {
 } from '../results/index.js';
 import type { ExecutionRecord, StopReason } from '../results/index.js';
 import { armDigest, missingCapabilities, RULES_SOURCE_ARM, rulesGeneratorOf } from '../arms/index.js';
-import { prepareWorkspace, releaseOf } from '../scenario/index.js';
+import { CONFIGURED_SUFFIX, prepareWorkspace, releaseOf } from '../scenario/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
 import { campaignKeys, keyName } from './estimate.js';
@@ -200,6 +203,16 @@ export interface ManualRecord {
   readonly tokens: number;
 }
 
+/** What a run records of the configuration it read (REQ-SCO-08 as amended in 1.50, task-142). */
+export interface ConfiguredOfRun {
+  /** The configured arm's base arm. */
+  readonly of: string;
+  /** How many sessions' records the configuration holds, refused, killed and replaced ones included. */
+  readonly records: number;
+  /** Their `cost_eur`, summed: what writing the configuration cost. */
+  readonly cost_eur: number;
+}
+
 /** One executed run: one scenario, in one arm, with one model, once. */
 export interface RunResult {
   readonly scenario: string;
@@ -226,6 +239,11 @@ export interface RunResult {
   readonly telemetryOff?: readonly string[];
   /** A docs control's harness arm (REQ-RUN-11), which the aggregate pairs it with (REQ-SCO-14, task-068). */
   readonly docsOf?: string;
+  /**
+   * The configuration a configured arm or its configured docs control reads (REQ-FMT-04 as amended in 1.50): its base
+   * arm, and every session's record and cost, M-K3's one-off part (REQ-SCO-08 as amended in 1.50).
+   */
+  readonly configured?: ConfiguredOfRun;
   /** What the arm's harness was taken to provide (REQ-FMT-10), for an arm that requires one. */
   readonly provides?: Readonly<Record<string, boolean>>;
   /** The scenario's capabilities the harness lacks (F3.6): the run is executed and scored, and marked. */
@@ -896,10 +914,16 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
   const { harness } = context;
   // Decided before anything runs, from the scenario and the arm alone (F3.6, task-030).
   const missing = missingCapabilities(scenario, arm);
+  // The configuration a configured arm, or a docs control of one, reads (REQ-FMT-04 as amended in 1.50).
+  const reads = arm.configuredOf === undefined ? arm.docsOf : arm.name;
+  const configuration = reads === undefined ? undefined : scenario.configurations[reads];
   const identity = {
     armDigest: context.armDigest,
     ...(arm.telemetryOff === undefined ? {} : { telemetryOff: arm.telemetryOff }),
     ...(arm.docsOf === undefined ? {} : { docsOf: arm.docsOf }),
+    ...(configuration === undefined || reads === undefined
+      ? {}
+      : { configured: configuredOfRun(reads, configuration) }),
     ...(harness === undefined ? {} : { harness }),
     ...(arm.requires === undefined ? {} : { provides: arm.provides }),
     ...(missing.length === 0 ? {} : { expectedFailure: { missing } }),
@@ -952,6 +976,10 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
               `docker rm --force ${containerName}`,
       );
     }
+    // The campaign's check refuses it; the guard keeps a configured arm from running as its base arm by another path.
+    if (arm.configuredOf !== undefined && configuration === undefined) {
+      throw new Error(`${scenario.id}@${scenario.version} holds no configuration for ${arm.name}`);
+    }
     await prepareWorkspace(workspace, scenario, options.git);
     // Every stored patch runs from one snapshot's tree to the next (task-027, bug-007).
     const seedTree = await options.git.tree(workspace, 'HEAD');
@@ -972,9 +1000,15 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
         outputDir,
         seedTree,
         ...(harness === undefined ? {} : { harness: harness.installed }),
-        ...(scenario.armDirs[arm.name] === undefined ? {} : { scenarioDir: scenario.armDirs[arm.name] }),
+        // A configured arm's setup gets its base arm's configuration (REQ-RUN-03 as amended in 1.50).
+        ...(scenario.armDirs[baseArmOf(arm)] === undefined
+          ? {}
+          : { scenarioDir: scenario.armDirs[baseArmOf(arm)] }),
         ...(context.projectRules === undefined ? {} : { projectRules: context.projectRules }),
         rulesSource: scenario.armDirs[RULES_SOURCE_ARM],
+        ...(arm.configuredOf === undefined || configuration === undefined
+          ? {}
+          : { configuration: { dir: configuration.dir, rulesSha256: configuration.record.rules_sha256 } }),
         manualFile: profile.manualFile,
         agent: agentIdentityFor(scenario),
       },
@@ -1069,6 +1103,11 @@ export interface SetupContext {
   readonly projectRules?: string;
   /** Where the scenario declares its project rules (dl-005: the wingfoil arm's configuration), for a generator. */
   readonly rulesSource?: string | undefined;
+  /**
+   * A configured arm's configuration (REQ-RUN-03 as amended in 1.50): copied over the workspace after the project
+   * rules, before the setup commit; `rulesSha256` the rules its record says it was written over.
+   */
+  readonly configuration?: { readonly dir: string; readonly rulesSha256: string | null };
   /** Where the manual goes in the workspace: the agent's own file (REQ-RUN-12 as amended in 1.32). */
   readonly manualFile: string;
   /** The agent's identity for the scenario (task-118): a developer's when it has a separate approver. */
@@ -1123,6 +1162,18 @@ export async function executeSetup(
     projectRules === undefined
       ? generateRules(arm, rulesSource, workspace, outputDir)
       : createHash('sha256').update(readFileSync(projectRules)).digest('hex');
+  // A configuration over the rules it was written over, and only those (REQ-RUN-03 as amended in 1.50).
+  if (context.configuration !== undefined) {
+    const { dir, rulesSha256 } = context.configuration;
+    if ((generatedSha256 ?? null) !== rulesSha256) {
+      throw new Error(
+        `arm ${arm.name}: the project rules the setup generated (${generatedSha256 ?? 'none'}) differ from those ` +
+          `its configuration was written over (${rulesSha256 ?? 'none'}): the configuration was written over ` +
+          'other rules',
+      );
+    }
+    cpSync(dir, workspace, { recursive: true });
+  }
 
   await options.git.commitAll(workspace, SETUP_COMMIT, { allowEmpty: true });
   const commit = await options.git.head(workspace);
@@ -1902,6 +1953,7 @@ function record(run: RunResult, plan: RunPlan): RunResult {
         arm_source: armSourceOf(plan, run.arm),
         ...(run.telemetryOff === undefined ? {} : { telemetry_off: run.telemetryOff }),
         ...(run.docsOf === undefined ? {} : { docs_of: run.docsOf }),
+        ...(run.configured === undefined ? {} : { configured: run.configured }),
         model: run.model,
         // The effort the model ran at (dl-015), `none` included; absent when nothing was pinned.
         ...(agent.effort?.[run.model] === undefined ? {} : { effort: agent.effort[run.model] }),
@@ -2109,4 +2161,14 @@ function hookAnswer(stdout: string): { outcome?: string; target?: string; detail
   } catch {
     return {};
   }
+}
+
+/** What a run records of `configuration`, the one the configured arm `configured` names (REQ-SCO-08 as amended in 1.50). */
+function configuredOfRun(configured: string, configuration: Configuration): ConfiguredOfRun {
+  const cost = configuration.records.reduce((sum, record) => sum + record.cost_eur, 0);
+  return {
+    of: configured.slice(0, -CONFIGURED_SUFFIX.length),
+    records: configuration.records.length,
+    cost_eur: Math.round(cost * 1e6) / 1e6,
+  };
 }
