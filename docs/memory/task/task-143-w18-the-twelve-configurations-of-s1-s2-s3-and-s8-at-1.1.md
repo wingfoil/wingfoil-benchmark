@@ -96,3 +96,19 @@ profile's cap bounds the worst case at 60 EUR; the ceiling proposed below stops 
   the agent's own writing, from the README's "follow the published standards it implements" and the project's name;
   the container held no prompt, and the leak scan (prompts, oracle, hold-out) passed. Recorded for the review, not a
   leak by construction; the other eleven sessions started after it.
+- **The other eleven** (2026-11-08, 22:27–23:18, behind the load gate): every one written; the twelve records sum to
+  **0.7237 EUR of the 15 EUR ceiling** (the launching script's last line, and `scripts/configuring-reading.mjs`). No
+  session needed a retry; the guard never stopped. Committed at `7fa3bc70` (criteria 1 and 2).
+- **Read** (criterion 4): every configuration wrote only its harness's places: `.wingfoil/` (`dna.yaml`,
+  `roles.yaml`, one or two custom directives), `.specify/memory/constitution.md` (the template's placeholders all
+  replaced), `openspec/config.yaml` (`context` and per-artifact `rules` over the commented examples). S8's wingfoil
+  configuration kept r1–r4 and every assignment of its 1.1's own `roles.yaml`. No configuration line equals a line of
+  its version's step prompts or oracle that the seed does not also hold (a scratchpad check, 0 in all twelve). The
+  differences from the defaults are in the note's §3, for the method page's task.
+- **Validated** (criterion 3): a scratch campaign (never committed) on S1, S2, S3 and S8 at 1.1 with the baseline, the
+  three configured arms and the three configured docs controls, the three harnesses pinned as the profile, passes
+  `bench campaign validate` (exit 0). Characterization: the 13 campaign files validate on main and on the branch with
+  identical output (13 of 13).
+- **The note** (criterion 5): `docs/calibration/configuring.md`, its table printed by the new
+  `scripts/configuring-reading.mjs` (one unit test, `test/unit/scripts/configuring-reading.test.ts`). The estimate
+  was too high: each session cost less than its harness arm's dearest Sonnet 5.5 step.
