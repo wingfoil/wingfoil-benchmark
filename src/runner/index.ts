@@ -2,6 +2,8 @@ export { checkCampaign } from './campaign.js';
 export type { CheckedCampaign } from './campaign.js';
 export { checkResume, runCampaign, runsLeftToResume } from './run.js';
 export type { RunnerOptions, RunResult, RunSummary } from './run.js';
+export { checkConfigure, configuredName, runConfigure } from './configure.js';
+export type { CheckedConfigure, ConfigureRequest, ConfigureSummary } from './configure.js';
 export { checkDryRun, runDryRun } from './dry-run.js';
 export type { CheckedDryRun, DryRunRequest } from './dry-run.js';
 export type { RunPins } from './run.js';

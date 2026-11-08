@@ -22,7 +22,7 @@ import { checkCampaign, runCampaign } from '../../src/runner/index.js';
 import { latestDryRun } from '../../src/results/index.js';
 import { loadScenario, oracleLiterals } from '../../src/scenario/index.js';
 import { writeArmsNamed } from '../support/arm-fixture.js';
-import { writeConfiguration } from '../support/configured-fixture.js';
+import { configuredRecord, writeConfiguration } from '../support/configured-fixture.js';
 import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
 import { writeDryRunProfile, writeStoredDryRun } from '../support/dry-run-fixture.js';
 import {
@@ -886,7 +886,7 @@ describe('bench scenario configure and the configuring session (task-141, F7.5)'
     };
     const dna = (members: string) =>
       (SETUP_FILES.wingfoil?.['.wingfoil/dna.yaml'] ?? '').replace(
-        /  members:\n[\s\S]*?  roles:/,
+        / {2}members:\n[\s\S]*? {2}roles:/,
         `  members:\n${members}  roles:`,
       );
     const rows: { writes: string; act: (workspace: string) => void; path: string }[] = [
@@ -1170,7 +1170,9 @@ describe('bench scenario configure and the configuring session (task-141, F7.5)'
     const dir = versionDir(root, 'S1@1.1');
     // Given S1 1.1 holds a configuration for "wingfoil-configured"
     const earlier = { '.wingfoil/directives/custom/r9.md': '# Rule\n' };
-    writeConfiguration(dir, 'wingfoil-configured', earlier);
+    writeConfiguration(dir, 'wingfoil-configured', earlier, [
+      configuredRecord(earlier, { date: '2026-11-01T10:00:00Z' }),
+    ]);
     const patch = readFileSync(join(dir, 'configured', 'wingfoil-configured.patch'), 'utf8');
     const ports = configurePorts('wingfoil', {
       session: (workspace) => writeFiles(workspace, { 'src/helpers.ts': 'export {};\n' }),

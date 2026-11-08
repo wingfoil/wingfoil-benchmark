@@ -53,6 +53,17 @@ export interface CommitAuthors {
   readonly committerEmail: string;
 }
 
+/**
+ * One path two commits differ by (task-141): `A` added, `M` modified, `D` deleted, `T` its type changed; `mode` its
+ * mode in the later commit (`120000` a symbolic link, `160000` a submodule, `000000` once deleted). A rename is a
+ * deletion and an addition.
+ */
+export interface TreeChange {
+  readonly status: 'A' | 'M' | 'D' | 'T';
+  readonly path: string;
+  readonly mode: string;
+}
+
 /** REQ-ARC-04: git behind one interface. */
 export interface GitPort {
   init(directory: string): Promise<void>;
@@ -99,6 +110,11 @@ export interface GitPort {
   resolveCommit(repository: string, rev: string): Promise<string | undefined>;
   /** Writes commit `sha` of `repository` as a tar file `file`: its tree only, from the object store. */
   archive(repository: string, sha: string, file: string): Promise<void>;
+  /**
+   * Every path commits `from` and `to` differ by, in git's path order (REQ-RUN-20, task-141): what a configuring
+   * session added, changed or deleted since the setup commit.
+   */
+  changesBetween(directory: string, from: string, to: string): Promise<TreeChange[]>;
 }
 
 /** The git port that calls the `git` command line. */
@@ -153,6 +169,18 @@ export function gitCli(process: ProcessPort): GitPort {
     },
     archive: async (repository, sha, file) => {
       await git(repository, ['archive', '--format=tar', `--output=${file}`, sha]);
+    },
+    changesBetween: async (directory, from, to) => {
+      // NUL-separated: `:<old mode> <new mode> <old id> <new id> <status>` then the path, whatever it holds.
+      const fields = (
+        await git(directory, ['diff', '--raw', '--no-renames', '--no-abbrev', '-z', from, to])
+      ).split('\0');
+      const changes: TreeChange[] = [];
+      for (let index = 0; index + 1 < fields.length; index += 2) {
+        const [, mode = '', , , status = ''] = (fields[index] as string).slice(1).split(' ');
+        changes.push({ status: status as TreeChange['status'], path: fields[index + 1] as string, mode });
+      }
+      return changes;
     },
   };
 }

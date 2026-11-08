@@ -54,7 +54,7 @@ describe('recordedHashes (REQ-FMT-09)', () => {
 });
 
 describe('runsOfVersion (REQ-FMT-04 as amended in 1.50, task-141)', () => {
-  it("lists every run of a version under results/, a dry run's and an earlier attempt's included, in path order", () => {
+  it("lists every run of a version under results/, a dry run's and an attempt's included, in path order", () => {
     const root = tempDir('bench-results-');
     const dry = run(root, 'dry-runs/3/runs/S1@1.1/wingfoil/m/r1', { scenario: 'S1', version: '1.1' });
     const campaign = run(root, 'c1/1/runs/S1@1.1/baseline/m/r1', { scenario: 'S1', version: '1.1' });

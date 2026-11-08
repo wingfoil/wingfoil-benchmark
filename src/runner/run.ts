@@ -336,7 +336,7 @@ const NO_USAGE: SessionUsage = {
  */
 
 /** A step that was not started: nothing was left of the run's cost cap (task-024). */
-const CAP_REACHED = 'cap reached';
+export const CAP_REACHED = 'cap reached';
 
 /** `timeout`'s exit code when it stopped the command, and the one when it had to kill it. */
 const TIMED_OUT = 124;
@@ -685,12 +685,7 @@ async function executeRuns(
   const armDigests = new Map(
     plan.arms.map((arm) => [arm.name, armDigest(arm.from?.root ?? plan.repoRoot, arm.name)]),
   );
-  await options.docker.build({
-    dockerfile: join(packageRoot(), RUN_IMAGE_DIRECTORY, 'Dockerfile'),
-    context: join(packageRoot(), RUN_IMAGE_DIRECTORY),
-    tag: plan.id,
-    buildArgs: { AGENT_NAME: plan.pins.agent.name, AGENT_VERSION: plan.pins.agent.version },
-  });
+  await buildRunImage(plan.id, plan.pins.agent, options);
   // Every harness before any run: an arm never runs without the one it requires (REQ-RUN-14).
   const harnesses = await prepareHarnesses(
     { id: plan.id, repoRoot: plan.repoRoot, arms: plan.arms, harnesses: plan.pins.harnesses },
@@ -808,6 +803,89 @@ interface RunContext {
   readonly attempts: number;
 }
 
+/**
+ * The run image tagged `tag` (REQ-RUN-01): the same Dockerfile for every execution, with the agent's name and version
+ * its only arguments, so that a configuring session runs in the image a campaign with the same agent builds
+ * (REQ-RUN-20).
+ */
+export async function buildRunImage(
+  tag: string,
+  agent: Pick<RunPins['agent'], 'name' | 'version'>,
+  options: Pick<RunnerOptions, 'docker'>,
+): Promise<void> {
+  await options.docker.build({
+    dockerfile: join(packageRoot(), RUN_IMAGE_DIRECTORY, 'Dockerfile'),
+    context: join(packageRoot(), RUN_IMAGE_DIRECTORY),
+    tag,
+    buildArgs: { AGENT_NAME: agent.name, AGENT_VERSION: agent.version },
+  });
+}
+
+/** What a run's container is made from: its image and name, the workspace it mounts, its arm and its agent. */
+export interface ContainerRequest {
+  readonly image: string;
+  readonly name: string;
+  readonly workspace: string;
+  readonly arm: Arm;
+  readonly agentName: string;
+  /**
+   * Whether the arm's MCP server reaches an agent that reads it from its own configuration (dl-025, task-105); a
+   * configuring session attaches none (REQ-RUN-20).
+   */
+  readonly mcp: boolean;
+}
+
+/**
+ * Create and start a run's container (REQ-RUN-02): the arm's telemetry settings, the agent's environment and the
+ * credential; the workspace its only mount besides the credential file, checked against Docker; then the agent's own
+ * files, before the arm's setup, so that the setup's commit never holds them. `created` hears the container as soon
+ * as it exists, so that an interrupt can remove it.
+ */
+export async function openContainer(
+  request: ContainerRequest,
+  options: RunnerOptions,
+  created: (container: string) => void,
+): Promise<string> {
+  const { arm, workspace } = request;
+  const profile = agentProfile(request.agentName);
+  const credentialMount =
+    options.credentialFile === undefined || profile.credentialTarget === undefined
+      ? undefined
+      : { source: options.credentialFile, target: profile.credentialTarget };
+  const container = await options.docker.create({
+    image: request.image,
+    name: request.name,
+    workspace,
+    user: CONTAINER_USER,
+    // The arm's telemetry settings (REQ-RUN-18), then the credential: the runner's names win over an arm's.
+    env: { ...telemetryEnvironment(arm), ...profile.environment, ...options.containerEnv },
+    // The credential file (dl-019), the one mount besides the workspace, read-write as Codex refreshes it.
+    ...(credentialMount === undefined ? {} : { mounts: [credentialMount] }),
+  });
+  created(container);
+  await assertOnlyWorkspaceMounted(container, workspace, credentialMount, options);
+  await options.docker.start(container);
+  // The agent's own files (Codex's config.toml), before the arm's setup, so that the setup's commit never holds them.
+  for (const file of profile.files) {
+    // An agent that reads its MCP servers from its own configuration gets the arm's there (dl-025, task-105).
+    const content =
+      request.mcp && file.path === profile.mcpInConfig && arm.mcpPath !== undefined
+        ? `${file.content}\n${codexMcpServers(JSON.parse(readFileSync(arm.mcpPath, 'utf8')) as unknown)}`
+        : file.content;
+    const written = await options.docker.exec(container, [
+      'sh',
+      '-c',
+      'printf "%s" "$1" > "$2"',
+      'sh',
+      content,
+      file.path,
+    ]);
+    if (written.code !== 0)
+      throw new Error(`could not write ${file.path} in the container: ${written.stderr.trim()}`);
+  }
+  return container;
+}
+
 /** One run: its own workspace, its own container, removed whatever happens. */
 async function executeRun(context: RunContext, options: RunnerOptions): Promise<RunResult> {
   const { plan, scenario, arm, model, repetition, execution, resultsDir } = context;
@@ -861,10 +939,6 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     }
     const containerName = `${containerPrefix(plan.id)}${execution}-${name.replaceAll(/[@/]/g, '-')}`;
     const profile = agentProfile(plan.pins.agent.name);
-    const credentialMount =
-      options.credentialFile === undefined || profile.credentialTarget === undefined
-        ? undefined
-        : { source: options.credentialFile, target: profile.credentialTarget };
     const stale = context.leftovers.get(containerName);
     // Reported, never removed: the runner does not destroy what this run did not create (bug-003,
     // approver's choice). The campaign goes on to its next run (REQ-NFR-03).
@@ -881,38 +955,15 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     await prepareWorkspace(workspace, scenario, options.git);
     // Every stored patch runs from one snapshot's tree to the next (task-027, bug-007).
     const seedTree = await options.git.tree(workspace, 'HEAD');
-    container = await options.docker.create({
-      image: plan.id,
-      name: containerName,
-      workspace,
-      user: CONTAINER_USER,
-      // The arm's telemetry settings (REQ-RUN-18), then the credential: the runner's names win over an arm's.
-      env: { ...telemetryEnvironment(arm), ...profile.environment, ...options.containerEnv },
-      // The credential file (dl-019), the one mount besides the workspace, read-write as Codex refreshes it.
-      ...(credentialMount === undefined ? {} : { mounts: [credentialMount] }),
-    });
-    options.signal?.addEventListener('abort', kill, { once: true });
-    if (interrupted()) kill();
-    await assertOnlyWorkspaceMounted(container, workspace, credentialMount, options);
-    await options.docker.start(container);
-    // The agent's own files (Codex's config.toml), before the arm's setup, so that the setup's commit never holds them.
-    for (const file of profile.files) {
-      // An agent that reads its MCP servers from its own configuration gets the arm's there (dl-025, task-105).
-      const content =
-        file.path === profile.mcpInConfig && arm.mcpPath !== undefined
-          ? `${file.content}\n${codexMcpServers(JSON.parse(readFileSync(arm.mcpPath, 'utf8')) as unknown)}`
-          : file.content;
-      const written = await options.docker.exec(container, [
-        'sh',
-        '-c',
-        'printf "%s" "$1" > "$2"',
-        'sh',
-        content,
-        file.path,
-      ]);
-      if (written.code !== 0)
-        throw new Error(`could not write ${file.path} in the container: ${written.stderr.trim()}`);
-    }
+    container = await openContainer(
+      { image: plan.id, name: containerName, workspace, arm, agentName: plan.pins.agent.name, mcp: true },
+      options,
+      (made) => {
+        container = made;
+        options.signal?.addEventListener('abort', kill, { once: true });
+        if (interrupted()) kill();
+      },
+    );
     setup = await executeSetup(
       arm,
       {
@@ -1004,7 +1055,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
 }
 
 /** Where a run's setup happens: its container, its workspace, and where its output goes. */
-interface SetupContext {
+export interface SetupContext {
   readonly container: string;
   readonly workspace: string;
   readonly outputDir: string;
@@ -1032,7 +1083,11 @@ interface SetupContext {
  * patch holds only what the agent did. A failing script is reported by its exit code, and nothing is
  * committed after it.
  */
-async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOptions): Promise<SetupResult> {
+export async function executeSetup(
+  arm: Arm,
+  context: SetupContext,
+  options: RunnerOptions,
+): Promise<SetupResult> {
   const { container, workspace, outputDir, seedTree, harness, scenarioDir, projectRules, rulesSource } =
     context;
   await options.git.configureIdentity(workspace, context.agent.name, context.agent.email);
@@ -1150,7 +1205,7 @@ function measure(text: string): ManualRecord {
 }
 
 /** Why a run failed in its setup: the exit code, and the last lines the script wrote to its log. */
-function setupFailure(arm: Arm, code: number, outputDir: string): string {
+export function setupFailure(arm: Arm, code: number, outputDir: string): string {
   const log = readFileSync(join(outputDir, 'setup', 'log.txt'), 'utf8')
     .trimEnd()
     .split('\n');
@@ -1158,19 +1213,26 @@ function setupFailure(arm: Arm, code: number, outputDir: string): string {
   return `the setup of arm ${arm.name} failed with code ${code}${tail === '' ? '' : `: ${tail}`}`;
 }
 
+/** What a step reads of its pins: its agent, its caps and its currency (a configuring profile has no policy). */
+export type StepPins = Pick<RunPins, 'agent' | 'caps' | 'currency'>;
+
 /** What one step needs: where it runs, where its snapshot goes, what it is asked, and by what policy. */
-interface StepContext {
+export interface StepContext {
   readonly container: string;
   readonly workspace: string;
   readonly outputDir: string;
   readonly scenario: Scenario;
   readonly model: string;
-  readonly policy: ApproverPolicy;
+  /**
+   * The neutral approver's policy (REQ-RUN-07); absent, nothing the session says is answered: a configuring session
+   * has its one prompt only (REQ-RUN-20).
+   */
+  readonly policy?: ApproverPolicy;
   /** The run's arm: its verdict hook carries a scripted verdict out (task-118). */
   readonly arm: Arm;
   /** What the run's finished steps have spent, in EUR. */
   readonly spent: number;
-  readonly pins: RunPins;
+  readonly pins: StepPins;
   /** The tree of the snapshot before this step — the setup's, or the previous step's — its patch starts from. */
   readonly previousTree: string;
   /** The commit of that snapshot: the step's own commits are those made after it (task-035). */
@@ -1183,7 +1245,10 @@ interface StepContext {
  * What a set of steps has spent, in EUR, as the budget counts it: what each reported, or, for a step
  * killed before it could report (task-024), the most it can have cost.
  */
-function spentEur(steps: readonly Pick<StepResult, 'usage' | 'costBoundUsd'>[], pins: RunPins): number {
+export function spentEur(
+  steps: readonly Pick<StepResult, 'usage' | 'costBoundUsd'>[],
+  pins: Pick<RunPins, 'currency'>,
+): number {
   return steps.reduce(
     (total, step) =>
       total + Math.max(step.usage.costEur, (step.costBoundUsd ?? 0) * pins.currency.usd_to_eur),
@@ -1196,7 +1261,7 @@ function spentEur(steps: readonly Pick<StepResult, 'usage' | 'costBoundUsd'>[], 
  * **and** the current step's invocations so far, or a resume would be offered the whole cap again —
  * converted with the campaign's rate. Enforcing it is F1.3 (W5); W2 only tells the agent what it is.
  */
-function remaining(pins: RunPins, spent: number): number {
+function remaining(pins: Pick<RunPins, 'caps' | 'currency'>, spent: number): number {
   const { caps, currency } = pins;
   return Math.max(0, (caps.run_cost_eur - spent) / currency.usd_to_eur);
 }
@@ -1275,7 +1340,7 @@ function invocationError(outcome: StepOutcome, expected: string, name: string): 
  * then one snapshot. The prompt is read here, in one place, so that every arm is asked the same bytes
  * (F2.7 in W3); the replies come from the policy alone, so every arm is answered the same way.
  */
-async function executeStep(
+export async function executeStep(
   step: Scenario['steps'][number],
   context: StepContext,
   options: RunnerOptions,
@@ -1539,10 +1604,10 @@ async function executeStep(
     // has been answered (bug-038, policy v4).
     const answered = interventions.filter((intervention) => intervention.kind === 'approval').length;
     const kind =
-      last?.finalMessage === undefined
+      last?.finalMessage === undefined || policy === undefined
         ? undefined
         : classifyStep(policy, last.finalMessage, step.verdict, scenario.approver, answered);
-    if (kind === undefined) break;
+    if (kind === undefined || policy === undefined) break;
     if (interventions.length >= policy.maxInterventions) {
       outcome = 'intervention cap reached';
       options.log?.(`step ${number}: intervention cap reached (${policy.maxInterventions})`);
@@ -1738,7 +1803,7 @@ async function assertOnlyWorkspaceMounted(
 }
 
 /** The values to scrub now: those known at the start, and the refreshed credential's (REQ-NFR-01). */
-function secretsNow(options: RunnerOptions): readonly string[] {
+export function secretsNow(options: RunnerOptions): readonly string[] {
   return [...(options.secrets ?? []), ...(options.refreshSecrets?.() ?? [])];
 }
 
@@ -1753,7 +1818,7 @@ function telemetryEnvironment(arm: Arm): Record<string, string> {
 }
 
 /** Every container of a plan starts with this: the plan's identity, then the execution. */
-function containerPrefix(id: string): string {
+export function containerPrefix(id: string): string {
   return `bench-${id}-`;
 }
 
@@ -1794,7 +1859,7 @@ async function leftBehind(
 }
 
 /** Removing a container must not lose the run's result, nor stop the campaign. */
-async function remove(container: string, options: RunnerOptions): Promise<void> {
+export async function remove(container: string, options: RunnerOptions): Promise<void> {
   try {
     await options.docker.remove(container);
   } catch (error) {

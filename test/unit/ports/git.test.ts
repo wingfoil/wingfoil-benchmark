@@ -33,7 +33,7 @@ describe('gitCli.messagesSince (REQ-RUN-05 as amended, task-035)', () => {
 });
 
 describe('gitCli.changesBetween (REQ-RUN-20, task-141)', () => {
-  it('lists every path two commits differ by, with its status and its new mode, renames as a deletion and an addition', async () => {
+  it('lists every path two commits differ by, with status and new mode, a rename as two paths', async () => {
     const repository = tempDir('bench-git-');
     await git.init(repository);
     writeFileSync(join(repository, 'kept.txt'), 'kept\n');

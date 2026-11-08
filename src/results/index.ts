@@ -21,7 +21,7 @@ export {
   writeExecutionRecord,
 } from './execution.js';
 export type { ExecutionRecord, StopReason } from './execution.js';
-export { recordedHashes, versionChange } from './recorded.js';
+export { recordedHashes, runsOfVersion, versionChange } from './recorded.js';
 export type { RecordedHash } from './recorded.js';
 export { DRY_RUNS, findDryRun, findDryRuns, harnessKey, latestDryRun } from './dry-runs.js';
 export type { DryRunKey, DryRunRecord, DryRunsLookup, HarnessPin } from './dry-runs.js';

@@ -113,8 +113,20 @@ function readRecords(file: string, label: string): Result<ConfiguredRecord[]> {
     return fail([{ path: label, message: `is not valid JSON: ${(error as Error).message}` }]);
   }
   const parsed = parseWith(configuredRecordsSchema, value, '');
-  if (parsed.ok) return parsed;
-  return fail(parsed.issues.map((issue) => ({ path: `${label}${issue.path}`, message: issue.message })));
+  if (!parsed.ok) {
+    return fail(parsed.issues.map((issue) => ({ path: `${label}${issue.path}`, message: issue.message })));
+  }
+  // Appended, never rewritten (REQ-RUN-20): each record's date is at least the one before it (task-141).
+  const issues: Issue[] = [];
+  parsed.value.forEach((record, index) => {
+    const before = parsed.value[index - 1];
+    if (before === undefined || Date.parse(record.date) >= Date.parse(before.date)) return;
+    issues.push({
+      path: `${label}[${index}].date`,
+      message: `is earlier than record ${index - 1}'s date, ${before.date}: records are appended oldest first`,
+    });
+  });
+  return issues.length > 0 ? fail(issues) : parsed;
 }
 
 /** The configuration's record: the newest `written` one (REQ-FMT-04 as amended in 1.50). */

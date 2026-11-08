@@ -56,6 +56,7 @@ export const USAGE =
   '       bench campaign presets\n' +
   '       bench scenario validate <id>@<version> [--holdout <path>]\n' +
   '       bench scenario dry-run <id>@<version> --arm <arm> [--model <id>] [--profile <file>] [--allow-spending]\n' +
+  '       bench scenario configure <id>@<version> --arm <harness> [--allow-spending] [--replace]\n' +
   '       bench score <campaign-id>/<n>|dry-runs/<n> [--final] [--holdout <path>]\n' +
   '       bench run show <run> [--full]\n' +
   '       bench run compare <run> <run>\n' +
@@ -92,7 +93,7 @@ const AGENT_TOKEN_VARIABLE = 'ANTHROPIC_AUTH_TOKEN';
  * (REQ-NFR-01).
  */
 export function portsFor(
-  pins: RunPins,
+  pins: Pick<RunPins, 'agent' | 'currency'>,
   credential?: Readonly<Record<string, string>>,
   credentialFile?: string,
 ): Result<Ports> {
@@ -172,7 +173,7 @@ export interface Spending {
  * missing credential or clone first; these checks stay as the second line of defence, and as `scenario dry-run`'s.
  */
 export function checkSpending(
-  pins: RunPins,
+  pins: Pick<RunPins, 'agent'>,
   options: { readonly allowSpending: boolean; readonly builds: readonly string[]; readonly refusal: Issue },
 ): Result<Spending> {
   const agentName = pins.agent.name;

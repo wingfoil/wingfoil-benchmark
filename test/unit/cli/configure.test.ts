@@ -12,6 +12,7 @@ import {
   writeFiles,
 } from '../../support/configure-fixture.js';
 import { writeArmAt } from '../../support/arm-fixture.js';
+import { writeConfiguration } from '../../support/configured-fixture.js';
 
 beforeEach(() => {
   vi.stubEnv('BENCH_WINGFOIL_REPO', '/clones/wingfoil');
@@ -169,5 +170,32 @@ describe("the configuring profile's consistency (REQ-RUN-20, task-140's review r
     );
     expect(stdout).toMatch(/configure S1@1\.1 for wingfoil: written, 0\.0000 EUR/);
     expect(stdout).toContain('scenarios/S1/1.1/configured/wingfoil-configured.json');
+  });
+});
+
+describe("the records' clock (task-141)", () => {
+  it("refuses a session whose version's newest record is dated after the clock, before anything is built", () => {
+    const root = configureRepo(['S1@1.1'], ['wingfoil']);
+    const dir = join(root, 'scenarios', 'S1', '1.1');
+    writeConfiguration(dir, 'wingfoil-configured', { '.wingfoil/directives/custom/r9.md': '# R\n' });
+    const checked = checkConfigure(
+      { id: 'S1', version: '1.1', arm: 'wingfoil', replace: true },
+      root,
+      undefined,
+      () => Date.parse('2026-11-08T09:00:00Z'),
+    );
+    expect(checked.ok ? [] : checked.issues).toEqual([
+      {
+        path: 'configure',
+        message:
+          'the newest record of wingfoil-configured is dated 2026-11-08T10:00:00Z, ' +
+          "after this machine's clock: check the clock",
+      },
+    ]);
+    expect(
+      checkConfigure({ id: 'S1', version: '1.1', arm: 'wingfoil', replace: true }, root, undefined, () =>
+        Date.parse('2026-11-08T10:00:00Z'),
+      ).ok,
+    ).toBe(true);
   });
 });

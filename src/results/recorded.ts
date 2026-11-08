@@ -30,6 +30,21 @@ export function recordedHashes(resultsRoot: string, id: string, version: string)
   return [...found].map(([hash, run]) => ({ hash, run }));
 }
 
+/**
+ * Every run stored under `resultsRoot` of scenario `id@version`, in path order (REQ-FMT-04 as amended in 1.50,
+ * task-141): every `<resultsRoot>/<key>/<n>/runs/<id>@<version>/**∕run.json`, a dry run's and an earlier attempt's
+ * included, whatever hash it recorded. Once one exists, nothing more is written to the version's configurations.
+ */
+export function runsOfVersion(resultsRoot: string, id: string, version: string): string[] {
+  return directories(resultsRoot)
+    .flatMap((key) =>
+      directories(join(resultsRoot, key)).flatMap((execution) =>
+        runRecords(join(resultsRoot, key, execution, 'runs', `${id}@${version}`)),
+      ),
+    )
+    .sort();
+}
+
 function hashOf(file: string): string | undefined {
   try {
     const record = JSON.parse(readFileSync(file, 'utf8')) as { scenario_hash?: unknown };

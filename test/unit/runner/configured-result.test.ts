@@ -111,7 +111,8 @@ describe("a configuring session's result (REQ-RUN-20, task-141)", () => {
         { path: 'b', why: 'is outside the configuration places' },
       ]),
     ).toBe(
-      "the session's result touches what is not configuration: 'a' was deleted; 'b' is outside the configuration places",
+      "the session's result touches what is not configuration: 'a' was deleted; " +
+        "'b' is outside the configuration places",
     );
   });
 });
