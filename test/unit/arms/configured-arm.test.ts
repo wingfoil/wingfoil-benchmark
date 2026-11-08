@@ -48,6 +48,15 @@ describe('a configured arm (REQ-FMT-05 as amended in 1.50, task-142)', () => {
     expect(issues('name: wingfoil-configured\nconfigured_of: wingfoil-configured\n')).toEqual([
       { path: 'configured_of', message: "'wingfoil-configured' is not an arm under arms/" },
     ]);
+    // A name other than `<base>-configured`, the one every reader of a configuration keys on (review round 2)
+    cpSync(repoPath('arms/speckit'), join(root, 'arms', 'speckit'), { recursive: true });
+    expect(issues('name: wingfoil-configured\nconfigured_of: speckit\n')).toEqual([
+      {
+        path: 'configured_of',
+        message:
+          "'speckit' is not the base its name says: wingfoil-configured configures the arm before -configured",
+      },
+    ]);
     expect(issues('name: other\nconfigured_of: wingfoil\n')).toEqual([
       { path: 'name', message: "'other' differs from its directory 'wingfoil-configured'" },
     ]);

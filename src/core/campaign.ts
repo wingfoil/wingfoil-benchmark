@@ -282,6 +282,8 @@ export function harnessCoverage(
       continue;
     }
     const key = configuredOf ?? name;
+    // A configured arm is named, since its entry is its base arm's.
+    const named = configuredOf === undefined ? '' : ` ${name}`;
     const harness = Object.hasOwn(campaign.harnesses, key) ? campaign.harnesses[key] : undefined;
     if (requires === undefined) {
       if (harness !== undefined) {
@@ -293,12 +295,12 @@ export function harnessCoverage(
     } else if (harness === undefined) {
       issues.push({
         path: formatPath(['harnesses', key]),
-        message: `is required: the arm${configuredOf === undefined ? '' : ` ${name}`} requires the harness '${requires}'`,
+        message: `is required: the arm${named} requires the harness '${requires}'`,
       });
     } else if (harness.tool !== requires) {
       issues.push({
         path: formatPath(['harnesses', key, 'tool']),
-        message: `is '${harness.tool}', but the arm${configuredOf === undefined ? '' : ` ${name}`} requires '${requires}'`,
+        message: `is '${harness.tool}', but the arm${named} requires '${requires}'`,
       });
     }
   }

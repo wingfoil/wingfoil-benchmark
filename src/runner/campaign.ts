@@ -71,6 +71,15 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
     else arms.push(arm.value);
   });
   if (arms.length === campaign.spec.arms.length) {
+    // A `harnesses` entry no arm reads, by its name or as a configured arm's base (REQ-FMT-01 as amended in 1.50).
+    for (const key of Object.keys(campaign.spec.harnesses).sort()) {
+      if (!arms.some((arm) => arm.name === key || arm.configuredOf === key)) {
+        issues.push({
+          path: `harnesses.${key}`,
+          message: "is not one of the campaign's arms, nor the base of a configured one",
+        });
+      }
+    }
     const coverage = harnessCoverage(campaign.spec, arms);
     issues.push(...coverage);
     // Every harness arm pins a tool the eligibility register admits at that version (REQ-FMT-01, F7.4): checked once

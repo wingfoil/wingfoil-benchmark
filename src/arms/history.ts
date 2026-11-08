@@ -95,7 +95,8 @@ export function armFromHistory(repoRoot: string, arm: string, digest: string): A
     const cached = () => existsSync(target) && armDigest(root, arm).slice(0, digest.length) === digest;
     if (cached()) return { commit, root };
     // A configured arm's base is written beside it, from the same commit: one already there is the same commit's.
-    const dirs = [path, ...(base === undefined || base === arm ? [] : [posix.join('arms', base)])];
+    // The base first: the arm in place means both are, for a reader that finds it (task-142 review round 2).
+    const dirs = [...(base === undefined || base === arm ? [] : [posix.join('arms', base)]), path];
     const staging = join(root, `.staging.${arm}.${process.pid}.${Date.now()}.tmp`);
     try {
       for (const [file, content] of written) {

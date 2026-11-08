@@ -173,3 +173,16 @@ Main's HEAD and reflog the same before and after (`22fb17c1`).
 | nit        | `configuredOfIn` repeated the arm-name pattern                                                       | `ARM_NAME` imported                                                                                     |
 | nit        | Two comment lines over 120 characters                                                                | Wrapped                                                                                                 |
 | nit        | `configured.of` sliced from the name for a configured arm                                            | Its `configuredOf`; a docs control's still from the configured arm's name, as the suffix rule fixes it  |
+
+### Round 2 (a fresh read-only agent, clone `/tmp/claude-1000/review2-t142-*`, at `60aff914`)
+
+Main's HEAD and reflog the same before and after (`22fb17c1`). Every round-1 outcome verified, each fix's test failing
+without it.
+
+| Severity   | Finding                                                                                              | Outcome                                                                                                 |
+| ---------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| should-fix | A `harnesses.<x>` entry passed when `<x>-configured` was a docs control's name: round 1's "harness coverage checks it" did not hold | `validate` refuses an entry no arm reads by its name or as a configured arm's base; test              |
+| should-fix | The loader accepted a configured arm named other than `<base>-configured`, which every reader keys on | Refused, naming `configured_of`; test                                                                   |
+| nit        | The configured arm's directory went into place before its base, so a concurrent reader rewrote it    | The base first                                                                                          |
+| nit        | Three message lines over 120 characters                                                              | Split                                                                                                   |
+

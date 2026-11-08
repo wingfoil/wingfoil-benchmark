@@ -138,4 +138,19 @@ describe("a campaign's configured arms (REQ-FMT-01 as amended in 1.50, task-142)
       true,
     );
   });
+
+  it('refuses a harnesses entry that no arm reads, by its name or as a configured arm’s base (review round 2)', () => {
+    const repo = configuredRepo(
+      ['baseline', 'wingfoil-configured', 'baseline-docs-configured'],
+      ['S1@1.1'],
+      [{ scenario: 'S1@1.1', arm: 'wingfoil-configured', files: WINGFOIL }],
+      { harnesses: { wingfoil: PINS.wingfoil, 'baseline-docs': PINS.speckit } },
+    );
+    expect(issues(repo.file)).toEqual([
+      {
+        path: 'harnesses.baseline-docs',
+        message: "is not one of the campaign's arms, nor the base of a configured one",
+      },
+    ]);
+  });
 });

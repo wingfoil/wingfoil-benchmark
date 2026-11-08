@@ -89,7 +89,9 @@ export function configuredIssues(
       if (!held[field].has(value)) {
         issues.push({
           path: 'arms',
-          message: `${key}, ${arm.name}: the configuration's record has ${field} ${value}, which no commit of ${file} holds`,
+          message:
+            `${key}, ${arm.name}: the configuration's record has ${field} ${value}, ` +
+            `which no commit of ${file} holds`,
         });
       } else if (reference !== undefined && value !== reference.configuration.record[field]) {
         issues.push({

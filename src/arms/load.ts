@@ -120,6 +120,9 @@ function loadConfiguredArm(armsRoot: string, name: string, data: object): Result
   }
   if (loaded.value.configuredOf !== undefined) return refused('is a configured arm: name its harness arm');
   if (loaded.value.requires === undefined) return refused('is not a harness arm: it requires no tool');
+  // The names experiment design 1.7 §2 fixes: `<base>-configured`, which every reader of a configuration keys on.
+  if (name !== `${base}-configured`)
+    return refused(`is not the base its name says: ${name} configures the arm before -configured`);
   return ok({ ...loaded.value, name, configuredOf: base });
 }
 
