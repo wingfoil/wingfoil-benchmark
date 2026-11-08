@@ -121,3 +121,10 @@ Feature: Stored results, run detail, finding notes and the published site
     When the site is built
     Then its landing page says that no harness is compared, in place of the headline
 
+
+  @F7.5
+  Scenario: A configured arm is compared with its configured docs control
+    Given an execution that ran "speckit-configured" and "speckit-docs-configured" on S1 1.1
+    When it is aggregated
+    Then the harness-versus-docs comparison pairs "speckit-configured" with "speckit-docs-configured"
+    And the site gives "speckit-configured" a setup page with the speckit arm's manual and setup script
