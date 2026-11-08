@@ -392,9 +392,15 @@ describe('the configuring session: review round 2 (task-141)', () => {
       },
     });
 
+    const logged: string[] = [];
     await expect(
-      runConfigure(checked.value, { ...ports, harnessSources: { wingfoil: '/clones/wingfoil' } }),
+      runConfigure(checked.value, {
+        ...ports,
+        harnessSources: { wingfoil: '/clones/wingfoil' },
+        log: (line) => logged.push(line),
+      }),
     ).rejects.toThrow('cannot be claimed: a session of this configuration is running');
+    expect(logged).toEqual([]);
     expect(readFileSync(join(checked.value.workDir, 'workspace', 'README.md'), 'utf8')).toBe('live\n');
     expect(ports.recorded.builds).toEqual([]);
   });

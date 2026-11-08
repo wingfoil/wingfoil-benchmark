@@ -194,3 +194,13 @@ Round 2's outcomes verified by mutation, one at a time; no new correctness bug. 
 | nit        | The parents' `mkdir` was outside the claim's message                                    | Inside it                                                                     |
 | nit        | The session's log line came before the claim                                            | After it                                                                      |
 | nit        | 1.53 did not state the claim                                                            | Stated in REQ-RUN-20 as amended in 1.53                                       |
+
+### Round 4 (a fresh read-only agent, clone `/tmp/claude-1000/review4-t141-*`, at `57d4c9c8`)
+
+Round 3's outcomes verified (the blank-secret test fails with the filter reverted); nits only, so no further round.
+Main's HEAD and reflog the same (`3480f228`).
+
+| Severity | Finding                                                                                   | Outcome                                             |
+| -------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| nit      | The log line after the claim, and the parents' mkdir inside it, untested                  | The claim's test asserts nothing was logged         |
+| nit      | A file where a parent directory should be gave the running-session message                | That message only when the claimed directory exists |

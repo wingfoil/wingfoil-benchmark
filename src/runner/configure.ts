@@ -286,7 +286,7 @@ export async function runConfigure(
     mkdirSync(workDir);
   } catch (error) {
     const why =
-      (error as NodeJS.ErrnoException).code === 'EEXIST'
+      (error as NodeJS.ErrnoException).code === 'EEXIST' && (error as NodeJS.ErrnoException).path === workDir
         ? 'a session of this configuration is running, or an earlier one wrote no record; remove it once none runs'
         : reasonOf(error);
     throw new Error(`${relative(repoRoot, workDir)} cannot be claimed: ${why}`, { cause: error });
