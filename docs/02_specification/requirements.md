@@ -1092,9 +1092,11 @@ The second part of W18's configuring agent: `bench scenario configure` and the s
 
 - **REQ-FMT-04:** the records' dates in order; a registry tool's harness commit, its tarball's SHA-256 (the record's
   schema of 1.52 took a 40-character commit only, which a session on OpenSpec could not have written).
-- **REQ-RUN-20:** the session's outcomes and its cost when unreported; a result that changes nothing; the members and
-  roles read from the tool's own declaration; no record for a failure before the session; the transcript's `<n>`; the
-  session's workspace; the records' clock.
+- **REQ-RUN-20:** the session's outcomes and its cost when unreported, the reported usage standing once the step
+  returned; a result that changes nothing, a type change and a file holding the credential's value refused; an
+  executable file's mode kept; the members and roles read from the tool's own declaration; no record for a failure
+  before the session, and what it made under `runs/` removed; the transcript's `<n>`; the session's workspace; the
+  records' clock.
 - **REQ-CLI-14:** exit 1 for a session that could not start; `--allow-spending` whatever the agent.
 
 Source: [task-141](../memory/task/task-141-w18-bench-scenario-configure-and-the-configuring-session.md).

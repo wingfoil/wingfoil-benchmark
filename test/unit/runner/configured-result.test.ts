@@ -165,7 +165,7 @@ describe("a configuring session's result: review round 1 (task-141)", () => {
     expect(
       offences([added('.wingfoil/notes.md'), added('.wingfoil/clean.md')], {
         workspace: dir,
-        secrets: ['', 's3cr3t-value'],
+        secrets: ['', ' ', 's3cr3t-value'],
       }),
     ).toEqual([{ path: '.wingfoil/notes.md', why: 'holds a credential value' }]);
   });

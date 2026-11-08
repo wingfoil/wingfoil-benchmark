@@ -139,7 +139,8 @@ export async function configureCommand(
       }),
     );
   } catch (error) {
-    // The session never started: no image, no harness, no workspace, a failed setup. No record is written.
+    // The session never started (no image, no harness, no workspace, a failed setup), so no record was written; or
+    // its record could not be written.
     return report([{ path: 'configure', message: reasonOf(error) }], io);
   }
 

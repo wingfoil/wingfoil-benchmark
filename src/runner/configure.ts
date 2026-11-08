@@ -281,6 +281,14 @@ export async function runConfigure(
   const rate = profile.currency.usd_to_eur;
   options.log?.(`configure ${scenario.id}@${scenario.version} for ${arm.name}, session ${checked.index}`);
 
+  // The session's directory, claimed: another invocation of the same session gets EEXIST here and stops, so that
+  // what this one removes on a failure before the session is only what it made.
+  mkdirSync(dirname(workDir), { recursive: true });
+  try {
+    mkdirSync(workDir);
+  } catch (error) {
+    throw new Error(`${relative(repoRoot, workDir)} cannot be claimed: ${reasonOf(error)}`, { cause: error });
+  }
   const ending: Ending = { outcome: 'failed', usage: NO_USAGE, rulesSha256: null, wallTimeMs: 0 };
   let container: string | undefined;
   let removal: Promise<void> | undefined;

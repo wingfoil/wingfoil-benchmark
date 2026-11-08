@@ -71,10 +71,11 @@ export function offencesOf(result: ResultToCheck): Offence[] {
 
 /** Whether `file` holds one of `secrets`: a configuration is committed, and never scrubbed (REQ-NFR-01). */
 function holdsSecret(file: string, secrets: readonly string[]): boolean {
-  const values = secrets.filter((secret) => secret !== '');
+  // As the scrubber reads them: a blank value is no secret.
+  const values = secrets.filter((secret) => secret.trim() !== '');
   if (values.length === 0 || !existsSync(file)) return false;
-  const content = readFileSync(file, 'utf8');
-  return values.some((secret) => content.includes(secret));
+  const content = readFileSync(file);
+  return values.some((secret) => content.includes(Buffer.from(secret, 'utf8')));
 }
 
 /** A refused result's reason, as its record states it: every offending path, named. */

@@ -370,11 +370,50 @@ describe('the configuring session: review round 1 (task-141)', () => {
     expect(summary.loadIssues).toEqual([]);
   });
 
-  it('restores the manual after a refused session too', async () => {
+  it('restores the manual after a failed session too', async () => {
     const root = configureRepo(['S1@1.1'], ['wingfoil']);
     const ports = configurePorts('wingfoil', { doubles: { errorOf: () => 'crashed' } });
     const { checked } = await session(root, ports);
     expect(existsSync(join(checked.workDir, 'workspace', 'CLAUDE.md'))).toBe(true);
     expect(existsSync(join(checked.workDir, 'manual-aside'))).toBe(false);
+  });
+});
+
+describe('the configuring session: review round 2 (task-141)', () => {
+  it("removes on a failure before the session only what it made, never another invocation's directory", async () => {
+    const root = configureRepo(['S1@1.1'], ['wingfoil']);
+    const checked = checkConfigure({ id: 'S1', version: '1.1', arm: 'wingfoil', replace: false }, root);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    // Another invocation of the same session made it after this one's check.
+    writeFiles(checked.value.workDir, { 'workspace/README.md': 'live\n' });
+    const ports = configurePorts('wingfoil', {
+      doubles: {
+        execResultOf: (command) => (command[0] === 'bash' ? { code: 3, stdout: '', stderr: '' } : undefined),
+      },
+    });
+
+    await expect(
+      runConfigure(checked.value, { ...ports, harnessSources: { wingfoil: '/clones/wingfoil' } }),
+    ).rejects.toThrow('cannot be claimed');
+    expect(readFileSync(join(checked.value.workDir, 'workspace', 'README.md'), 'utf8')).toBe('live\n');
+    expect(ports.recorded.builds).toEqual([]);
+  });
+
+  it("scrubs the credential from a failed session's reason", async () => {
+    const secret = 's3cr3t-token-value';
+    const root = configureRepo(['S1@1.1'], ['wingfoil']);
+    const checked = checkConfigure({ id: 'S1', version: '1.1', arm: 'wingfoil', replace: false }, root);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    const ports = configurePorts('wingfoil', { doubles: { errorOf: () => `the agent printed ${secret}` } });
+
+    const summary = await runConfigure(checked.value, {
+      ...ports,
+      harnessSources: { wingfoil: '/clones/wingfoil' },
+      secrets: [secret],
+    });
+
+    expect(summary.record.outcome).toBe('failed');
+    expect(summary.record.reason).toContain('the agent printed');
+    expect(readFileSync(summary.recordFile, 'utf8')).not.toContain(secret);
   });
 });

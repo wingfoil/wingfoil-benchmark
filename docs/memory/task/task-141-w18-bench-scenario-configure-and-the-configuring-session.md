@@ -167,3 +167,17 @@ Main's HEAD and reflog the same before and after (`3480f228`).
 | nit        | `filesUnder` a third time; the spending block of dry-run copied                                      | `relativeFiles` exported and reused; `spendingOptions` shared by both commands                          |
 | nit        | A line of 122 characters                                                                             | Wrapped                                                                                                 |
 | nit        | No Codex scope or MCP checks, as dry-run has                                                         | Left: the profile pins Claude Code only (REQ-RUN-20)                                                    |
+
+### Round 2 (a fresh read-only agent, clone `/tmp/claude-1000/review2-t141-*`, at `f39224db`)
+
+Round 1's outcomes verified, each fix broken in turn and caught by its test, but the reason's scrub. Main's HEAD and
+reflog the same (`3480f228`).
+
+| Severity   | Finding                                                                                            | Outcome                                                                                     |
+| ---------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| should-fix | The removal of `runs/configuring/…/<n>/` on a failure before the session could remove the directory of a concurrent invocation of the same session | The directory is claimed at the start (`mkdir`, refused on EEXIST) and removed only by its claimant; test, red first |
+| should-fix | The reason's scrub had no test                                                                     | Test; it fails with the scrub removed                                                       |
+| nit        | A blank secret would refuse any file with a space; a binary file read as text                     | Blank values ignored, as the scrubber does; the file searched as bytes                      |
+| nit        | `### Amendment 1.53`'s summary missed round 1's rules                                              | Added                                                                                       |
+| nit        | The CLI's comment said a throw means no session                                                    | Reworded: or its record could not be written                                                |
+| nit        | A test titled "refused" ran a failed session                                                       | Retitled                                                                                    |
