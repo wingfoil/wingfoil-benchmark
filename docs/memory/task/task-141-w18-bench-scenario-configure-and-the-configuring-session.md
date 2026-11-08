@@ -145,3 +145,25 @@ red first, unless the implementation finds a wording to correct (recorded in Exe
   `test/bin/bench.test.ts`, which pins the usage text, fixed in `d58760ca`); beside it, `test/unit/campaign`,
   `architecture`, `docs`, `arms`, `agents`, `scenarios` and every acceptance test green.
 - No real-agent session, nothing spent; no scenario version gained a configuration, so no scenario hash changed.
+
+## Review
+
+### Round 1 (a fresh read-only agent, clone `/tmp/claude-1000/review1-t141-*`, at `88a7ba8b`)
+
+Main's HEAD and reflog the same before and after (`3480f228`).
+
+| Severity   | Finding                                                                                              | Outcome                                                                                                 |
+| ---------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| should-fix | Only the patch was scrubbed: a configuration file holding the credential would be committed          | Such a file refuses the result, named (1.53); the reason scrubbed; tests of transcript, patch, record   |
+| should-fix | A failure after the session returned counted the session at its bound, over the reported usage       | The reported usage stands once the step returned (1.53); test                                           |
+| should-fix | A failure before the session left `runs/configuring/…/<n>/`, which refused the next session          | What it made under `runs/` is removed (1.53); test                                                      |
+| should-fix | Untested: `interrupted`, `failed`, an unreported cost, an empty result, no record before the session, a `--replace` that writes | Tests added; the first four passed on the earlier code (characterization), the others failed first      |
+| nit        | A type change to a regular file was accepted                                                         | Refused (1.53); test                                                                                    |
+| nit        | An executable configuration file lost its mode                                                       | Kept (1.53); test                                                                                       |
+| nit        | The manual was restored on `written` only                                                            | Restored on every outcome; test                                                                         |
+| nit        | A record that failed its check lost the transcript                                                   | The transcript is written first                                                                         |
+| nit        | The record's reason was not scrubbed                                                                 | Scrubbed                                                                                                |
+| nit        | No `--strict-mcp-config` without an MCP server: a seed's `.mcp.json` would be read                   | Left: no seed holds one; noted for the configured arms' task                                            |
+| nit        | `filesUnder` a third time; the spending block of dry-run copied                                      | `relativeFiles` exported and reused; `spendingOptions` shared by both commands                          |
+| nit        | A line of 122 characters                                                                             | Wrapped                                                                                                 |
+| nit        | No Codex scope or MCP checks, as dry-run has                                                         | Left: the profile pins Claude Code only (REQ-RUN-20)                                                    |
