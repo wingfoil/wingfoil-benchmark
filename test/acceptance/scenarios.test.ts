@@ -1,6 +1,9 @@
+import { createHash } from 'node:crypto';
 import {
+  appendFileSync,
   copyFileSync,
   cpSync,
+  existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -9,19 +12,29 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join, relative } from 'node:path';
-import { stringify } from 'yaml';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parse, stringify } from 'yaml';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { main } from '../../src/cli/index.js';
 import { validateScenario } from '../../src/cli/scenario.js';
+import { armDigest, renderConstitution } from '../../src/arms/index.js';
 import { checkCampaign, runCampaign } from '../../src/runner/index.js';
 import { latestDryRun } from '../../src/results/index.js';
 import { loadScenario, oracleLiterals } from '../../src/scenario/index.js';
 import { writeArmsNamed } from '../support/arm-fixture.js';
 import { writeConfiguration } from '../support/configured-fixture.js';
 import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
-import { writeDryRunProfile } from '../support/dry-run-fixture.js';
-import { doubles, fakeBuild, invocationOf } from '../support/runner-doubles.js';
+import { writeDryRunProfile, writeStoredDryRun } from '../support/dry-run-fixture.js';
+import {
+  benchConfigure,
+  configurePorts,
+  configureRepo,
+  SETUP_FILES,
+  storedRecords,
+  workspaceFiles,
+  writeFiles,
+} from '../support/configure-fixture.js';
+import { doubles, fakeBuild, invocationOf, NO_USAGE } from '../support/runner-doubles.js';
 import { localScoringDocker } from '../support/local-scoring.js';
 import { repoPath } from '../support/paths.js';
 import { tempDir, writeScenario } from '../support/scenario-fixture.js';
@@ -701,5 +714,484 @@ describe("a scenario version's configurations (task-140, F7.5)", () => {
       },
     ]);
     expect(JSON.stringify(issues)).not.toContain(literal);
+  });
+});
+
+describe('bench scenario configure and the configuring session (task-141, F7.5)', () => {
+  beforeEach(() => {
+    // A harness built from a clone needs its clone named (REQ-RUN-14); the doubles never read it.
+    vi.stubEnv('BENCH_WINGFOIL_REPO', '/clones/wingfoil');
+    vi.stubEnv('BENCH_SPECKIT_REPO', '/clones/spec-kit');
+    vi.stubEnv('BENCH_HOLDOUT_PATH', '');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const sha256 = (content: string | Buffer) => createHash('sha256').update(content).digest('hex');
+  const versionDir = (root: string, ref: string) => join(root, 'scenarios', ...ref.split('@'));
+  const nothingRan = (ports: { recorded: { creates: unknown[]; runOnce: unknown[]; steps: unknown[] } }) => {
+    expect(ports.recorded.creates).toEqual([]);
+    expect(ports.recorded.runOnce).toEqual([]);
+    expect(ports.recorded.steps).toEqual([]);
+  };
+
+  it('@F7.5 The configuring agent sees the seed and the installed harness only', async () => {
+    const root = configureRepo(['S3@1.1'], ['openspec']);
+    const dir = versionDir(root, 'S3@1.1');
+    let seen: string[] = [];
+    const ports = configurePorts('openspec', { session: (workspace) => (seen = workspaceFiles(workspace)) });
+
+    await benchConfigure(root, ['S3@1.1', '--arm', 'openspec', '--allow-spending'], ports);
+
+    // Its workspace holds the seed and the openspec arm's setup, less the manual moved aside
+    const seed = workspaceFiles(join(dir, 'seed'));
+    expect(seen).toEqual([...new Set([...seed, ...Object.keys(SETUP_FILES.openspec ?? {})])].sort());
+    // And no step prompt, oracle file, hold-out file or other arm's configuration: nothing else reached the container
+    expect(
+      ports.recorded.copies.map((copy) => copy.split(' -> ')[1]?.replace(/^container-\d+:/, '')),
+    ).toEqual(['/home/node/arm', '/home/node/harness.tgz']);
+    expect(ports.recorded.steps).toHaveLength(1);
+    expect(ports.recorded.steps[0]?.prompt).toBe(
+      readFileSync(join(root, 'configuring', 'prompt.md'), 'utf8'),
+    );
+  });
+
+  it('@F7.5 The configuring agent writes what it added or changed, and its record', async () => {
+    const root = configureRepo(['S3@1.1'], ['openspec']);
+    const dir = versionDir(root, 'S3@1.1');
+    const written = {
+      'openspec/config.yaml': 'schema: spec-driven\ncontext: |\n  An orders service.\n',
+      'openspec/schemas/orders/schema.yaml': 'name: orders\n',
+      '.claude/commands/opsx/review.md': '# Review\n',
+    };
+    const usage = {
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 10,
+      costUsd: 0.4,
+      costEur: 0.36,
+      turns: 4,
+      durationMs: 1000,
+    };
+    const ports = configurePorts('openspec', {
+      session: (workspace) => writeFiles(workspace, written),
+      doubles: { usageOf: () => usage },
+    });
+
+    // When a configuring session adds two files and changes one
+    const result = await benchConfigure(root, ['S3@1.1', '--arm', 'openspec', '--allow-spending'], ports);
+
+    expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: '' });
+    // Then the three files are written to "arms/openspec-configured/" of the scenario version
+    const configured = join(dir, 'arms', 'openspec-configured');
+    expect(workspaceFiles(configured)).toEqual(Object.keys(written).sort());
+    for (const [path, content] of Object.entries(written)) {
+      expect(readFileSync(join(configured, path), 'utf8')).toBe(content);
+    }
+    expect(readFileSync(join(dir, 'configured', 'openspec-configured.patch'), 'utf8')).toContain(
+      'openspec/schemas/orders/schema.yaml',
+    );
+    // And "configured/openspec-configured.json" records the agent, model, prompt digest, pin, usage, cost and files
+    const records = storedRecords(dir, 'openspec');
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      agent: { name: 'fake', version: '1.0.0' },
+      model: 'fake-model',
+      prompt_sha256: sha256(readFileSync(join(root, 'configuring', 'prompt.md'))),
+      profile_sha256: sha256(readFileSync(join(root, 'configuring', 'profile.yaml'))),
+      harness: { tool: 'openspec', version: '1.14.0', commit: expect.stringMatching(/^[0-9a-f]{64}$/) },
+      base_arm_digest: armDigest(root, 'openspec').slice(0, 12),
+      rules_sha256: null,
+      usage,
+      cost_eur: 0.36,
+      outcome: 'written',
+      files: Object.entries(written)
+        .map(([path, content]) => ({ path, sha256: sha256(content) }))
+        .sort((a, b) => (a.path < b.path ? -1 : 1)),
+    });
+    expect(records[0]).not.toHaveProperty('cost_reported');
+    // The transcript is kept under results/configuring/, which git ignores
+    expect(
+      existsSync(join(root, 'results', 'configuring', 'S3@1.1', 'openspec', '1', 'transcript.jsonl')),
+    ).toBe(true);
+    expect(result.stdout).toContain('arms/openspec-configured');
+    // The version then loads with its configuration
+    const loaded = loadScenario(join(root, 'scenarios'), 'S3', '1.1');
+    expect(loaded.ok ? Object.keys(loaded.value.configurations) : loaded.issues).toEqual([
+      'openspec-configured',
+    ]);
+  });
+
+  it("@F7.5 A configuring session's result is refused when it touches what is not configuration", async () => {
+    const rows: { does: string; act: (workspace: string) => void; path: string }[] = [
+      { does: 'deletes a file', act: (w) => rmSync(join(w, 'README.md')), path: 'README.md' },
+      {
+        does: 'writes a symbolic link',
+        act: (w) => symlinkSync('../../README.md', join(w, '.specify', 'presets', 'readme.md')),
+        path: '.specify/presets/readme.md',
+      },
+      {
+        does: 'changes "src/index.ts"',
+        act: (w) => writeFileSync(join(w, 'src', 'index.ts'), 'export {};\n'),
+        path: 'src/index.ts',
+      },
+      {
+        does: 'writes CLAUDE.md',
+        act: (w) => writeFileSync(join(w, 'CLAUDE.md'), '# Mine\n'),
+        path: 'CLAUDE.md',
+      },
+    ];
+    for (const row of rows) {
+      const root = configureRepo(['S8@1.1'], ['speckit']);
+      const dir = versionDir(root, 'S8@1.1');
+      const ports = configurePorts('speckit', {
+        session: (workspace) => {
+          // Beside what is refused, a file the result could keep.
+          writeFiles(workspace, { '.specify/presets/team/preset.yml': 'name: team\n' });
+          row.act(workspace);
+        },
+      });
+
+      // When a configuring session <does>
+      const result = await benchConfigure(root, ['S8@1.1', '--arm', 'speckit', '--allow-spending'], ports);
+
+      // Then no configuration is written, its record states the refusal, and the command exits 1
+      expect({ row: row.does, code: result.code }).toEqual({ row: row.does, code: 1 });
+      expect(existsSync(join(dir, 'arms', 'speckit-configured'))).toBe(false);
+      expect(existsSync(join(dir, 'configured', 'speckit-configured.patch'))).toBe(false);
+      const records = storedRecords(dir, 'speckit');
+      expect(records).toHaveLength(1);
+      expect(records[0]).toMatchObject({
+        outcome: 'refused',
+        reason: expect.stringContaining(`'${row.path}'`),
+      });
+      expect(records[0]).not.toHaveProperty('files');
+      expect(result.stderr).toContain(row.path);
+    }
+  });
+
+  it('@F7.5 A configuring session that writes outside its configuration places is refused', async () => {
+    const places = {
+      configuration: [
+        { glob: '.wingfoil/dna.yaml', source: 'test' },
+        { glob: '.wingfoil/roles.yaml', source: 'test' },
+        { glob: '.wingfoil/directives/custom/**', source: 'test' },
+      ],
+      state: [
+        { glob: '.wingfoil/directives/custom/.index/**', source: 'test' },
+        { glob: 'docs/memory/**', source: 'test' },
+      ],
+    };
+    const dna = (members: string) =>
+      (SETUP_FILES.wingfoil?.['.wingfoil/dna.yaml'] ?? '').replace(
+        /  members:\n[\s\S]*?  roles:/,
+        `  members:\n${members}  roles:`,
+      );
+    const rows: { writes: string; act: (workspace: string) => void; path: string }[] = [
+      {
+        writes: 'adds "src/helpers.ts"',
+        act: (w) => writeFiles(w, { 'src/helpers.ts': 'export {};\n' }),
+        path: 'src/helpers.ts',
+      },
+      {
+        writes: 'adds ".wingfoil/directives/custom/.index/a"',
+        act: (w) => writeFiles(w, { '.wingfoil/directives/custom/.index/a': 'a\n' }),
+        path: '.wingfoil/directives/custom/.index/a',
+      },
+      {
+        writes: "changes the Benchmark Approver's role",
+        act: (w) =>
+          writeFiles(w, {
+            '.wingfoil/dna.yaml': dna(
+              '    - name: Benchmark Approver\n      email: approver@benchmark.localhost\n      roles: [developer]\n',
+            ),
+          }),
+        path: '.wingfoil/dna.yaml',
+      },
+      {
+        writes: 'adds a member with the approver role',
+        act: (w) =>
+          writeFiles(w, {
+            '.wingfoil/dna.yaml': dna(
+              '    - name: Benchmark Approver\n      email: approver@benchmark.localhost\n      roles: [approver]\n' +
+                '    - name: Second Approver\n      email: second@benchmark.localhost\n      roles: [approver]\n',
+            ),
+          }),
+        path: '.wingfoil/dna.yaml',
+      },
+    ];
+    for (const row of rows) {
+      const root = configureRepo(['S1@1.1'], ['wingfoil']);
+      // Given the wingfoil arm declares these configuration and state places
+      const armFile = join(root, 'arms', 'wingfoil', 'arm.yaml');
+      const arm = parse(readFileSync(armFile, 'utf8')) as Record<string, unknown>;
+      writeFileSync(armFile, stringify({ ...arm, ...places }));
+      const dir = versionDir(root, 'S1@1.1');
+      const ports = configurePorts('wingfoil', {
+        session: (workspace) => {
+          writeFiles(workspace, { '.wingfoil/directives/custom/r9.md': '# Rule\n' });
+          row.act(workspace);
+        },
+      });
+
+      // When a configuring session for S1 1.1 and "wingfoil" <writes>
+      const result = await benchConfigure(root, ['S1@1.1', '--arm', 'wingfoil', '--allow-spending'], ports);
+
+      // Then no configuration is written, its record names <path>, and the command exits 1
+      expect({ row: row.writes, code: result.code, stderr: result.stderr }).toMatchObject({
+        row: row.writes,
+        code: 1,
+        stderr: expect.stringContaining(row.path),
+      });
+      expect(existsSync(join(dir, 'arms', 'wingfoil-configured'))).toBe(false);
+      const [record] = storedRecords(dir, 'wingfoil');
+      expect(record).toMatchObject({ outcome: 'refused', reason: expect.stringContaining(`'${row.path}'`) });
+      expect(String(record?.reason)).not.toContain('r9.md');
+    }
+  });
+
+  it('@F7.5 A configuration place over a seed file is refused for that version', async () => {
+    const root = configureRepo(['S8@1.1'], ['speckit']);
+    // Given the speckit arm declares configuration "src/**", otherwise valid
+    const armFile = join(root, 'arms', 'speckit', 'arm.yaml');
+    const arm = parse(readFileSync(armFile, 'utf8')) as { configuration: unknown[] };
+    writeFileSync(
+      armFile,
+      stringify({ ...arm, configuration: [...arm.configuration, { glob: 'src/**', source: 'test' }] }),
+    );
+    const ports = configurePorts('speckit');
+
+    const result = await benchConfigure(root, ['S8@1.1', '--arm', 'speckit', '--allow-spending'], ports);
+
+    // Then it is refused before any session, naming the glob and the seed file it matches, and exits 1
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("'src/**' matches the seed file 'src/index.ts'");
+    nothingRan(ports);
+    expect(existsSync(join(versionDir(root, 'S8@1.1'), 'configured'))).toBe(false);
+  });
+
+  it("@F7.5 A harness arm's configuration places hold its project rules", async () => {
+    const root = configureRepo(['S8@1.1'], ['speckit']);
+    const dir = versionDir(root, 'S8@1.1');
+    const constitution = '.specify/memory/constitution.md';
+    const ports = configurePorts('speckit', {
+      // When a configuring session for S8 1.1 and "speckit" extends the generated constitution
+      session: (workspace) =>
+        appendFileSync(join(workspace, constitution), '\n## Reviews\n\nEvery change is reviewed.\n'),
+    });
+
+    const result = await benchConfigure(root, ['S8@1.1', '--arm', 'speckit', '--allow-spending'], ports);
+
+    // Then the configuration is written with ".specify/memory/constitution.md"
+    expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: '' });
+    expect(workspaceFiles(join(dir, 'arms', 'speckit-configured'))).toEqual([constitution]);
+    expect(storedRecords(dir, 'speckit')[0]).toMatchObject({
+      outcome: 'written',
+      files: [{ path: constitution }],
+    });
+  });
+
+  it("@F7.5 The configuring agent for Spec Kit on S8 sees S8's project rules", async () => {
+    const root = configureRepo(['S8@1.1'], ['speckit']);
+    const dir = versionDir(root, 'S8@1.1');
+    const constitution = '.specify/memory/constitution.md';
+    let seen = '';
+    const ports = configurePorts('speckit', {
+      session: (workspace) => {
+        seen = readFileSync(join(workspace, constitution), 'utf8');
+        writeFiles(workspace, { '.specify/presets/team/preset.yml': 'name: team\n' });
+      },
+    });
+
+    await benchConfigure(root, ['S8@1.1', '--arm', 'speckit', '--allow-spending'], ports);
+
+    // Then its workspace holds the constitution REQ-FMT-14 generates from S8's rules
+    const rules = join(dir, 'arms', 'wingfoil');
+    const expected = renderConstitution(
+      new Map(workspaceFiles(rules).map((path) => [path, readFileSync(join(rules, path), 'utf8')])),
+    );
+    expect(expected).toBeDefined();
+    expect(seen).toBe(expected);
+    // And its record holds that constitution's SHA-256
+    expect(storedRecords(dir, 'speckit')[0]?.rules_sha256).toBe(sha256(expected ?? ''));
+  });
+
+  it('@F7.5 A version a run has recorded is never configured again', async () => {
+    for (const { arm, flag } of [
+      { arm: 'speckit', flag: [] },
+      { arm: 'wingfoil', flag: ['--replace'] },
+    ]) {
+      const root = configureRepo(['S1@1.1'], [arm]);
+      // Given a dry run under "results/dry-runs/" has run S1 1.1
+      writeStoredDryRun(root, 1, { id: 'S1', version: '1.1', hash: 'f'.repeat(64), arm, stepCostsUsd: [0] });
+      const ports = configurePorts(arm);
+
+      const result = await benchConfigure(root, ['S1@1.1', '--arm', arm, '--allow-spending', ...flag], ports);
+
+      // Then it is refused before any session, and exits 1
+      expect({ arm, code: result.code }).toEqual({ arm, code: 1 });
+      expect(result.stderr).toContain(`results/dry-runs/1/runs/S1@1.1/${arm}/fake-model/r1/run.json`);
+      nothingRan(ports);
+    }
+  });
+
+  it('@F7.5 An existing configuration is kept unless replaced', async () => {
+    const root = configureRepo(['S1@1.1'], ['wingfoil']);
+    // Given S1 1.1 holds a configuration for "wingfoil-configured"
+    writeConfiguration(versionDir(root, 'S1@1.1'), 'wingfoil-configured', {
+      '.wingfoil/directives/custom/r9.md': '# Rule\n',
+    });
+    const ports = configurePorts('wingfoil');
+
+    const result = await benchConfigure(root, ['S1@1.1', '--arm', 'wingfoil', '--allow-spending'], ports);
+
+    // Then it is refused before any session, and exits 1
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('S1@1.1 already holds a configuration for wingfoil-configured');
+    expect(result.stderr).toContain('--replace');
+    nothingRan(ports);
+  });
+
+  it('@F7.5 A version 1.0 is never configured', async () => {
+    const root = configureRepo(['S1@1.0'], ['wingfoil']);
+    const ports = configurePorts('wingfoil');
+
+    const result = await benchConfigure(root, ['S1@1.0', '--arm', 'wingfoil', '--allow-spending'], ports);
+
+    // Then it is refused before any session, naming the approver's choice, and exits 1
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "a version 1.0 is never configured (the approver's choice of 2026-11-06)",
+    );
+    nothingRan(ports);
+  });
+
+  it("@F7.5 The configuring session runs without the arm's manual and MCP server", async () => {
+    const root = configureRepo(['S1@1.1'], ['wingfoil']);
+    let manualDuring: boolean | undefined;
+    let workspaceDir = '';
+    const ports = configurePorts('wingfoil', {
+      session: (workspace) => {
+        workspaceDir = workspace;
+        manualDuring = existsSync(join(workspace, 'CLAUDE.md'));
+        writeFiles(workspace, { '.wingfoil/directives/custom/r9.md': '# Rule\n' });
+      },
+    });
+
+    const result = await benchConfigure(root, ['S1@1.1', '--arm', 'wingfoil', '--allow-spending'], ports);
+
+    expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: '' });
+    // Then the workspace holds no CLAUDE.md and no MCP server is attached during the session
+    expect(manualDuring).toBe(false);
+    expect(ports.recorded.steps).toHaveLength(1);
+    expect(ports.recorded.steps[0]?.mcpConfig).toBeUndefined();
+    // And the merged manual is back after it
+    expect(readFileSync(join(workspaceDir, 'CLAUDE.md'), 'utf8')).toBe(
+      readFileSync(join(root, 'arms', 'wingfoil', 'manual.md'), 'utf8'),
+    );
+  });
+
+  it('@F7.5 A configuring session killed at a cap writes its record only', async () => {
+    const root = configureRepo(['S1@1.1'], ['wingfoil']);
+    const dir = versionDir(root, 'S1@1.1');
+    const ports = configurePorts('wingfoil', {
+      doubles: {
+        execResultOf: (command) => {
+          if (command[0] === 'bash') return { code: 0, stdout: '', stderr: '' };
+          return command[4] === 'sleep' ? { code: 124, stdout: '', stderr: '' } : undefined;
+        },
+      },
+    });
+    // The killed session reports nothing: no result event, no cost (C3).
+    const agent: AgentPort = {
+      runStep: async (request) => {
+        writeFiles(ports.recorded.creates.at(-1)?.workspace ?? '', {
+          '.wingfoil/directives/custom/r9.md': '# R\n',
+        });
+        await request.run(['sleep', '100']);
+        return {
+          sessionId: request.sessionId,
+          usage: { ...NO_USAGE },
+          transcript: [],
+          error: 'the session ended with no result event',
+        };
+      },
+      resume: () => Promise.reject(new Error('a configuring session is never resumed')),
+    };
+
+    // When a configuring session is killed at the step time cap
+    const result = await benchConfigure(root, ['S1@1.1', '--arm', 'wingfoil', '--allow-spending'], {
+      ...ports,
+      agent,
+    });
+
+    // Then its record has the outcome "killed", its cost at its bound and cost_reported false, and no configuration
+    expect(result.code).toBe(1);
+    const [record] = storedRecords(dir, 'wingfoil');
+    expect(record).toMatchObject({ outcome: 'killed', cost_reported: false, cost_eur: 5 });
+    expect(existsSync(join(dir, 'arms', 'wingfoil-configured'))).toBe(false);
+    expect(existsSync(join(dir, 'configured', 'wingfoil-configured.patch'))).toBe(false);
+  });
+
+  it('@F7.5 A configuring prompt that names a harness is refused before any session', async () => {
+    const root = configureRepo(['S1@1.1'], ['speckit']);
+    // Given "configuring/prompt.md" names "Spec Kit"
+    appendFileSync(join(root, 'configuring', 'prompt.md'), '\nAs Spec Kit does.\n');
+    const ports = configurePorts('speckit');
+
+    const result = await benchConfigure(root, ['S1@1.1', '--arm', 'speckit', '--allow-spending'], ports);
+
+    // Then it is refused before any session, naming the prompt, and exits 1
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('configuring/prompt.md');
+    expect(result.stderr).toContain('Spec Kit');
+    nothingRan(ports);
+  });
+
+  it('@F7.5 Without --allow-spending nothing runs', async () => {
+    const root = configureRepo(['S1@1.1'], ['speckit'], 'claude-code');
+    const ports = configurePorts('speckit');
+
+    const result = await benchConfigure(root, ['S1@1.1', '--arm', 'speckit'], ports);
+
+    // Then it is refused before any session, with campaign run's message, and exits 1
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "agent 'claude-code' spends real money, up to the session's ceiling of 5 EUR; pass --allow-spending to run it",
+    );
+    nothingRan(ports);
+    expect(ports.recorded.builds).toEqual([]);
+  });
+
+  it('@F7.5 A failed replacement keeps the configuration', async () => {
+    const root = configureRepo(['S1@1.1'], ['wingfoil']);
+    const dir = versionDir(root, 'S1@1.1');
+    // Given S1 1.1 holds a configuration for "wingfoil-configured"
+    const earlier = { '.wingfoil/directives/custom/r9.md': '# Rule\n' };
+    writeConfiguration(dir, 'wingfoil-configured', earlier);
+    const patch = readFileSync(join(dir, 'configured', 'wingfoil-configured.patch'), 'utf8');
+    const ports = configurePorts('wingfoil', {
+      session: (workspace) => writeFiles(workspace, { 'src/helpers.ts': 'export {};\n' }),
+    });
+
+    // When a "--replace" session for it is refused
+    const result = await benchConfigure(
+      root,
+      ['S1@1.1', '--arm', 'wingfoil', '--allow-spending', '--replace'],
+      ports,
+    );
+
+    // Then S1 1.1 still holds the earlier configuration, and both records are kept
+    expect(result.code).toBe(1);
+    const records = storedRecords(dir, 'wingfoil');
+    expect(records.map((record) => record.outcome)).toEqual(['written', 'refused']);
+    expect(workspaceFiles(join(dir, 'arms', 'wingfoil-configured'))).toEqual(Object.keys(earlier));
+    expect(readFileSync(join(dir, 'configured', 'wingfoil-configured.patch'), 'utf8')).toBe(patch);
+    const loaded = loadScenario(join(root, 'scenarios'), 'S1', '1.1');
+    expect(
+      loaded.ok ? loaded.value.configurations['wingfoil-configured']?.record.outcome : loaded.issues,
+    ).toBe('written');
   });
 });
