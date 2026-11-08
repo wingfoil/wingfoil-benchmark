@@ -923,7 +923,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     ...(arm.docsOf === undefined ? {} : { docsOf: arm.docsOf }),
     ...(configuration === undefined || reads === undefined
       ? {}
-      : { configured: configuredOfRun(reads, configuration) }),
+      : { configured: configuredOfRun(arm.configuredOf ?? reads, configuration) }),
     ...(harness === undefined ? {} : { harness }),
     ...(arm.requires === undefined ? {} : { provides: arm.provides }),
     ...(missing.length === 0 ? {} : { expectedFailure: { missing } }),
@@ -2163,11 +2163,14 @@ function hookAnswer(stdout: string): { outcome?: string; target?: string; detail
   }
 }
 
-/** What a run records of `configuration`, the one the configured arm `configured` names (REQ-SCO-08 as amended in 1.50). */
-function configuredOfRun(configured: string, configuration: Configuration): ConfiguredOfRun {
+/**
+ * What a run records of `configuration` (REQ-SCO-08 as amended in 1.50): `base` is the configured arm's base arm, or,
+ * for a configured docs control, the configured arm it reads, named `<base>-configured` (experiment design 1.7 §2).
+ */
+function configuredOfRun(base: string, configuration: Configuration): ConfiguredOfRun {
   const cost = configuration.records.reduce((sum, record) => sum + record.cost_eur, 0);
   return {
-    of: configured.slice(0, -CONFIGURED_SUFFIX.length),
+    of: base.endsWith(CONFIGURED_SUFFIX) ? base.slice(0, -CONFIGURED_SUFFIX.length) : base,
     records: configuration.records.length,
     cost_eur: Math.round(cost * 1e6) / 1e6,
   };

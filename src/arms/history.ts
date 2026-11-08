@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix } from 'node:path';
 
 import { armDigest, armDigestOf, configuredOfIn } from './digest.js';
@@ -47,12 +47,20 @@ export interface ArmFromHistory {
 export function armFromHistory(repoRoot: string, arm: string, digest: string): ArmFromHistory | undefined {
   const path = posix.join('arms', arm);
   // A configured arm's digest covers its base arm's files too (REQ-FMT-13 as amended in 1.50): the commits touching
-  // either are read, its base named by the working tree's arm.yaml when it has one, else by each commit's.
-  const treeYaml = join(repoRoot, path, 'arm.yaml');
-  const treeBase = existsSync(treeYaml) ? configuredOfIn(readFileSync(treeYaml, 'utf8')) : undefined;
-  const logged = [path, ...(treeBase === undefined ? [] : [posix.join('arms', treeBase)])];
-  const log = gitRead(repoRoot, ['log', '--format=%H', '--', ...logged]);
-  const commits = (log?.toString('utf8') ?? '').split('\n').filter((line) => /^[0-9a-f]{40,64}$/.test(line));
+  // it or any base an arm.yaml of its history names are read, so that a configured arm since removed or rebased
+  // still resolves (task-142 review round 1).
+  const hashes = (paths: readonly string[]) =>
+    (gitRead(repoRoot, ['log', '--format=%H', '--', ...paths])?.toString('utf8') ?? '')
+      .split('\n')
+      .filter((line) => /^[0-9a-f]{40,64}$/.test(line));
+  const bases = new Set<string>();
+  for (const commit of hashes([path])) {
+    const yaml = gitRead(repoRoot, ['show', `${commit}:${path}/arm.yaml`]);
+    const named = yaml === undefined ? undefined : configuredOfIn(yaml.toString('utf8'));
+    if (named !== undefined && named !== arm) bases.add(named);
+  }
+  const logged = [path, ...[...bases].sort().map((base) => posix.join('arms', base))];
+  const commits = hashes(logged);
   for (const commit of commits) {
     const files = new Map<string, Buffer | string>();
     const written: [string, Buffer][] = [];
@@ -103,8 +111,8 @@ export function armFromHistory(repoRoot: string, arm: string, digest: string): A
         try {
           renameSync(join(staging, directory), into);
         } catch (error) {
-          // Another process put the same arm in place meanwhile: it is the same commit's, so it is used.
-          if (directory !== path || !cached()) throw error;
+          // Another process put the same arm, or the same base, in place meanwhile: it is the same commit's.
+          if (directory === path ? !cached() : !existsSync(into)) throw error;
         }
       }
     } finally {

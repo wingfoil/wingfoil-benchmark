@@ -7,9 +7,10 @@ import { z } from 'zod';
 import { campaignSchema, fail, ok, parseWith, readYamlFile } from '../core/index.js';
 import type { Arm, CampaignFile, HistoryPort, Issue, Result } from '../core/index.js';
 
-import { docsGeneratorOf, loadArm, rulesGeneratorOf } from '../arms/index.js';
+import { configuredOfIn, docsGeneratorOf, loadArm, rulesGeneratorOf } from '../arms/index.js';
 import type { DocsGenerator } from '../arms/index.js';
 import type { Group } from '../results/index.js';
+import { CONFIGURED_SUFFIX } from '../scenario/index.js';
 
 import { renderMarkdown } from './markdown.js';
 import { recordedArm, recordedManual } from './recorded.js';
@@ -68,7 +69,9 @@ export async function methodPages(
   const issues: Issue[] = [];
   const manuals: string[] = [];
   for (const arm of model.arms) {
-    const file = `arms/${arm}/manual.md`;
+    // A configured arm's manual is its base arm's file (REQ-FMT-05 as amended in 1.50), as its runs recorded it.
+    const owner = baseArmIn(root, arm);
+    const file = `arms/${owner}/manual.md`;
     const records = model.records.filter((record) => record.arm === arm);
     const recorded = [...new Set(records.flatMap((record) => record.manual?.sha256 ?? []))].sort();
     const present = existsSync(join(root, file));
@@ -76,7 +79,7 @@ export async function methodPages(
     // A manual changed or removed since its runs (an accepted contest, task-073): the one they ran with, from the
     // history. Runs that recorded two manuals (a change mid-execution) are refused, as before.
     if (recorded.length === 1 && (text === undefined || sha256(text) !== recorded[0])) {
-      text = await recordedManual(root, arm, recorded[0] as string, history);
+      text = await recordedManual(root, owner, recorded[0] as string, history);
       if (text === undefined) {
         issues.push({
           path: file,
@@ -306,7 +309,10 @@ export function setupHtml(
   const docs = docsGeneratorOf(tool);
   const parts = [
     `<p>How the ${e(arm.name)} arm is set up, before its agent starts: the ${e(tool)} harness at the campaign's pin, ` +
-      `from the repository's <code>arms/${e(arm.name)}/</code>.</p>`,
+      `from the repository's <code>arms/${e(arm.configuredOf ?? arm.name)}/</code>` +
+      (arm.configuredOf === undefined
+        ? '.</p>'
+        : `, with the scenario version's configuration for it copied over the workspace after the setup.</p>`),
     `<h2 id="setup-script">Setup script</h2>\n<pre><code>${e(script)}</code></pre>`,
     `<h2 id="telemetry">Telemetry</h2>\n` +
       (telemetry.length === 0
@@ -465,9 +471,13 @@ function executionSection(
     .map(([name, harness]) => {
       const commits = [
         ...new Set(
-          // `harnesses` is keyed by arm (REQ-FMT-01): each arm's own runs' commits (task-046's review).
+          // `harnesses` is keyed by arm (REQ-FMT-01): each arm's own runs' commits (task-046's review), and those of
+          // the configured arm that shares its entry (REQ-FMT-01 as amended in 1.50).
           model.records.flatMap((record) =>
-            record.arm === name && record.harness?.tool === harness.tool ? [record.harness.commit] : [],
+            (record.arm === name || record.arm === `${name}${CONFIGURED_SUFFIX}`) &&
+            record.harness?.tool === harness.tool
+              ? [record.harness.commit]
+              : [],
           ),
         ),
       ].sort();
@@ -586,4 +596,14 @@ function capabilities(model: SiteModel): string {
     return declared.map((text) => `${e(arm)}: ${e(text)}`);
   });
   return lines.length === 0 ? 'none declared by the runs' : lines.join('<br>');
+}
+
+/**
+ * The arm whose files an arm's manual is: a configured arm's base arm, as its `arm.yaml` names it, or, once its
+ * directory is gone, as its name does (experiment design 1.7 §2); else the arm itself.
+ */
+function baseArmIn(root: string, arm: string): string {
+  const file = join(root, 'arms', arm, 'arm.yaml');
+  if (existsSync(file)) return configuredOfIn(readFileSync(file, 'utf8')) ?? arm;
+  return arm.endsWith(CONFIGURED_SUFFIX) ? arm.slice(0, -CONFIGURED_SUFFIX.length) : arm;
 }

@@ -3,6 +3,8 @@ import { existsSync, readdirSync, readFileSync, readlinkSync } from 'node:fs';
 import { join, posix } from 'node:path';
 import { parse } from 'yaml';
 
+import { ARM_NAME } from '../core/index.js';
+
 /** Where arms live, from the repository root (REQ-FMT-05). */
 const ARMS = 'arms';
 
@@ -61,7 +63,7 @@ export function armDigest(repoRoot: string, arm: string): string {
 export function configuredOfIn(text: string): string | undefined {
   try {
     const value = (parse(text) as { configured_of?: unknown } | null)?.configured_of;
-    return typeof value === 'string' && /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(value) ? value : undefined;
+    return typeof value === 'string' && ARM_NAME.test(value) ? value : undefined;
   } catch {
     return undefined;
   }

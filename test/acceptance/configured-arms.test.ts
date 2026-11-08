@@ -1,5 +1,5 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse, stringify } from 'yaml';
 
@@ -170,16 +170,15 @@ describe("runner.feature, a configured arm's run (task-142, F7.5)", () => {
     const checked = checkCampaign(repo.file);
     if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
     // When a run of "speckit-configured" on S8 1.1 is set up
+    // What the setup commit holds: the constitution as the workspace has it when the runner commits `setup`
     const committed: string[] = [];
-    const ports = doubles({
-      commits: COMMITS,
-      onRunOnce: snapshots,
-      patchOf: (directory) => {
-        const file = join(directory, '.specify', 'memory', 'constitution.md');
-        if (existsSync(file)) committed.push(readFileSync(file, 'utf8'));
-        return `diff of ${relative(repo.root, directory)}`;
-      },
-    });
+    const ports = doubles({ commits: COMMITS, onRunOnce: snapshots });
+    const commitAll = ports.git.commitAll.bind(ports.git);
+    ports.git.commitAll = (directory, message, options) => {
+      const file = join(directory, '.specify', 'memory', 'constitution.md');
+      if (message === 'setup' && existsSync(file)) committed.push(readFileSync(file, 'utf8'));
+      return commitAll(directory, message, options);
+    };
     const summary = await runCampaign(checked.value, { ...ports, harnessSources: SOURCES });
     const run = summary.runs.find((candidate) => candidate.arm === 'speckit-configured');
     // Then the workspace holds the configured constitution, and "setup/diff.patch" holds it

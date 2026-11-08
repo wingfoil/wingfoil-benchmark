@@ -3,8 +3,9 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { armDigest, armDigestOf, armFromHistory, configuredOfIn, loadArm } from '../../../src/arms/index.js';
-import { baseArmOf, harnessCoverage } from '../../../src/core/index.js';
+import { baseArmOf, harnessCoverage, historyCli, systemProcess } from '../../../src/core/index.js';
 import { harnessKey } from '../../../src/results/index.js';
+import { recordedArm } from '../../../src/site/recorded.js';
 import { commitAll } from '../../support/configured-arm-fixture.js';
 import { repoPath } from '../../support/paths.js';
 import { tempDir } from '../../support/scenario-fixture.js';
@@ -112,6 +113,28 @@ describe("a configured arm's digest and history (REQ-FMT-13 as amended in 1.50, 
     expect(loaded.ok && loaded.value.configuredOf).toBe('wingfoil');
     // A second read reuses what the first wrote
     expect(armFromHistory(root, 'wingfoil-configured', pinned)).toEqual(found);
+  });
+});
+
+describe('a configured arm read from the history once its directory or its base changed (task-142 review round 1)', () => {
+  it('resolves a pin after the configured arm was removed from the working tree', async () => {
+    const root = armsRepo();
+    commitAll(root);
+    writeFileSync(join(root, 'arms', 'wingfoil', 'manual.md'), '# A later manual\n');
+    commitAll(root);
+    const pinned = armDigest(root, 'wingfoil-configured');
+    rmSync(join(root, 'arms', 'wingfoil-configured'), { recursive: true });
+    writeFileSync(join(root, 'arms', 'wingfoil', 'manual.md'), '# The latest manual\n');
+    commitAll(root);
+    const found = armFromHistory(root, 'wingfoil-configured', pinned.slice(0, 12));
+    expect(found === undefined ? undefined : armDigest(found.root, 'wingfoil-configured')).toBe(pinned);
+    // And the site reads it the same way, for the setup page of the run that recorded it
+    const recorded = await recordedArm(root, 'wingfoil-configured', pinned, historyCli(systemProcess));
+    expect(recorded?.source).toBe('history');
+    if (recorded?.source !== 'history') return;
+    const loaded = loadArm(join(recorded.dir, '..'), 'wingfoil-configured');
+    recorded.cleanup();
+    expect(loaded.ok && loaded.value.configuredOf).toBe('wingfoil');
   });
 });
 

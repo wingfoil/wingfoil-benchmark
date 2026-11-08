@@ -134,8 +134,13 @@ first, unless the implementation finds a wording to correct.
   named by the configured arm itself.
 - **History:** a pinned configured arm is read from the newest commit whose two directories digest to the pin, both
   written under `.cache/arms/<commit>/` (`armFromHistory`); the site's `recordedArm` reads both the same way. The
-  site's commits come from two `commitsTouching` calls, merged: when the arm and its base changed in different commits,
-  the commit it reports among identical matches need not be the newest.
+  commits searched touch the configured arm or any base an `arm.yaml` of its history names, so a configured arm since
+  removed or rebased still resolves. The site's commits come from separate `commitsTouching` calls, merged: when the
+  arm and its base changed in different commits, the commit it reports among identical matches need not be the newest.
+- **Site:** a configured arm's manual page and recorded manual are its base arm's `manual.md` (REQ-FMT-05 as amended
+  in 1.50); its setup page names the base arm's directory and the configuration's copy; the method page's harness line
+  counts the configured arm's runs under the entry it shares. Checked by a site build of an execution that ran
+  `wingfoil-configured` (`test/unit/site/configured-site.test.ts`).
 - **Guards:** a configured arm whose version holds no configuration fails its run before its workspace is made,
   rather than running as its base arm; the docs control's snapshot refuses rules other than the record's, as the run
   does.
@@ -147,3 +152,24 @@ first, unless the implementation finds a wording to correct.
   on main and on the branch, outputs compared by a script: 13 of 13 exit 0 on both, the outputs identical. No existing
   arm's file changed, so no existing digest.
 - No real-agent session, nothing spent; no scenario version gained a configuration.
+
+## Review
+
+### Round 1 (a fresh read-only agent, clone `/tmp/claude-1000/review1-t142-*`, at `4f5518e4`)
+
+Main's HEAD and reflog the same before and after (`22fb17c1`).
+
+| Severity   | Finding                                                                                              | Outcome                                                                                                 |
+| ---------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| blocker    | The method page read a configured arm's manual at `arms/<arm>-configured/manual.md`, which never exists: a site build of an execution that ran one failed | The base arm's manual, as recorded; a site build of such an execution tested, failing first             |
+| should-fix | `armFromHistory` and `recordedArm` searched the base's commits only when the working tree still had the configured arm | Every base an `arm.yaml` of the arm's history names; test of a removed configured arm, both readers   |
+| should-fix | Two writers of the same configured arm could race on the base's directory, the loser throwing        | A base already in place, the same commit's, is used                                                     |
+| should-fix | The method page's harness line counted only the base arm's own runs                                  | The configured arm's runs counted; asserted by the site build                                           |
+| should-fix | "Before the setup commit" was checked after it, in the patch double                                 | Read at `commitAll('setup')`; a copy moved after the commit fails the test                              |
+| should-fix | Untested: the dry run's refusal, `recordedArm`'s configured branch, the base digest from the history | Tests added (characterization of the code they test)                                                    |
+| nit        | The setup page named `arms/<arm>-configured/` as the script's directory                              | Names the base arm's, and the configuration's copy                                                      |
+| nit        | `campaignConsistency` accepts a base's `harnesses` entry by the configured arm's name alone          | Left: harness coverage checks it against the arm's definition                                           |
+| nit        | The record's harness version compared as a string, so `v0.3.1` and `0.3.1` differ                   | Left: the record and the campaign pin the same tool by the same profile's spelling                     |
+| nit        | `configuredOfIn` repeated the arm-name pattern                                                       | `ARM_NAME` imported                                                                                     |
+| nit        | Two comment lines over 120 characters                                                                | Wrapped                                                                                                 |
+| nit        | `configured.of` sliced from the name for a configured arm                                            | Its `configuredOf`; a docs control's still from the configured arm's name, as the suffix rule fixes it  |
