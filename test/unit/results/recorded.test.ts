@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { recordedHashes } from '../../../src/results/index.js';
+import { recordedHashes, runsOfVersion } from '../../../src/results/index.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
 /** A run.json at results/<campaign>/<n>/runs/<scenario>@<version>/<arm>/m/r1/. */
@@ -50,5 +50,25 @@ describe('recordedHashes (REQ-FMT-09)', () => {
 
   it('has none when there are no results at all', () => {
     expect(recordedHashes(join(tempDir('bench-results-'), 'results'), 'S1', '1.0')).toEqual([]);
+  });
+});
+
+describe('runsOfVersion (REQ-FMT-04 as amended in 1.50, task-141)', () => {
+  it("lists every run of a version under results/, a dry run's and an attempt's included, in path order", () => {
+    const root = tempDir('bench-results-');
+    const dry = run(root, 'dry-runs/3/runs/S1@1.1/wingfoil/m/r1', { scenario: 'S1', version: '1.1' });
+    const campaign = run(root, 'c1/1/runs/S1@1.1/baseline/m/r1', { scenario: 'S1', version: '1.1' });
+    const attempt = run(root, 'c1/1/runs/S1@1.1/baseline/m/r1/attempts/1', { scenario: 'S1', version: '1.1' });
+    run(root, 'c1/1/runs/S1@1.0/baseline/m/r1', { scenario: 'S1', version: '1.0' });
+    run(root, 'c1/1/runs/S2@1.1/baseline/m/r1', { scenario: 'S2', version: '1.1' });
+
+    expect(runsOfVersion(root, 'S1', '1.1')).toEqual([attempt, campaign, dry].sort());
+  });
+
+  it('lists none where no run is of the version, or there are no results', () => {
+    const root = tempDir('bench-results-');
+    run(root, 'c1/1/runs/S1@1.0/baseline/m/r1', { scenario: 'S1', version: '1.0' });
+    expect(runsOfVersion(root, 'S1', '1.1')).toEqual([]);
+    expect(runsOfVersion(join(root, 'missing'), 'S1', '1.1')).toEqual([]);
   });
 });

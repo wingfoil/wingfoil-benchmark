@@ -74,7 +74,7 @@ export type { ContainerInfo, ImageInfo, ImagePort } from './ports/images.js';
 export { gitCli } from './ports/git.js';
 export { historyCli } from './ports/history.js';
 export type { HistoryPort } from './ports/history.js';
-export type { CommitAuthors, GitPort } from './ports/git.js';
+export type { CommitAuthors, GitPort, TreeChange } from './ports/git.js';
 export { anonymousGit, githubHttpsUrl, publishCli } from './ports/publish.js';
 export type { PublishPort } from './ports/publish.js';
 export {

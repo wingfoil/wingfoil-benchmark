@@ -1,5 +1,4 @@
 import { join, relative } from 'node:path';
-import { codexFileSecrets } from '../agents/index.js';
 import { armDigest } from '../arms/index.js';
 
 import { effortRefusal, missingEffort, reasonOf } from '../core/index.js';
@@ -9,7 +8,16 @@ import type { DryRunRequest } from '../runner/index.js';
 
 import { parseScenarioRef } from './scenario.js';
 import { codexMcpIssues, codexScopeIssues } from './codex-scope.js';
-import { checkSpending, EXIT, portsFor, report, SPENDING_FLAG, USAGE, withInterrupt } from './shared.js';
+import {
+  checkSpending,
+  EXIT,
+  portsFor,
+  report,
+  SPENDING_FLAG,
+  spendingOptions,
+  USAGE,
+  withInterrupt,
+} from './shared.js';
 import type { Io, Ports } from './shared.js';
 
 /** `bench scenario dry-run`'s arguments (REQ-CLI-05). */
@@ -112,7 +120,7 @@ export async function dryRunCommand(
     },
   });
   if (!spending.ok) return report(spending.issues, io);
-  const { credential, credentialFile, secrets, harnessSources } = spending.value;
+  const { credential, credentialFile } = spending.value;
   const resolved = ports
     ? { ok: true as const, value: ports }
     : portsFor(profile, credential, credentialFile);
@@ -146,19 +154,7 @@ export async function dryRunCommand(
     summary = await withInterrupt(io, (signal) =>
       runDryRun(checked.value, {
         ...resolved.value,
-        ...(harnessSources === undefined ? {} : { harnessSources }),
-        log: (line) => io.stdout(`${line}\n`),
-        logError: (line) => io.stderr(`${line}\n`),
-        // The credential reaches the container here and nowhere else (REQ-RUN-15, REQ-NFR-01).
-        ...(credential === undefined ? {} : { containerEnv: credential, secrets: Object.values(credential) }),
-        // Codex's credential is a file the runner mounts (dl-019); its values are scrubbed all the same.
-        ...(credentialFile === undefined
-          ? {}
-          : {
-              credentialFile,
-              secrets: secrets ?? [],
-              refreshSecrets: () => codexFileSecrets(credentialFile),
-            }),
+        ...spendingOptions(spending.value, io),
         signal,
       }),
     );

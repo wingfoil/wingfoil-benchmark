@@ -157,6 +157,18 @@ completed dry run of the same version, arm and model cost; when it ends, it prin
 per step and in total.
 
 ```bash
+npx bench scenario configure <id>@<version> --arm <harness> [--allow-spending] [--replace]
+```
+
+A **configuring session** writes a harness's configuration for one scenario version (F7.5, REQ-RUN-20): one session
+of the agent `configuring/profile.yaml` pins, with `configuring/prompt.md` as its only prompt, in the workspace a run
+of the harness arm has before step 1, without the arm's manual and MCP server. What it adds or changes inside the arm's
+`configuration` places is written to the version's `arms/<harness>-configured/`, with its patch and its record in
+`configured/`; anything else it touches refuses the result. Every session's record is kept, and its transcript lies in
+`results/configuring/`, git-ignored. A version 1.0, or one any run (a dry run's included) is of, is never configured;
+an existing configuration is replaced only with `--replace`. It spends real money, so it needs `--allow-spending`.
+
+```bash
 npx bench campaign estimate campaigns/<name>.yaml
 ```
 

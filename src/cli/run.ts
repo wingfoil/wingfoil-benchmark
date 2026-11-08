@@ -20,6 +20,7 @@ import {
 import type { CheckedCampaign, Estimate } from '../runner/index.js';
 
 import { compareCommand } from './compare.js';
+import { configureCommand } from './configure.js';
 import { dryRunCommand } from './dry-run.js';
 import { campaignRequirements, FAKE_SCRIPT_VARIABLE, formatRequirement, refusalOf } from './preflight.js';
 import { parseScenarioArguments, validateScenario } from './scenario.js';
@@ -61,6 +62,8 @@ export async function main(
     return EXIT.ok;
   }
   if (argv[0] === 'scenario' && argv[1] === 'dry-run') return dryRunCommand(argv.slice(2), io, ports, root);
+  if (argv[0] === 'scenario' && argv[1] === 'configure')
+    return configureCommand(argv.slice(2), io, ports, root);
   if (argv[0] === 'campaign' && argv[1] === 'compare') return compareCommand(argv.slice(2), io, root);
   if (argv[0] === 'campaign' && argv[1] === 'presets') return presetsCommand(argv.slice(2), io, root);
   if (argv[0] === 'scenario') return scenarioCommand(argv.slice(1), io, root);

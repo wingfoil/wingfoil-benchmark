@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import {
   claudeCodeAgent,
   codexAgent,
+  codexFileSecrets,
   codexSecrets,
   loadAgentToken,
   loadFakeScript,
@@ -12,7 +13,7 @@ import type { AgentPort } from '../agents/index.js';
 import { fakeAgent } from '../agents/index.js';
 import { dockerCli, gitCli, systemProcess } from '../core/index.js';
 import type { DockerPort, GitPort, ImagePort, Issue, PublishPort, Result } from '../core/index.js';
-import type { RunPins } from '../runner/index.js';
+import type { RunnerOptions, RunPins } from '../runner/index.js';
 
 import {
   CODEX_AUTH_VARIABLE,
@@ -56,6 +57,7 @@ export const USAGE =
   '       bench campaign presets\n' +
   '       bench scenario validate <id>@<version> [--holdout <path>]\n' +
   '       bench scenario dry-run <id>@<version> --arm <arm> [--model <id>] [--profile <file>] [--allow-spending]\n' +
+  '       bench scenario configure <id>@<version> --arm <harness> [--allow-spending] [--replace]\n' +
   '       bench score <campaign-id>/<n>|dry-runs/<n> [--final] [--holdout <path>]\n' +
   '       bench run show <run> [--full]\n' +
   '       bench run compare <run> <run>\n' +
@@ -92,7 +94,7 @@ const AGENT_TOKEN_VARIABLE = 'ANTHROPIC_AUTH_TOKEN';
  * (REQ-NFR-01).
  */
 export function portsFor(
-  pins: RunPins,
+  pins: Pick<RunPins, 'agent' | 'currency'>,
   credential?: Readonly<Record<string, string>>,
   credentialFile?: string,
 ): Result<Ports> {
@@ -164,6 +166,28 @@ export interface Spending {
 }
 
 /**
+ * What a run of the agent gets of `spending` and of the command line (REQ-RUN-15, REQ-NFR-01): the harness clones,
+ * the log lines, and the credential, which reaches the container here and nowhere else, its values scrubbed; Codex's
+ * a file the runner mounts (dl-019), its values read again whenever something is stored.
+ */
+export function spendingOptions(spending: Spending, io: Io): Partial<RunnerOptions> {
+  const { credential, credentialFile, secrets, harnessSources } = spending;
+  return {
+    ...(harnessSources === undefined ? {} : { harnessSources }),
+    log: (line) => io.stdout(`${line}\n`),
+    logError: (line) => io.stderr(`${line}\n`),
+    ...(credential === undefined ? {} : { containerEnv: credential, secrets: Object.values(credential) }),
+    ...(credentialFile === undefined
+      ? {}
+      : {
+          credentialFile,
+          secrets: secrets ?? [],
+          refreshSecrets: () => codexFileSecrets(credentialFile),
+        }),
+  };
+}
+
+/**
  * The checks every command that runs the agent makes before anything is built, in order (task-021,
  * W5 plan-phase decision 5): a real agent only with {@link SPENDING_FLAG} — `refusal` says what is
  * refused and up to what — then its credential, then the clone of each harness tool it builds. Whenever the agent is not the free one, the credential is required — with injected ports
@@ -172,7 +196,7 @@ export interface Spending {
  * missing credential or clone first; these checks stay as the second line of defence, and as `scenario dry-run`'s.
  */
 export function checkSpending(
-  pins: RunPins,
+  pins: Pick<RunPins, 'agent'>,
   options: { readonly allowSpending: boolean; readonly builds: readonly string[]; readonly refusal: Issue },
 ): Result<Spending> {
   const agentName = pins.agent.name;

@@ -113,8 +113,20 @@ function readRecords(file: string, label: string): Result<ConfiguredRecord[]> {
     return fail([{ path: label, message: `is not valid JSON: ${(error as Error).message}` }]);
   }
   const parsed = parseWith(configuredRecordsSchema, value, '');
-  if (parsed.ok) return parsed;
-  return fail(parsed.issues.map((issue) => ({ path: `${label}${issue.path}`, message: issue.message })));
+  if (!parsed.ok) {
+    return fail(parsed.issues.map((issue) => ({ path: `${label}${issue.path}`, message: issue.message })));
+  }
+  // Appended, never rewritten (REQ-RUN-20): each record's date is at least the one before it (task-141).
+  const issues: Issue[] = [];
+  parsed.value.forEach((record, index) => {
+    const before = parsed.value[index - 1];
+    if (before === undefined || Date.parse(record.date) >= Date.parse(before.date)) return;
+    issues.push({
+      path: `${label}[${index}].date`,
+      message: `is earlier than record ${index - 1}'s date, ${before.date}: records are appended oldest first`,
+    });
+  });
+  return issues.length > 0 ? fail(issues) : parsed;
 }
 
 /** The configuration's record: the newest `written` one (REQ-FMT-04 as amended in 1.50). */
@@ -125,7 +137,7 @@ function newestWritten(records: readonly ConfiguredRecord[]): ConfiguredRecord |
 /** The directory against its record: each file missing, extra or changed, in the paths' code-unit order. */
 function fileIssues(directory: string, record: ConfiguredRecord): string[] {
   const listed = new Map((record.files ?? []).map((file) => [file.path, file.sha256]));
-  const held = existsSync(directory) ? filesUnder(directory) : [];
+  const held = existsSync(directory) ? relativeFiles(directory) : [];
   const paths = [...new Set([...listed.keys(), ...held])].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   return paths.flatMap((path) => {
     const expected = listed.get(path);
@@ -138,10 +150,11 @@ function fileIssues(directory: string, record: ConfiguredRecord): string[] {
   });
 }
 
-function filesUnder(directory: string, prefix = ''): string[] {
+/** Every entry under `directory` that is not a directory, by its path from it with forward slashes. */
+export function relativeFiles(directory: string, prefix = ''): string[] {
   return readdirSync(join(directory, prefix), { withFileTypes: true }).flatMap((entry) => {
     const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
-    return entry.isDirectory() ? filesUnder(directory, path) : [path];
+    return entry.isDirectory() ? relativeFiles(directory, path) : [path];
   });
 }
 

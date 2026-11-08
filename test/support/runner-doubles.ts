@@ -17,6 +17,7 @@ import type {
   ProcessResult,
   RunOnceRequest,
   ScoringContainerRequest,
+  TreeChange,
 } from '../../src/core/index.js';
 
 /** A step that reports no usage, which is what a double does unless a test says otherwise. */
@@ -118,6 +119,8 @@ export function doubles(
     patchOf?: (directory: string, from: string, to: string) => string;
     /** The messages of the commits a step made (task-035); by default none. */
     messagesOf?: (directory: string, from: string) => readonly string[];
+    /** The paths two commits differ by (task-141); by default none. */
+    changesOf?: (directory: string, from: string, to: string) => readonly TreeChange[];
     /** The commits made since `from`, with their authors (task-118); by default none. */
     commitsOf?: (directory: string, from: string) => readonly CommitAuthors[];
     /** Makes one Docker or git call fail: `create`, `start`, `remove` and `init` break a run
@@ -302,6 +305,10 @@ export function doubles(
     apply: (directory, patchFile) => {
       recorded.gitCalls.push(`apply ${directory} ${patchFile}`);
       return Promise.resolve();
+    },
+    changesBetween: (directory, from, to) => {
+      recorded.gitCalls.push(`changes ${directory} ${from} ${to}`);
+      return Promise.resolve([...(options.changesOf?.(directory, from, to) ?? [])]);
     },
   };
   const answer = (request: AgentRequest): Promise<StepOutcome> => {

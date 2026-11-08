@@ -130,3 +130,114 @@ Feature: Scenario format, hygiene and the v0.1 scenario content
     Given a configuration file holds an oracle literal of S2 1.1
     When S2 1.1 is validated
     Then the scan fails, naming the file and the configuration, not the literal
+
+  # task-141, F7.5 (requirements 1.50, 1.53): bench scenario configure and the configuring session
+  @F7.5
+  Scenario: The configuring agent sees the seed and the installed harness only
+    When the configuring agent runs for S3 1.1 and "openspec"
+    Then its workspace holds the seed and the openspec arm's setup
+    And no step prompt, oracle file, hold-out file or other arm's configuration
+
+  @F7.5
+  Scenario: The configuring agent writes what it added or changed, and its record
+    When a configuring session adds two files and changes one
+    Then the three files are written to "arms/openspec-configured/" of the scenario version
+    And "configured/openspec-configured.json" records the agent, model, prompt digest, pin, usage, cost and files
+
+  @F7.5
+  Scenario Outline: A configuring session's result is refused when it touches what is not configuration
+    When a configuring session <does>
+    Then no configuration is written, its record states the refusal, and the command exits 1
+
+    Examples:
+      | does                         |
+      | deletes a file               |
+      | writes a symbolic link       |
+      | changes "src/index.ts"       |
+      | writes CLAUDE.md             |
+
+  @F7.5
+  Scenario Outline: A configuring session that writes outside its configuration places is refused
+    Given the wingfoil arm declares configuration ".wingfoil/dna.yaml" and ".wingfoil/roles.yaml"
+    And the wingfoil arm declares configuration ".wingfoil/directives/custom/**"
+    And the wingfoil arm declares state ".wingfoil/directives/custom/.index/**"
+    When a configuring session for S1 1.1 and "wingfoil" <writes>
+    Then no configuration is written, its record names <path>, and the command exits 1
+
+    Examples:
+      | writes                                         | path                                   |
+      | adds "src/helpers.ts"                          | "src/helpers.ts"                       |
+      | adds ".wingfoil/directives/custom/.index/a"    | ".wingfoil/directives/custom/.index/a" |
+      | changes the Benchmark Approver's role          | ".wingfoil/dna.yaml"                   |
+      | adds a member with the approver role           | ".wingfoil/dna.yaml"                   |
+
+  @F7.5
+  Scenario: A configuration place over a seed file is refused for that version
+    Given the speckit arm declares configuration "src/**"
+    And the speckit arm is otherwise valid, its state and its constitution's place declared
+    When "bench scenario configure S8@1.1 --arm speckit --allow-spending" runs
+    Then it is refused before any session, naming the glob and the seed file it matches, and exits 1
+
+  @F7.5
+  Scenario: A harness arm's configuration places hold its project rules
+    Given the speckit arm declares configuration ".specify/memory/constitution.md"
+    And the speckit arm declares its state globs
+    And no state glob of the speckit arm matches ".specify/memory/constitution.md"
+    When a configuring session for S8 1.1 and "speckit" extends the generated constitution
+    Then the configuration is written with ".specify/memory/constitution.md"
+
+  @F7.5
+  Scenario: The configuring agent for Spec Kit on S8 sees S8's project rules
+    When the configuring agent runs for S8 1.1 and "speckit"
+    Then its workspace holds the constitution REQ-FMT-14 generates from S8's rules
+    And its record holds that constitution's SHA-256
+
+  @F7.5
+  Scenario Outline: A version a run has recorded is never configured again
+    Given a dry run under "results/dry-runs/" has run S1 1.1
+    When "bench scenario configure S1@1.1 --arm <arm> --allow-spending <flag>" runs
+    Then it is refused before any session, and exits 1
+
+    Examples:
+      | arm      | flag      |
+      | speckit  |           |
+      | wingfoil | --replace |
+
+  @F7.5
+  Scenario: An existing configuration is kept unless replaced
+    Given S1 1.1 holds a configuration for "wingfoil-configured"
+    When "bench scenario configure S1@1.1 --arm wingfoil --allow-spending" runs
+    Then it is refused before any session, and exits 1
+
+  @F7.5
+  Scenario: A version 1.0 is never configured
+    When "bench scenario configure S1@1.0 --arm wingfoil --allow-spending" runs
+    Then it is refused before any session, naming the approver's choice, and exits 1
+
+  @F7.5
+  Scenario: The configuring session runs without the arm's manual and MCP server
+    When the configuring agent runs for S1 1.1 and "wingfoil"
+    Then the workspace holds no CLAUDE.md and no MCP server is attached during the session
+    And the merged manual is back after it
+
+  @F7.5
+  Scenario: A configuring session killed at a cap writes its record only
+    When a configuring session is killed at the step time cap
+    Then its record has the outcome "killed", its cost at its bound and cost_reported false, and no configuration
+
+  @F7.5
+  Scenario: A configuring prompt that names a harness is refused before any session
+    Given "configuring/prompt.md" names "Spec Kit"
+    When "bench scenario configure S1@1.1 --arm speckit --allow-spending" runs
+    Then it is refused before any session, naming the prompt, and exits 1
+
+  @F7.5
+  Scenario: Without --allow-spending nothing runs
+    When "bench scenario configure S1@1.1 --arm speckit" runs
+    Then it is refused before any session, with campaign run's message, and exits 1
+
+  @F7.5
+  Scenario: A failed replacement keeps the configuration
+    Given S1 1.1 holds a configuration for "wingfoil-configured"
+    When a "--replace" session for it is refused
+    Then S1 1.1 still holds the earlier configuration, and both records are kept

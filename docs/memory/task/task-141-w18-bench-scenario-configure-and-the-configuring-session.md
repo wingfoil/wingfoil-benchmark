@@ -2,7 +2,7 @@
 id: task-141-w18-bench-scenario-configure-and-the-configuring-session
 type: task
 title: "W18: bench scenario configure and the configuring session"
-status: in-progress
+status: approved
 release: v0.3
 wave: W18
 features: [F7.5]
@@ -115,3 +115,94 @@ red first, unless the implementation finds a wording to correct (recorded in Exe
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
+
+- Red first: the fifteen scenarios and their tests were committed failing (`be4b8aca`), then the unit tests
+  (`3769007c`); every one failed before its code but the transcript's ignore rule, which `.gitignore` already held
+  (`results/**/transcript.jsonl`, `/runs/`): a characterization test.
+- **Two drafted wordings corrected** (task-138's draft): WingFoil keeps its members and their roles in
+  `.wingfoil/dna.yaml` (`team.members`, `team.roles`), not in `roles.yaml`, which binds directives to roles; the two
+  examples of "A configuring session that writes outside its configuration places is refused" name `dna.yaml`. "A
+  configuration place over a seed file is refused for that version" runs on S8 1.1: S1 1.1's seed has no `src/`, so
+  `src/**` matched none of its files.
+- **Reuse of the run's code** (`src/runner/run.ts`): the image build (`buildRunImage`) and the container's opening
+  (`openContainer`: create, mount check, start, the agent's files) moved out of `executeRun`, which now calls them;
+  `executeSetup`, `executeStep`, `setupFailure`, `remove`, `secretsNow` and `containerPrefix` exported. `executeStep`
+  takes an optional policy (absent, nothing the session says is answered) and pins of its own shape (`StepPins`:
+  agent, caps, currency), since the configuring profile has no approver policy. `portsFor` and `checkSpending` take
+  the pins they read.
+- **The session's workspace and output** go under `runs/configuring/<id>@<version>/<harness>/<n>/`, git-ignored as a
+  run's; the transcript alone is copied, scrubbed, to `results/configuring/…/<n>/transcript.jsonl`.
+- **Git**: `GitPort.changesBetween` (`git diff --raw --no-renames -z`) lists the paths the result differs by from the
+  setup commit, after the restored manual and a `configured` commit; its mode tells a symbolic link or a submodule.
+- **Found while building, in requirements 1.53**: the record's schema of 1.52 took a 40-character harness commit only,
+  and OpenSpec's, fetched from the npm registry, is its tarball's SHA-256 (64): a session on OpenSpec could not have
+  written its record. Also made precise: the session's outcomes and an unreported cost, a result that changes nothing
+  (refused), the members and roles compared as sets, no record for a failure before the session, the transcript's
+  `<n>` from 1, the session's workspace, the records' order and clock, and `--allow-spending` whatever the agent.
+- Characterization (criterion 8): `bench campaign validate` on each of the 13 campaign files (dry-run profiles aside),
+  on main and on the branch, outputs compared by a script: 13 of 13 exit 0 on both, the outputs identical.
+- Checks: prettier, tsc and eslint clean; `scripts/pre-review.sh main` green on its second run (the first was red on
+  `test/bin/bench.test.ts`, which pins the usage text, fixed in `d58760ca`); beside it, `test/unit/campaign`,
+  `architecture`, `docs`, `arms`, `agents`, `scenarios` and every acceptance test green.
+- No real-agent session, nothing spent; no scenario version gained a configuration, so no scenario hash changed.
+- Full suites at `db00b495`: LINT 0, TEST 0, BUILD 0, BIN 0, DOCKER 0; unit 2260 passed and 10 skipped of 2270, in
+  133 files.
+
+## Review
+
+### Round 1 (a fresh read-only agent, clone `/tmp/claude-1000/review1-t141-*`, at `88a7ba8b`)
+
+Main's HEAD and reflog the same before and after (`3480f228`).
+
+| Severity   | Finding                                                                                              | Outcome                                                                                                 |
+| ---------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| should-fix | Only the patch was scrubbed: a configuration file holding the credential would be committed          | Such a file refuses the result, named (1.53); the reason scrubbed; tests of transcript, patch, record   |
+| should-fix | A failure after the session returned counted the session at its bound, over the reported usage       | The reported usage stands once the step returned (1.53); test                                           |
+| should-fix | A failure before the session left `runs/configuring/…/<n>/`, which refused the next session          | What it made under `runs/` is removed (1.53); test                                                      |
+| should-fix | Untested: `interrupted`, `failed`, an unreported cost, an empty result, no record before the session, a `--replace` that writes | Tests added; the first four passed on the earlier code (characterization), the others failed first      |
+| nit        | A type change to a regular file was accepted                                                         | Refused (1.53); test                                                                                    |
+| nit        | An executable configuration file lost its mode                                                       | Kept (1.53); test                                                                                       |
+| nit        | The manual was restored on `written` only                                                            | Restored on every outcome; test                                                                         |
+| nit        | A record that failed its check lost the transcript                                                   | The transcript is written first                                                                         |
+| nit        | The record's reason was not scrubbed                                                                 | Scrubbed                                                                                                |
+| nit        | No `--strict-mcp-config` without an MCP server: a seed's `.mcp.json` would be read                   | Left: no seed holds one; noted for the configured arms' task                                            |
+| nit        | `filesUnder` a third time; the spending block of dry-run copied                                      | `relativeFiles` exported and reused; `spendingOptions` shared by both commands                          |
+| nit        | A line of 122 characters                                                                             | Wrapped                                                                                                 |
+| nit        | No Codex scope or MCP checks, as dry-run has                                                         | Left: the profile pins Claude Code only (REQ-RUN-20)                                                    |
+
+### Round 2 (a fresh read-only agent, clone `/tmp/claude-1000/review2-t141-*`, at `f39224db`)
+
+Round 1's outcomes verified, each fix broken in turn and caught by its test, but the reason's scrub. Main's HEAD and
+reflog the same (`3480f228`).
+
+| Severity   | Finding                                                                                            | Outcome                                                                                     |
+| ---------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| should-fix | The removal of `runs/configuring/…/<n>/` on a failure before the session could remove the directory of a concurrent invocation of the same session | The directory is claimed at the start (`mkdir`, refused on EEXIST) and removed only by its claimant; test, red first |
+| should-fix | The reason's scrub had no test                                                                     | Test; it fails with the scrub removed                                                       |
+| nit        | A blank secret would refuse any file with a space; a binary file read as text                     | Blank values ignored, as the scrubber does; the file searched as bytes                      |
+| nit        | `### Amendment 1.53`'s summary missed round 1's rules                                              | Added                                                                                       |
+| nit        | The CLI's comment said a throw means no session                                                    | Reworded: or its record could not be written                                                |
+| nit        | A test titled "refused" ran a failed session                                                       | Retitled                                                                                    |
+
+### Round 3 (a fresh read-only agent, clone `/tmp/claude-1000/review3-t141-*`, at `d1903129`)
+
+Round 2's outcomes verified by mutation, one at a time; no new correctness bug. Main's HEAD and reflog the same
+(`3480f228`).
+
+| Severity   | Finding                                                                                 | Outcome                                                                       |
+| ---------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| should-fix | The blank-secret test passed without the `trim()` (the clean file held no space)        | The clean file holds a space; the test fails with the filter reverted         |
+| nit        | The leftover's messages told to remove what may be a running session's directory        | Both say a session may be running: remove it once none runs                   |
+| nit        | The parents' `mkdir` was outside the claim's message                                    | Inside it                                                                     |
+| nit        | The session's log line came before the claim                                            | After it                                                                      |
+| nit        | 1.53 did not state the claim                                                            | Stated in REQ-RUN-20 as amended in 1.53                                       |
+
+### Round 4 (a fresh read-only agent, clone `/tmp/claude-1000/review4-t141-*`, at `57d4c9c8`)
+
+Round 3's outcomes verified (the blank-secret test fails with the filter reverted); nits only, so no further round.
+Main's HEAD and reflog the same (`3480f228`).
+
+| Severity | Finding                                                                                   | Outcome                                             |
+| -------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| nit      | The log line after the claim, and the parents' mkdir inside it, untested                  | The claim's test asserts nothing was logged         |
+| nit      | A file where a parent directory should be gave the running-session message                | That message only when the claimed directory exists |

@@ -22,7 +22,13 @@ export const configuredRecordSchema = z
     harness: z.strictObject({
       tool: z.string().min(1),
       version: z.string().min(1),
-      commit: z.string().regex(/^[0-9a-f]{40}$/, 'must be a full commit id'),
+      // A clone's full commit id, or, for a tool fetched from the npm registry, its tarball's SHA-256 (task-071, 1.53).
+      commit: z
+        .string()
+        .regex(
+          /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/,
+          "must be a full commit id, or a registry tarball's SHA-256",
+        ),
     }),
     base_arm_digest: z.string().regex(/^[0-9a-f]{12}$/, 'must be an arm digest'),
     rules_sha256: sha256.nullable(),
