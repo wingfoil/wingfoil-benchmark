@@ -2,7 +2,7 @@
 id: task-141-w18-bench-scenario-configure-and-the-configuring-session
 type: task
 title: "W18: bench scenario configure and the configuring session"
-status: backlog
+status: in-progress
 release: v0.3
 wave: W18
 features: [F7.5]
