@@ -30,4 +30,9 @@ describe('what the repository commits of a run (REQ-RES-06, bug-009)', () => {
     expect(ignored(`runs/0123456789ab/1/${run}/workspace/src/index.ts`)).toBe(true);
     expect(ignored(`runs/dry-runs/1/${run}/workspace/src/index.ts`)).toBe(true);
   });
+
+  it("ignores a configuring session's transcript and its workspace (REQ-RUN-20, task-141)", () => {
+    expect(ignored('results/configuring/S1@1.1/wingfoil/1/transcript.jsonl')).toBe(true);
+    expect(ignored('runs/configuring/S1@1.1/wingfoil/1/workspace/src/index.ts')).toBe(true);
+  });
 });

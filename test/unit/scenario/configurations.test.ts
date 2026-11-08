@@ -298,3 +298,46 @@ describe("a record's usage (review round 2, task-140)", () => {
     expectTypeOf<SessionUsage>().toExtend<ConfiguredRecord['usage']>();
   });
 });
+
+describe('configured records: task-141', () => {
+  it("refuses records whose dates are not in non-decreasing order, naming the record (task-140's review)", () => {
+    const { root, dir } = version();
+    writeConfiguration(dir, 'wingfoil-configured', FILES, [
+      refusedRecord(),
+      configuredRecord(FILES, { date: '2026-11-08T09:00:00Z' }),
+      configuredRecord(FILES, { date: '2026-11-08T09:00:00Z' }),
+    ]);
+
+    expect(issues(root)).toEqual([
+      {
+        path: 'configured/wingfoil-configured.json[1].date',
+        message: "is earlier than record 0's date, 2026-11-08T10:00:00Z: records are appended oldest first",
+      },
+    ]);
+  });
+
+  it('accepts records of the same date, oldest first', () => {
+    const { root, dir } = version();
+    writeConfiguration(dir, 'wingfoil-configured', FILES, [refusedRecord(), configuredRecord(FILES)]);
+    expect(loadScenario(root, 'S9', '1.1').ok).toBe(true);
+  });
+
+  it("accepts a registry tool's harness commit, its tarball's SHA-256 (REQ-RUN-20 as amended in 1.53)", () => {
+    const { root, dir } = version();
+    const harness = { tool: 'openspec', version: '1.14.0', commit: 'e'.repeat(64) };
+    writeConfiguration(dir, 'openspec-configured', { 'openspec/config.yaml': 'x: 1\n' }, [
+      configuredRecord({ 'openspec/config.yaml': 'x: 1\n' }, { harness }),
+    ]);
+    expect(loadScenario(root, 'S9', '1.1').ok).toBe(true);
+
+    writeConfiguration(dir, 'openspec-configured', { 'openspec/config.yaml': 'x: 1\n' }, [
+      configuredRecord(
+        { 'openspec/config.yaml': 'x: 1\n' },
+        { harness: { ...harness, commit: 'e'.repeat(50) } },
+      ),
+    ]);
+    expect(issues(root).map((issue) => issue.path)).toEqual([
+      'configured/openspec-configured.json[0].harness.commit',
+    ]);
+  });
+});
