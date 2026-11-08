@@ -1,14 +1,17 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify } from 'yaml';
 
-import { armDigest } from '../../src/arms/index.js';
+import { armDigest, rulesGeneratorOf } from '../../src/arms/index.js';
+import type { RunOnceRequest } from '../../src/core/index.js';
+import { relativeFiles } from '../../src/scenario/index.js';
 import { completeCampaignYaml, writeRepo } from './campaign-fixture.js';
 import type { RepoFixture } from './campaign-fixture.js';
 import { configuredRecord, writeConfiguration } from './configured-fixture.js';
 import { repoPath } from './paths.js';
+import { fakeBuild } from './runner-doubles.js';
 
 /** The configuring prompt and profile a fixture repository commits (REQ-RUN-20), and their SHA-256. */
 export const FIXTURE_PROMPT = '# Configure the harness\n\nWrite its configuration for this project.\n';
@@ -135,4 +138,42 @@ export function commitAll(root: string): void {
 
 export function sha256(content: string | Buffer): string {
   return createHash('sha256').update(content).digest('hex');
+}
+
+/** The harness commits the doubles' clones know, and the clones (REQ-RUN-14). */
+export const WINGFOIL_SHA = '3df305ea198d7e2ca0da73bfb12b14af865e9922';
+export const SPECKIT_SHA = '9a1c2b3d4e5f60718293a4b5c6d7e8f901234567';
+export const COMMITS = { '3df305e': WINGFOIL_SHA, 'v1.1.0': SPECKIT_SHA, '1.14.0': 'e'.repeat(40) };
+export const SOURCES = {
+  wingfoil: '/clones/wingfoil',
+  speckit: '/clones/spec-kit',
+  openspec: '/clones/openspec',
+};
+
+/**
+ * The doubles' one-off containers: a harness build as {@link fakeBuild}; a snapshot applies the scenario's wingfoil
+ * configuration as the wingfoil setup does, and leaves Spec Kit's constitution template as its init does.
+ */
+export function snapshots(request: RunOnceRequest): void {
+  const build = request.mount.source;
+  if (!request.command.join(' ').includes('/build/arm/')) {
+    fakeBuild(request);
+    return;
+  }
+  const overlay = join(build, 'scenario', '.wingfoil');
+  if (existsSync(overlay)) cpSync(overlay, join(build, 'workspace', '.wingfoil'), { recursive: true });
+  if (readFileSync(join(build, 'arm', 'arm.yaml'), 'utf8').includes('name: speckit\n')) {
+    mkdirSync(join(build, 'workspace', '.specify', 'memory'), { recursive: true });
+    writeFileSync(join(build, 'workspace', '.specify', 'memory', 'constitution.md'), '# [PROJECT_NAME]\n');
+  }
+}
+
+/** The constitution Spec Kit's rules generator writes for a fixture scenario version (REQ-FMT-14). */
+export function generatedConstitution(root: string, scenario: string): string {
+  const [id = '', version = ''] = scenario.split('@');
+  const source = join(root, 'scenarios', id, version, 'arms', 'wingfoil');
+  const files = new Map(
+    relativeFiles(source).map((path) => [path, readFileSync(join(source, path), 'utf8')]),
+  );
+  return rulesGeneratorOf('speckit')?.render(files) ?? '';
 }

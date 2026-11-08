@@ -19,8 +19,8 @@ acceptance:
     "scoring.feature#The configuring cost counts once in M-K3, every session's",
     "results.feature#A configured arm is compared with its configured docs control",
   ]
-requirements: [REQ-FMT-01, REQ-FMT-04, REQ-FMT-05, REQ-FMT-13, REQ-RUN-03, REQ-RUN-11, REQ-SCO-08, REQ-SCO-14,
-  REQ-RES-09]
+requirements: [REQ-FMT-01, REQ-FMT-04, REQ-FMT-05, REQ-FMT-06, REQ-FMT-13, REQ-RUN-03, REQ-RUN-11, REQ-SCO-08,
+  REQ-SCO-14, REQ-RES-09, REQ-CLI-05, REQ-CLI-14]
 fixes: []
 tags: ["v0.3","w18","f7.5"]
 ---
@@ -114,5 +114,36 @@ first, unless the implementation finds a wording to correct.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- Red first: the ten scenarios went into their `.feature` files with their tests in
+  `test/acceptance/configured-arms.test.ts` (commit `9f44336c`, the six arm directories with them), all failing before
+  the code (`f6cd1fcf`). The unit tests of the edge cases (`test/unit/arms/configured-arm.test.ts`,
+  `test/unit/runner/configured-pins.test.ts`, `test/unit/runner/configured-run.test.ts`, one in
+  `test/unit/cli/configure.test.ts`) came after the code: characterization of it, not red first.
+- Scenario wordings kept as task-138 drafted them. Two scenarios' tests read beyond the drafted text: the setup page of
+  a configured arm is checked on the page `setupHtml` renders for the loaded arm (its base arm's script, manual link and
+  rules), not on a whole site build; M-K3 is checked in two halves, the runner recording the configuration's cost in
+  `run.json` and the aggregate reading it.
+- **Decisions** (requirements 1.54): `run.json` records `configured` (`of`, `records`, `cost_eur`) for a configured
+  arm and a configured docs control, and M-K3 reads it, so that an execution aggregates from its results alone; a dry
+  run of a configured arm or docs control is refused as `validate` refuses a campaign's; `bench scenario configure`
+  refuses a configured arm as `--arm`.
+- **Where the code reads a configured arm as its base arm:** `baseArmOf` (`src/core/arm.ts`) keys the `harnesses`
+  entry (harness coverage, eligibility, the harness build, the estimate's provenance, a dry run's key) and the
+  scenario's base configuration (the run's setup, the docs control's snapshot). `campaignConsistency` accepts a
+  `harnesses` entry for the base of a configured arm the campaign runs, run or not; harness coverage refuses an entry
+  named by the configured arm itself.
+- **History:** a pinned configured arm is read from the newest commit whose two directories digest to the pin, both
+  written under `.cache/arms/<commit>/` (`armFromHistory`); the site's `recordedArm` reads both the same way. The
+  site's commits come from two `commitsTouching` calls, merged: when the arm and its base changed in different commits,
+  the commit it reports among identical matches need not be the newest.
+- **Guards:** a configured arm whose version holds no configuration fails its run before its workspace is made,
+  rather than running as its base arm; the docs control's snapshot refuses rules other than the record's, as the run
+  does.
+- **Beyond the scope, noted:** the contest form's arm options gained the three configured arms, since a unit test
+  holds them to every harness arm of the repository; asking whether the setup or the configuration is contested stays
+  with the later publishing task. The `execution()` helper of `test/unit/results/aggregate.test.ts` moved to
+  `test/support/aggregate-fixture.ts` (with a version and extra `run.json` fields) to serve the acceptance tests.
+- Characterization (criterion 8): `bench campaign validate` on each of the 13 campaign files (dry-run profiles aside),
+  on main and on the branch, outputs compared by a script: 13 of 13 exit 0 on both, the outputs identical. No existing
+  arm's file changed, so no existing digest.
+- No real-agent session, nothing spent; no scenario version gained a configuration.

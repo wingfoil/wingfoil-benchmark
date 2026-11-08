@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,6 +11,7 @@ import {
   configureRepo,
   writeFiles,
 } from '../../support/configure-fixture.js';
+import { repoPath } from '../../support/paths.js';
 import { writeArmAt } from '../../support/arm-fixture.js';
 import { configuredRecord, writeConfiguration } from '../../support/configured-fixture.js';
 
@@ -102,6 +103,20 @@ describe("bench scenario configure's refusals before any session (REQ-RUN-20, ta
     const checked = checkConfigure({ ...request, arm: 'openspec' }, root);
     expect(checked.ok ? [] : checked.issues).toEqual([
       { path: 'harnesses.openspec', message: "is required: the arm requires the harness 'openspec'" },
+    ]);
+  });
+
+  it('refuses a configured arm: its harness arm is the one configured (task-142)', () => {
+    const root = configureRepo(['S1@1.1'], ['wingfoil']);
+    cpSync(repoPath('arms/wingfoil-configured'), join(root, 'arms', 'wingfoil-configured'), {
+      recursive: true,
+    });
+    const checked = checkConfigure({ ...request, arm: 'wingfoil-configured' }, root);
+    expect(checked.ok ? [] : checked.issues).toEqual([
+      {
+        path: '--arm',
+        message: 'wingfoil-configured is a configured arm: configure its harness arm, wingfoil',
+      },
     ]);
   });
 

@@ -168,6 +168,13 @@ of the harness arm has before step 1, without the arm's manual and MCP server. W
 `results/configuring/`, git-ignored. A version 1.0, or one any run (a dry run's included) is of, is never configured;
 an existing configuration is replaced only with `--replace`. It spends real money, so it needs `--allow-spending`.
 
+A configuration runs as a **configured arm**, `wingfoil-configured`, `speckit-configured` or `openspec-configured`
+(REQ-FMT-05 as amended in 1.50): its base arm's setup, manual and MCP server, then the version's configuration copied
+over the workspace before the setup commit. A campaign pins its harness under the base arm's `harnesses` entry, and
+`validate` refuses it on a version with no configuration, or one whose record disagrees with the campaign's pins. Its
+docs controls, `baseline-docs-configured`, `speckit-docs-configured` and `openspec-docs-configured`, are generated from
+the configured workspace; M-K3 counts every session's cost once, for the configured arm and its docs control.
+
 ```bash
 npx bench campaign estimate campaigns/<name>.yaml
 ```

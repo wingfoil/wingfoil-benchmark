@@ -3,18 +3,20 @@ import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse, stringify } from 'yaml';
 
-import { armDigest, loadArm, rulesGeneratorOf } from '../../src/arms/index.js';
+import { armDigest, loadArm } from '../../src/arms/index.js';
 import { checkCampaign } from '../../src/cli/index.js';
-import type { RunOnceRequest } from '../../src/core/index.js';
 import { aggregateExecution } from '../../src/results/index.js';
 import { runCampaign } from '../../src/runner/index.js';
-import { relativeFiles } from '../../src/scenario/index.js';
 import { setupHtml } from '../../src/site/method.js';
 import { escapeHtml } from '../../src/site/render.js';
 import { execution } from '../support/aggregate-fixture.js';
 import {
+  COMMITS,
   commitAll,
   configuredRepo,
+  generatedConstitution,
+  snapshots,
+  SOURCES,
   FIXTURE_PROMPT,
   PINS,
   sha256,
@@ -22,13 +24,8 @@ import {
 } from '../support/configured-arm-fixture.js';
 import { refusedRecord } from '../support/configured-fixture.js';
 import { repoPath } from '../support/paths.js';
-import { doubles, fakeBuild } from '../support/runner-doubles.js';
+import { doubles } from '../support/runner-doubles.js';
 import { tempDir } from '../support/scenario-fixture.js';
-
-const WINGFOIL_SHA = '3df305ea198d7e2ca0da73bfb12b14af865e9922';
-const SPECKIT_SHA = '9a1c2b3d4e5f60718293a4b5c6d7e8f901234567';
-const COMMITS = { '3df305e': WINGFOIL_SHA, 'v1.1.0': SPECKIT_SHA, '1.14.0': 'e'.repeat(40) };
-const SOURCES = { wingfoil: '/clones/wingfoil', speckit: '/clones/spec-kit', openspec: '/clones/openspec' };
 
 /** The configured rule a wingfoil configuration adds, and the roles that assign it. */
 const R9 = '# Rule r9\n\nName every exported function after its effect.\n';
@@ -41,34 +38,6 @@ const WINGFOIL_CONFIGURATION = {
 function refusal(file: string): string {
   const checked = checkCampaign(file);
   return checked.ok ? '' : JSON.stringify(checked.issues);
-}
-
-/**
- * The doubles' one-off containers: a harness build as {@link fakeBuild}; a snapshot applies the scenario's wingfoil
- * configuration as the wingfoil setup does, and leaves Spec Kit's constitution template as its init does.
- */
-function snapshots(request: RunOnceRequest): void {
-  const build = request.mount.source;
-  if (!request.command.join(' ').includes('/build/arm/')) {
-    fakeBuild(request);
-    return;
-  }
-  const overlay = join(build, 'scenario', '.wingfoil');
-  if (existsSync(overlay)) cpSync(overlay, join(build, 'workspace', '.wingfoil'), { recursive: true });
-  if (readFileSync(join(build, 'arm', 'arm.yaml'), 'utf8').includes('name: speckit\n')) {
-    mkdirSync(join(build, 'workspace', '.specify', 'memory'), { recursive: true });
-    writeFileSync(join(build, 'workspace', '.specify', 'memory', 'constitution.md'), '# [PROJECT_NAME]\n');
-  }
-}
-
-/** The constitution Spec Kit's rules generator writes for a fixture scenario version (REQ-FMT-14). */
-function generatedConstitution(root: string, scenario: string): string {
-  const [id = '', version = ''] = scenario.split('@');
-  const source = join(root, 'scenarios', id, version, 'arms', 'wingfoil');
-  const files = new Map(
-    relativeFiles(source).map((path) => [path, readFileSync(join(source, path), 'utf8')]),
-  );
-  return rulesGeneratorOf('speckit')?.render(files) ?? '';
 }
 
 /** The container the doubles created for the run in `workspace`, as they name it. */
