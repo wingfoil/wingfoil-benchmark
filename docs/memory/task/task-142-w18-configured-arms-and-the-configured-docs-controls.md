@@ -2,7 +2,7 @@
 id: task-142-w18-configured-arms-and-the-configured-docs-controls
 type: task
 title: "W18: configured arms and the configured docs controls"
-status: backlog
+status: in-progress
 release: v0.3
 wave: W18
 features: [F7.5]
