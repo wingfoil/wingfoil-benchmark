@@ -115,3 +115,28 @@ red first, unless the implementation finds a wording to correct (recorded in Exe
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
+
+- Red first: the fifteen scenarios and their tests were committed failing (`be4b8aca`), then the unit tests
+  (`3769007c`); every one failed before its code but the transcript's ignore rule, which `.gitignore` already held
+  (`results/**/transcript.jsonl`, `/runs/`): a characterization test.
+- **Two drafted wordings corrected** (task-138's draft): WingFoil keeps its members and their roles in
+  `.wingfoil/dna.yaml` (`team.members`, `team.roles`), not in `roles.yaml`, which binds directives to roles; the two
+  examples of "A configuring session that writes outside its configuration places is refused" name `dna.yaml`. "A
+  configuration place over a seed file is refused for that version" runs on S8 1.1: S1 1.1's seed has no `src/`, so
+  `src/**` matched none of its files.
+- **Reuse of the run's code** (`src/runner/run.ts`): the image build (`buildRunImage`) and the container's opening
+  (`openContainer`: create, mount check, start, the agent's files) moved out of `executeRun`, which now calls them;
+  `executeSetup`, `executeStep`, `setupFailure`, `remove`, `secretsNow` and `containerPrefix` exported. `executeStep`
+  takes an optional policy (absent, nothing the session says is answered) and pins of its own shape (`StepPins`:
+  agent, caps, currency), since the configuring profile has no approver policy. `portsFor` and `checkSpending` take
+  the pins they read.
+- **The session's workspace and output** go under `runs/configuring/<id>@<version>/<harness>/<n>/`, git-ignored as a
+  run's; the transcript alone is copied, scrubbed, to `results/configuring/…/<n>/transcript.jsonl`.
+- **Git**: `GitPort.changesBetween` (`git diff --raw --no-renames -z`) lists the paths the result differs by from the
+  setup commit, after the restored manual and a `configured` commit; its mode tells a symbolic link or a submodule.
+- **Found while building, in requirements 1.53**: the record's schema of 1.52 took a 40-character harness commit only,
+  and OpenSpec's, fetched from the npm registry, is its tarball's SHA-256 (64): a session on OpenSpec could not have
+  written its record. Also made precise: the session's outcomes and an unreported cost, a result that changes nothing
+  (refused), the members and roles compared as sets, no record for a failure before the session, the transcript's
+  `<n>` from 1, the session's workspace, the records' order and clock, and `--allow-spending` whatever the agent.
+- No real-agent session, nothing spent; no scenario version gained a configuration, so no scenario hash changed.
