@@ -186,8 +186,8 @@ export function checkConfigure(
       {
         path: 'configure',
         message:
-          `${relative(root, workDir)} exists: an earlier session of this configuration wrote no record; ` +
-          'remove it',
+          `${relative(root, workDir)} exists: a session of this configuration is running, or an earlier one ` +
+          'wrote no record; remove it once none runs',
       },
     ]);
   }
@@ -279,16 +279,19 @@ export async function runConfigure(
   const date = (options.date ?? (() => new Date()))().toISOString();
   const now = options.now ?? (() => performance.now());
   const rate = profile.currency.usd_to_eur;
-  options.log?.(`configure ${scenario.id}@${scenario.version} for ${arm.name}, session ${checked.index}`);
-
   // The session's directory, claimed: another invocation of the same session gets EEXIST here and stops, so that
   // what this one removes on a failure before the session is only what it made.
-  mkdirSync(dirname(workDir), { recursive: true });
   try {
+    mkdirSync(dirname(workDir), { recursive: true });
     mkdirSync(workDir);
   } catch (error) {
-    throw new Error(`${relative(repoRoot, workDir)} cannot be claimed: ${reasonOf(error)}`, { cause: error });
+    const why =
+      (error as NodeJS.ErrnoException).code === 'EEXIST'
+        ? 'a session of this configuration is running, or an earlier one wrote no record; remove it once none runs'
+        : reasonOf(error);
+    throw new Error(`${relative(repoRoot, workDir)} cannot be claimed: ${why}`, { cause: error });
   }
+  options.log?.(`configure ${scenario.id}@${scenario.version} for ${arm.name}, session ${checked.index}`);
   const ending: Ending = { outcome: 'failed', usage: NO_USAGE, rulesSha256: null, wallTimeMs: 0 };
   let container: string | undefined;
   let removal: Promise<void> | undefined;

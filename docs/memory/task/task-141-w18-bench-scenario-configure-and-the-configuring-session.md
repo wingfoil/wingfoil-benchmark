@@ -181,3 +181,16 @@ reflog the same (`3480f228`).
 | nit        | `### Amendment 1.53`'s summary missed round 1's rules                                              | Added                                                                                       |
 | nit        | The CLI's comment said a throw means no session                                                    | Reworded: or its record could not be written                                                |
 | nit        | A test titled "refused" ran a failed session                                                       | Retitled                                                                                    |
+
+### Round 3 (a fresh read-only agent, clone `/tmp/claude-1000/review3-t141-*`, at `d1903129`)
+
+Round 2's outcomes verified by mutation, one at a time; no new correctness bug. Main's HEAD and reflog the same
+(`3480f228`).
+
+| Severity   | Finding                                                                                 | Outcome                                                                       |
+| ---------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| should-fix | The blank-secret test passed without the `trim()` (the clean file held no space)        | The clean file holds a space; the test fails with the filter reverted         |
+| nit        | The leftover's messages told to remove what may be a running session's directory        | Both say a session may be running: remove it once none runs                   |
+| nit        | The parents' `mkdir` was outside the claim's message                                    | Inside it                                                                     |
+| nit        | The session's log line came before the claim                                            | After it                                                                      |
+| nit        | 1.53 did not state the claim                                                            | Stated in REQ-RUN-20 as amended in 1.53                                       |

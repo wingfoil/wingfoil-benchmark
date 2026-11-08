@@ -394,7 +394,7 @@ describe('the configuring session: review round 2 (task-141)', () => {
 
     await expect(
       runConfigure(checked.value, { ...ports, harnessSources: { wingfoil: '/clones/wingfoil' } }),
-    ).rejects.toThrow('cannot be claimed');
+    ).rejects.toThrow('cannot be claimed: a session of this configuration is running');
     expect(readFileSync(join(checked.value.workDir, 'workspace', 'README.md'), 'utf8')).toBe('live\n');
     expect(ports.recorded.builds).toEqual([]);
   });

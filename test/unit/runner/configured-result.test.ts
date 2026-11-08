@@ -161,7 +161,10 @@ describe("a configuring session's result: review round 1 (task-141)", () => {
   });
 
   it("refuses a file that holds the credential's value, wherever it is (REQ-NFR-01)", () => {
-    const dir = workspace({ '.wingfoil/notes.md': 'token: s3cr3t-value\n', '.wingfoil/clean.md': 'clean\n' });
+    const dir = workspace({
+      '.wingfoil/notes.md': 'token: s3cr3t-value\n',
+      '.wingfoil/clean.md': 'a clean note\n',
+    });
     expect(
       offences([added('.wingfoil/notes.md'), added('.wingfoil/clean.md')], {
         workspace: dir,
