@@ -84,3 +84,15 @@ profile's cap bounds the worst case at 60 EUR; the ceiling proposed below stops 
 6. **Figures generated:** the note's table and sums come from a script reading `scenarios/*/1.1/configured/*.json`.
 
 ## Execution notes
+
+- 2026-11-08: backlog → in-progress on main; worktree `../WingFoil2-Benchmark-wt/t143`. The approver's ceiling, in
+  chat: **15 EUR**. The twelve sessions' pre-session checks, without `--allow-spending` (0 EUR): each stops only at
+  the spending refusal. The launching script (scratchpad, `configure-143.sh`) gates each session on the machine's load
+  and stops when the spending so far, summed from the records, plus 2 EUR could pass 15 EUR.
+- **The first session, S1 on wingfoil, alone** (design 1): written, 0.0695 EUR, 28.2 s, four files under
+  `.wingfoil/` (`dna.yaml`, `roles.yaml`, two custom directives `project-conventions` and `standards-compliance`,
+  both assigned to roles). The standards directive names JSON standards by number (RFC 8259, 6901, 6902, 7396) that
+  the seed does not contain; two of them appear in S1's step prompts. Read against the transcript, they appear only in
+  the agent's own writing, from the README's "follow the published standards it implements" and the project's name;
+  the container held no prompt, and the leak scan (prompts, oracle, hold-out) passed. Recorded for the review, not a
+  leak by construction; the other eleven sessions started after it.
