@@ -2,7 +2,7 @@
 id: task-143-w18-the-twelve-configurations-of-s1-s2-s3-and-s8-at-1.1
 type: task
 title: "W18: the twelve configurations of S1, S2, S3 and S8 at 1.1"
-status: in-review
+status: approved
 release: v0.3
 wave: W18
 features: [F7.5]
