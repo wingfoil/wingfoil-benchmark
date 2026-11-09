@@ -3,7 +3,7 @@ id: bug-047-the-leak-scan-refuses-a-configuration-that-uses-an-ordinary-word-the
 type: bug
 title: "The leak scan refuses a configuration that uses an ordinary word the oracle quotes, such as a test group's name"
 status: approved
-# fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
+fixed_by: task-143-w18-the-twelve-configurations-of-s1-s2-s3-and-s8-at-1.1
 tags: ["v0.3","configured","leak-scan"]
 ---
 
@@ -34,7 +34,7 @@ Neither word is in the version's seed or prompts. `oracleLiterals` takes every q
 `oracle_literal_min_length` (8) characters with a letter or digit, so a one-word test group name is a literal; a
 hand-written prompt or seed rarely meets one by chance, an agent's prose does.
 
-## Fix (proposed, for the approver's choice)
+## Fix (the approver's choice, 2026-11-09: fix 1, inside task-143)
 
 1. **Recommended:** in a configuration, look only for the oracle literals that are more than one word or hold a
    character other than a letter (a value, a message, a code such as `ORD-0001`), and keep every literal for the
@@ -43,3 +43,11 @@ hand-written prompt or seed rarely meets one by chance, an agent's prose does.
 3. Or raise `oracle_literal_min_length` for configurations only.
 
 The configurations are kept as written either way: their records hold their files' SHA-256, and no session reruns.
+
+## Resolution
+
+Fixed by [task-143](../task/task-143-w18-the-twelve-configurations-of-s1-s2-s3-and-s8-at-1.1.md), narrower than fix 1
+as proposed: review round 1 found that skipping every all-letter literal would also skip camelCase names and
+upper-case codes. A configuration may use an oracle literal only when it is one prose word, lower case or
+capitalised; a literal of more than one word, holding a non-letter, or with an inner capital is still refused.
+Prompts, seed and arm configurations keep every literal. Requirements 1.55 (REQ-FMT-08).
