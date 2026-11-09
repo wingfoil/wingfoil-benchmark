@@ -119,3 +119,13 @@ profile's cap bounds the worst case at 60 EUR; the ceiling proposed below stops 
   two validate the real 1.1 versions (task-131, task-132), one is the leak scan's (its fixture copies S2@1.1), and
   thirteen of task-141 run `configure` on copies of S1@1.1 and S8@1.1 that now hold a configuration. The bug is filed
   (pending, the approver's choice of fix); the configurations stay as written, no session reruns.
+- **bug-047 fixed here** (the approver, in chat, 2026-11-09: fix 1, inside this task). Red first at `b1ced387`: the
+  scenario "A configuration may use a one-word literal of the oracle as prose" in `scenarios.feature` and its test,
+  failing on S2's `duplicate`; the real versions' validations (task-131, task-132) red for the same reason. The fix in
+  `src/scenario/leak-scan.ts`: a configuration's files are searched for the oracle literals less those of one word of
+  letters only; the prompts, the seed and a scenario's `arms/<arm>/` keep every literal. Requirements 1.55 amend
+  REQ-FMT-08. A mutation (no literal searched in a configuration) fails both tests. `bench scenario validate` passes
+  on the four 1.1 versions, with and without the hold-out (exit codes only).
+- **The fixtures** of task-140's and task-141's tests copied the real 1.1 versions whole; they now copy a version less
+  its configurations (`copyUnconfigured` in `test/support/configure-fixture.ts`), and task-131's and task-132's
+  comparisons of 1.1 with 1.0 leave the configurations out. Targeted suites: 85 files, 1368 passed, 10 skipped.
