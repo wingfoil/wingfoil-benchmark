@@ -2,7 +2,7 @@
 id: bug-047-the-leak-scan-refuses-a-configuration-that-uses-an-ordinary-word-the-oracle-quotes-such-as-a-test-group-s-name
 type: bug
 title: "The leak scan refuses a configuration that uses an ordinary word the oracle quotes, such as a test group's name"
-status: approved
+status: fixed
 fixed_by: task-143-w18-the-twelve-configurations-of-s1-s2-s3-and-s8-at-1.1
 tags: ["v0.3","configured","leak-scan"]
 ---
