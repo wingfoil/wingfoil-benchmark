@@ -123,7 +123,8 @@ profile's cap bounds the worst case at 60 EUR; the ceiling proposed below stops 
   scenario "A configuration may use a one-word literal of the oracle as prose" in `scenarios.feature` and its test,
   failing on S2's `duplicate`; the real versions' validations (task-131, task-132) red for the same reason. The fix in
   `src/scenario/leak-scan.ts`: a configuration's files are searched for the oracle literals less those of one word of
-  letters only; the prompts, the seed and a scenario's `arms/<arm>/` keep every literal. Requirements 1.55 amend
+  letters only (narrowed in review round 1 to one prose word, lower case or capitalised); the prompts, the seed and
+  a scenario's `arms/<arm>/` keep every literal. Requirements 1.55 amend
   REQ-FMT-08. A mutation (no literal searched in a configuration) fails both tests. `bench scenario validate` passes
   on the four 1.1 versions, with and without the hold-out (exit codes only).
 - **The fixtures** of task-140's and task-141's tests copied the real 1.1 versions whole; they now copy a version less
@@ -147,3 +148,13 @@ record hashes it; two mutations of the fix each failed the new test.
 | nit | The script crashed on a non-directory under `scenarios/` or a record without usage | `statSync(…).isDirectory()`; a missing usage counts zero; the table unchanged |
 | nit | Three lines over 120 characters | Re-wrapped (`scenarios.test.ts:440` predates the task) |
 | nit | `isConfigurationPath` matches any arm named `-configured` | A comment cites REQ-FMT-05's reserved names |
+
+Round 2 (a fresh agent and clone at `5c885fd1`; main unchanged): both should-fixes resolved; the test fails with the
+old rule and with no filter (its own mutations); spec, scenario, comment and note agree with the code; the script's
+table byte-identical; tsc, prettier, eslint, the targeted suites and `scenario validate` on the four versions green.
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| nit | The execution note on the fix still gave round 1's rule | Clarified |
+| nit | bug-047's proposed fix states the broader rule | Left as filed; the closing note says the fix narrowed it |
+
