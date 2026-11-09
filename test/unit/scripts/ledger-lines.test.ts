@@ -31,13 +31,18 @@ describe('scripts/ledger-lines.mjs (task-144)', () => {
     writeFileSync(join(configured, 'speckit-configured.json'), JSON.stringify([record]));
     const result = run(['configuring', root, ...COMMON]);
     expect(result.status).toBe(0);
-    expect(result.stdout.split('\n')).toEqual([
-      '| 2026-11-08 | E | configuring session of S1@1.1, speckit-configured arm ' +
-        '(written, 1 file written, 1 turn) | C | Sonnet 5.5, effort medium (Claude Code 2.1.300) | X | 0.5000 USD (0.2500 €) API-equivalent; nothing billed ' +
-        'per token | `scenarios/S1/1.1/configured/speckit-configured.json`; transcript under ' +
-        '`results/configuring/S1@1.1/speckit/`; secret scan not run |',
-      '',
-    ]);
+    const cells = [
+      '2026-11-08',
+      'E',
+      'configuring session of S1@1.1, speckit-configured arm (written, 1 file written, 1 turn)',
+      'C',
+      'Sonnet 5.5, effort medium (Claude Code 2.1.300)',
+      'X',
+      '0.5000 USD (0.2500 €) API-equivalent; nothing billed per token',
+      '`scenarios/S1/1.1/configured/speckit-configured.json`; transcript under ' +
+        '`results/configuring/S1@1.1/speckit/`; secret scan not run',
+    ];
+    expect(result.stdout.split('\n')).toEqual([`| ${cells.join(' | ')} |`, '']);
   });
 
   it('prints one line per dry run above --after, steps and interventions counted, and its secret scan', () => {
