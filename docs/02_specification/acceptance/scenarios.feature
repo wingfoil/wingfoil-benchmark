@@ -131,6 +131,15 @@ Feature: Scenario format, hygiene and the v0.1 scenario content
     When S2 1.1 is validated
     Then the scan fails, naming the file and the configuration, not the literal
 
+  # task-143, bug-047 (requirements 1.55): an ordinary word an oracle quotes is prose in a configuration
+  @F7.5
+  Scenario: A configuration may use a one-word literal of the oracle as prose
+    Given S2 1.1's oracle quotes "duplicate" as a test group's name
+    And a configuration file of S2 1.1 says "duplicate SKUs merged"
+    When S2 1.1 is validated
+    Then it is valid
+    And a configuration file holding a literal of more than one word, or with a character other than a letter, is still refused
+
   # task-141, F7.5 (requirements 1.50, 1.53): bench scenario configure and the configuring session
   @F7.5
   Scenario: The configuring agent sees the seed and the installed harness only

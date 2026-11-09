@@ -6,9 +6,9 @@ status: in-progress
 release: v0.3
 wave: W18
 features: [F7.5]
-acceptance: []
+acceptance: [scenarios.feature]
 requirements: [REQ-CLI-14, REQ-RUN-20, REQ-FMT-04, REQ-FMT-08, REQ-FMT-13]
-fixes: []
+fixes: [bug-047-the-leak-scan-refuses-a-configuration-that-uses-an-ordinary-word-the-oracle-quotes-such-as-a-test-group-s-name]
 tags: ["v0.3","configured","spending"]
 ---
 

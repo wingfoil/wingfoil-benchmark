@@ -29,6 +29,8 @@ import {
   benchConfigure,
   configurePorts,
   configureRepo,
+  copyUnconfigured,
+  isConfigurationPath,
   SETUP_FILES,
   storedRecords,
   workspaceFiles,
@@ -542,7 +544,10 @@ describe('S1 1.1 (bug-025, task-131)', () => {
     });
     // And its step 5's request states how a patch describes an item an array gains, loses or moves
     const v10 = treeOf(repoPath('scenarios/S1/1.0'));
-    const v11 = treeOf(repoPath('scenarios/S1/1.1'));
+    // Less its configurations, which task-143 wrote after it (REQ-FMT-04 as amended in 1.50)
+    const v11 = Object.fromEntries(
+      Object.entries(treeOf(repoPath('scenarios/S1/1.1'))).filter(([path]) => !isConfigurationPath(path)),
+    );
     expect(v11['prompts/05.md']?.replace(/\s+/g, ' ')).toContain(SENTENCE);
     // And everything else in it is S1 1.0's
     expect(Object.keys(v11)).toEqual(Object.keys(v10));
@@ -591,7 +596,12 @@ describe('S2, S3 and S8 1.1 (task-132)', () => {
       });
       // And each is its 1.0 but for its version and, in S2 and S3, its content check and its rubric
       const v10 = filesOf(repoPath(`scenarios/${id}/1.0`));
-      const v11 = filesOf(repoPath(`scenarios/${id}/1.1`));
+      // Less its configurations, which task-143 wrote after it (REQ-FMT-04 as amended in 1.50)
+      const v11 = Object.fromEntries(
+        Object.entries(filesOf(repoPath(`scenarios/${id}/1.1`))).filter(
+          ([path]) => !isConfigurationPath(path),
+        ),
+      );
       const changed = ['scenario.yaml', ...(check === undefined ? [] : [check, 'oracle/rubric.md'])];
       expect(Object.keys(v11).sort()).toEqual(
         [...Object.keys(v10), ...(check === undefined ? [] : ['oracle/rubric.md'])].sort(),
@@ -651,9 +661,7 @@ describe("a scenario version's configurations (task-140, F7.5)", () => {
   /** A repository holding a copy of the scenario version, and the leak-scan declarations. */
   function copied(id: string, version: string) {
     const root = tempDir('bench-repo-');
-    cpSync(repoPath(join('scenarios', id, version)), join(root, 'scenarios', id, version), {
-      recursive: true,
-    });
+    copyUnconfigured(repoPath(join('scenarios', id, version)), join(root, 'scenarios', id, version));
     copyFileSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
     return { root, dir: join(root, 'scenarios', id, version) };
   }
@@ -696,7 +704,10 @@ describe("a scenario version's configurations (task-140, F7.5)", () => {
     if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
     const suiteDir = loaded.value.oracle.suites[0]?.dir ?? '';
     const suiteFile = readdirSync(suiteDir).find((file) => /\.test\.m?ts$/.test(file)) ?? '';
-    const literal = oracleLiterals(readFileSync(join(suiteDir, suiteFile), 'utf8'), 8)[0] ?? '';
+    // A literal the scan looks for in a configuration: more than one word, or not letters only (bug-047)
+    const literal =
+      oracleLiterals(readFileSync(join(suiteDir, suiteFile), 'utf8'), 8).find((l) => !/^\p{L}+$/u.test(l)) ??
+      '';
     expect(literal).not.toBe('');
     const rule = '.wingfoil/directives/custom/r9.md';
     writeConfiguration(dir, 'wingfoil-configured', { [rule]: `# Rule\n\nRemember: ${literal}\n` });
@@ -714,6 +725,56 @@ describe("a scenario version's configurations (task-140, F7.5)", () => {
       },
     ]);
     expect(JSON.stringify(issues)).not.toContain(literal);
+  });
+});
+
+describe('an ordinary word in a configuration (task-143, bug-047, F7.5)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('@F7.5 A configuration may use a one-word literal of the oracle as prose', () => {
+    vi.stubEnv('BENCH_HOLDOUT_PATH', '');
+    const root = tempDir('bench-repo-');
+    const dir = join(root, 'scenarios', 'S2', '1.1');
+    copyUnconfigured(repoPath('scenarios/S2/1.1'), dir);
+    copyFileSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
+    const loaded = loadScenario(join(root, 'scenarios'), 'S2', '1.1');
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
+    const oracle = loaded.value.oracle.suites
+      .flatMap((suite) =>
+        readdirSync(suite.dir)
+          .filter((file) => /\.test\.m?ts$/.test(file))
+          .map((file) => readFileSync(join(suite.dir, file), 'utf8')),
+      )
+      .join('\n');
+    // Given S2 1.1's oracle quotes "duplicate" as a test group's name
+    const literals = oracleLiterals(oracle, 8);
+    expect(literals).toContain('duplicate');
+    // And a configuration file of S2 1.1 says "duplicate SKUs merged"
+    const rule = '.wingfoil/directives/custom/r9.md';
+    writeConfiguration(dir, 'wingfoil-configured', {
+      [rule]: '# Orders\n\n- Orders: duplicate SKUs merged.\n',
+    });
+
+    // When S2 1.1 is validated — Then it is valid
+    expect(validateScenario({ id: 'S2', version: '1.1' }, root)).toEqual({
+      ok: true,
+      line: 'scenario S2@1.1 is valid (hold-out: not configured)',
+    });
+
+    // And a literal of more than one word, or with a character other than a letter, is still refused
+    for (const literal of [
+      literals.find((l) => /\s/.test(l)),
+      literals.find((l) => !/\s/.test(l) && !/^\p{L}+$/u.test(l)),
+    ]) {
+      expect(literal).toBeDefined();
+      writeConfiguration(dir, 'wingfoil-configured', { [rule]: `# Orders\n\nRemember: ${literal}\n` });
+      const refused = validateScenario({ id: 'S2', version: '1.1' }, root);
+      expect(refused.ok ? [] : refused.issues.map((issue) => issue.path)).toEqual([
+        'arms.wingfoil-configured',
+      ]);
+    }
   });
 });
 
