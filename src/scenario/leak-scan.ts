@@ -68,6 +68,12 @@ export function harnessMentions(text: string, names: readonly string[]): string[
   });
 }
 
+/**
+ * A literal that is one prose word, lower case or capitalised (a test group's name such as `duplicate`), which a
+ * configuration may use as prose (REQ-FMT-08 as amended in 1.55); a camelCase name or an upper-case code is not one.
+ */
+const PROSE_WORD = /^\p{Lu}?\p{Ll}+$/u;
+
 /** A source of content the agent must not see: a label for messages, and what to look for. */
 interface Source {
   readonly label: string;
@@ -145,10 +151,15 @@ export function scanScenario(
       });
     }
   }
-  // Every file of a configuration is searched for the oracle's literals, as the seed is (REQ-FMT-08, 1.50).
+  // Every file of a configuration is searched for the oracle's literals, as the seed is (REQ-FMT-08, 1.50), but for
+  // a literal of one prose word: an agent writing from the seed uses such a word as prose (1.55, bug-047).
+  const configurationOracle = oracle.map((source) => ({
+    ...source,
+    needles: source.needles.filter((needle) => !PROSE_WORD.test(needle)),
+  }));
   for (const [name, dir] of Object.entries(configurations).sort(([a], [b]) => (a < b ? -1 : 1))) {
     for (const file of filesUnder(dir)) {
-      for (const source of leaks(readFileSync(file, 'utf8'), oracle)) {
+      for (const source of leaks(readFileSync(file, 'utf8'), configurationOracle)) {
         issues.push({
           path: `arms.${name}`,
           message: `${relative(dir, file)} ${source.verb} ${source.label}`,

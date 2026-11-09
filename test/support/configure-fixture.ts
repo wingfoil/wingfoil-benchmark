@@ -1,5 +1,5 @@
 import { copyFileSync, cpSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { parse, stringify } from 'yaml';
 
 import { main } from '../../src/cli/index.js';
@@ -15,8 +15,26 @@ import { tempDir } from './scenario-fixture.js';
 export const HARNESS_SHA = 'f1d3a4f8337ebbd3ae22760a9c12e3352b93a175';
 
 /**
- * A repository for `bench scenario configure` (task-141): the scenario versions `versions` (`S1@1.1`) and the arms
- * `arms` copied from this repository, the leak-scan declarations, the configuring prompt and its profile; the profile's
+ * Whether `path`, relative to a scenario version, is one of its configurations or their records (REQ-FMT-04, 1.50):
+ * `arms/<harness>-configured/`, a name REQ-FMT-05 reserves for configured arms, and `configured/`.
+ */
+export function isConfigurationPath(path: string): boolean {
+  const posix = path.split(sep).join('/');
+  return /^configured(\/|$)/.test(posix) || /^arms\/[^/]+-configured(\/|$)/.test(posix);
+}
+
+/**
+ * Copy the scenario version `source` to `target` as it was before its configurations were written (task-143): the
+ * tests that write or refuse a configuration start from a version that holds none.
+ */
+export function copyUnconfigured(source: string, target: string): void {
+  cpSync(source, target, { recursive: true, filter: (path) => !isConfigurationPath(relative(source, path)) });
+}
+
+/**
+ * A repository for `bench scenario configure` (task-141): the scenario versions `versions` (`S1@1.1`), less their
+ * configurations, and the arms `arms` copied from this repository, the leak-scan declarations, the configuring prompt
+ * and its profile; the profile's
  * agent the fake one unless `agent` is `claude-code`, the repository's own.
  */
 export function configureRepo(
@@ -27,9 +45,7 @@ export function configureRepo(
   const root = tempDir('bench-configure-');
   for (const ref of versions) {
     const [id = '', version = ''] = ref.split('@');
-    cpSync(repoPath(join('scenarios', id, version)), join(root, 'scenarios', id, version), {
-      recursive: true,
-    });
+    copyUnconfigured(repoPath(join('scenarios', id, version)), join(root, 'scenarios', id, version));
   }
   mkdirSync(join(root, 'scenarios'), { recursive: true });
   copyFileSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));

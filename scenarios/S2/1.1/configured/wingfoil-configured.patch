@@ -1,0 +1,172 @@
+diff --git a/.wingfoil/directives/custom/determinism.md b/.wingfoil/directives/custom/determinism.md
+index f45f233c3680439ae845e47262b4c924dc53f7a7..23c7c4a4861c4937b83831ec74e849b70f14fe78 100644
+--- a/.wingfoil/directives/custom/determinism.md
++++ b/.wingfoil/directives/custom/determinism.md
+@@ -11,4 +11,8 @@ format: 1
+ 
+ No wall-clock, randomness, or unordered iteration in context-building paths; prefer declared config.
+ 
+-<!-- Tailor this rule to your project's needs. Directives are auto-loaded per role (roles.yaml). -->
++In this project:
++
++- The service never reads the clock. Dates are `YYYY-MM-DD` strings passed in by the caller (order date, ship date, cancel date); never call `new Date()` / `Date.now()` for business logic, and keep tests on fixed dates.
++- No `Math.random()`. Order numbers (ORD-0001…) and invoice numbers (2026/0001…) come from counters in placement order.
++- Results must not depend on object or Map iteration accident: where order matters (merged lines, allocation ties, reports) sort or tie-break explicitly, as `allocate` does (earlier weight first).
+diff --git a/.wingfoil/directives/custom/order-service-rules.md b/.wingfoil/directives/custom/order-service-rules.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8be28397180c925f025d43b91e586426eb3b8142
+--- /dev/null
++++ b/.wingfoil/directives/custom/order-service-rules.md
+@@ -0,0 +1,44 @@
++---
++id: order-service-rules
++name: order-service-rules
++type: directive
++kind: custom
++title: "Order-service business rules and conventions"
++format: 1
++---
++
++# Order-service business rules and conventions
++
++Project: TypeScript library (Node 22.18+, ESM, strict, `erasableSyntaxOnly`), no runtime dependency. Public API is `src/index.ts`; `createShop()` wires a shop. Test with `npm test`.
++
++## README is the specification
++
++- The "Business rules" section of `README.md` is authoritative: when code and README disagree, the README is right. Read it before any change and check every behaviour against it. Do not edit the README's rules to match code.
++- If a request contradicts a README rule, flag it instead of silently choosing.
++
++## Money, dates, rounding
++
++- Amounts are integer euro cents (`Cents`), never floats. Percentages are integer percents applied with `percentOf` / `divideHalfUp` (round half up). Do not use `Math.round`, `toFixed` or floating division on money; split amounts with `allocate`.
++- Dates are `YYYY-MM-DD`; use `src/dates.ts` helpers (`checkDate`, `compareDates`, `addDays`). Periods include both end days.
++- SKUs and coupon codes are case-insensitive, trimmed; normalize via `canonicalSku` / `canonicalCode`; SKUs are shown upper case.
++
++## Rules that are easy to get wrong
++
++- Order of computation: volume discount (10+ units, 10% per line) → coupon on subtotal after volume discounts (fixed coupon capped at subtotal; minimum checked after volume discounts) → all discounts capped at 50% of gross, coupon reduced to fit → free shipping at goods >= €50.00 after discounts, before VAT.
++- VAT is per line on net after all discounts (coupon spread proportionally via `allocate`), rounded half up per line; shipping VAT 22% on its own line. Total = goods + shipping + VAT goods + VAT shipping.
++- Stock: placing reserves, shipping takes off hand, cancelling returns units; refused orders reserve nothing. Low stock is fewer than 5 available.
++- Orders: merge duplicate SKUs; quantity a whole number > 0; shipped can't be cancelled and cancelled can't ship; cancel allowed through day 14 after placement; cancelling gives back a single-use coupon.
++- Invoices: one per shipped order, dated the ship day, numbered per year.
++- Rule thresholds live in exported named constants (e.g. `CANCELLATION_DAYS`, `LOW_STOCK_THRESHOLD`); change them there, do not scatter literals.
++
++## Code conventions
++
++- Match existing style: single quotes, 2-space indent, semicolons, JSDoc on exported functions/classes, relative imports ending in `.ts`, `import type` for types.
++- Errors are subclasses of `ShopError` in `src/errors.ts`; throw the most specific one (ValidationError, OutOfStockError, CouponError, OrderStateError, ...).
++- Anything consumers use must be exported from `src/index.ts`.
++- Do not add runtime dependencies or a build step; do not use TS features unsupported by native type stripping (enums, namespaces, parameter properties).
++
++## Tests
++
++- Tests live in `test/<area>.test.ts`, use `node:test` and `node:assert/strict`, build a shop via `createShop()` with fixed dates, and import from `../src/index.ts`.
++- Every rule change needs a test for the normal case and a boundary (e.g. day 14 vs 15, exactly 50.00, 0.5 cent rounding, 9 vs 10 units). Run `npm test` before finishing.
+diff --git a/.wingfoil/dna.yaml b/.wingfoil/dna.yaml
+index 351a09d58f74bf144c1a52155d11303220a47b90..5bb287cdbbfbb772e60e88f2acb705cfa32ccbe2 100644
+--- a/.wingfoil/dna.yaml
++++ b/.wingfoil/dna.yaml
+@@ -6,12 +6,45 @@ version: 1.1
+ format: 1
+ 
+ project:
+-  name: ""                        # your project name
+-  description: ""
++  name: order-service
++  description: "Order and inventory service behind the web shop: catalogue, stock, orders, discounts and coupons, VAT, shipping, cancellations, invoices. TypeScript library, no runtime dependency."
+   methodology: Kanban        # Continuous-flow delivery; work-in-progress limits are declared per state with `limits:` in memory.yaml.
+ 
+ # Modules — the parts of the system (anatomy for navigation). Add your own.
+-modules: []
++modules:
++  - name: public-api
++    path: src/index.ts
++    description: The public API; everything a consumer may use is exported here. createShop() in src/shop.ts wires a shop together.
++  - name: money
++    path: src/money.ts
++    description: Integer euro cents, half-up rounding, proportional allocation, euro formatting.
++  - name: dates
++    path: src/dates.ts
++    description: YYYY-MM-DD calendar days, validation, comparison, day arithmetic.
++  - name: catalogue
++    path: src/catalog.ts
++    description: Products, case-insensitive trimmed SKUs, VAT class, weight, active/inactive.
++  - name: inventory
++    path: src/inventory.ts
++    description: On-hand and reserved stock, movements, low-stock threshold.
++  - name: orders
++    path: src/orders.ts
++    description: Order placement, numbering, shipping, cancellation (14-day window), quotes.
++  - name: pricing
++    path: src/pricing.ts
++    description: Line and order totals, combining volume discounts, coupon, shipping and VAT.
++  - name: discounts-and-coupons
++    path: src/discounts.ts
++    description: Volume discount and 50% cap (discounts.ts); coupon validity, minimums, single-use (coupons.ts).
++  - name: shipping-and-tax
++    path: src/shipping.ts
++    description: Weight-band parcel cost and free-shipping threshold (shipping.ts); VAT classes and rates (tax.ts).
++  - name: invoices-and-reports
++    path: src/invoices.ts
++    description: Per-year invoice numbering and VAT summary; receipt.ts and reports.ts (stock and sales reports).
++  - name: errors
++    path: src/errors.ts
++    description: ShopError hierarchy.
+ 
+ # Stacks — technologies + methodologies in use. The methodologies come from the Kanban template.
+ stacks:
+@@ -22,7 +55,17 @@ stacks:
+   #   - name: TypeScript
+   #     category: language
+   # or run: wingfoil dna add stacks.technologies --value TypeScript --entry-category language
+-  technologies: []
++  technologies:
++    - name: TypeScript
++      category: language
++      notes: strict mode, ESM (NodeNext), erasableSyntaxOnly (no enums or parameter properties), relative imports with .ts extension
++    - name: Node.js
++      category: runtime
++      version: "22.18+"
++      notes: runs .ts directly; no build step, no runtime dependencies
++    - name: node:test
++      category: test framework
++      notes: "npm test = node --test \"test/*.test.ts\"; assertions from node:assert/strict"
+   methodologies:
+     - name: Kanban
+     - name: Specification by Example (BDD)
+@@ -59,9 +102,9 @@ team:
+ # Resource paths — query categories used to navigate the project.
+ # `runs` holds exactly one directory: the agent run log, one <element-id>.jsonl per element.
+ paths:
+-  sources: []
+-  tests: []
+-  docs: []
++  sources: [src/]
++  tests: [test/]
++  docs: [README.md, docs/]
+   config: [.wingfoil]
+-  governance: []
++  governance: [.wingfoil/directives/]
+   runs: [docs/runs/]
+diff --git a/.wingfoil/roles.yaml b/.wingfoil/roles.yaml
+index 54d817fcda16af046ce6fca8ca16fddc3543a5a3..6eacc36c484c0d130fd0c58cc2f94f70f195613a 100644
+--- a/.wingfoil/roles.yaml
++++ b/.wingfoil/roles.yaml
+@@ -9,13 +9,17 @@ assignments:
+     - code-quality
+     - testing
+     - determinism
++    - order-service-rules
+   reviewer:
+     - code-review
+     - traceability
++    - order-service-rules
+   qa:
+     - testing
++    - order-service-rules
+   architect:
+     - architecture
++    - order-service-rules
+     - determinism
+     - traceability
+   product-owner:

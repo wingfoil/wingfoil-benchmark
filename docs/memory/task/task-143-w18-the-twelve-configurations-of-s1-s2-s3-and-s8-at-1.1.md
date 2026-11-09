@@ -2,13 +2,13 @@
 id: task-143-w18-the-twelve-configurations-of-s1-s2-s3-and-s8-at-1.1
 type: task
 title: "W18: the twelve configurations of S1, S2, S3 and S8 at 1.1"
-status: in-progress
+status: approved
 release: v0.3
 wave: W18
 features: [F7.5]
-acceptance: []
+acceptance: [scenarios.feature]
 requirements: [REQ-CLI-14, REQ-RUN-20, REQ-FMT-04, REQ-FMT-08, REQ-FMT-13]
-fixes: []
+fixes: [bug-047-the-leak-scan-refuses-a-configuration-that-uses-an-ordinary-word-the-oracle-quotes-such-as-a-test-group-s-name]
 tags: ["v0.3","configured","spending"]
 ---
 
@@ -84,3 +84,77 @@ profile's cap bounds the worst case at 60 EUR; the ceiling proposed below stops 
 6. **Figures generated:** the note's table and sums come from a script reading `scenarios/*/1.1/configured/*.json`.
 
 ## Execution notes
+
+- 2026-11-08: backlog → in-progress on main; worktree `../WingFoil2-Benchmark-wt/t143`. The approver's ceiling, in
+  chat: **15 EUR**. The twelve sessions' pre-session checks, without `--allow-spending` (0 EUR): each stops only at
+  the spending refusal. The launching script (scratchpad, `configure-143.sh`) gates each session on the machine's load
+  and stops when the spending so far, summed from the records, plus 2 EUR could pass 15 EUR.
+- **The first session, S1 on wingfoil, alone** (design 1): written, 0.0695 EUR, 28.2 s, four files under
+  `.wingfoil/` (`dna.yaml`, `roles.yaml`, two custom directives `project-conventions` and `standards-compliance`,
+  both assigned to roles). The standards directive names JSON standards by number (RFC 8259, 6901, 6902, 7396) that
+  the seed does not contain; two of them appear in S1's step prompts. Read against the transcript, they appear only in
+  the agent's own writing, from the README's "follow the published standards it implements" and the project's name;
+  the container held no prompt, and the leak scan (prompts, oracle, hold-out) passed. Recorded for the review, not a
+  leak by construction; the other eleven sessions started after it.
+- **The other eleven** (2026-11-08, 22:27–23:18, behind the load gate): every one written; the twelve records sum to
+  **0.7237 EUR of the 15 EUR ceiling** (the launching script's last line, and `scripts/configuring-reading.mjs`). No
+  session needed a retry; the guard never stopped. Committed at `7fa3bc70` (criteria 1 and 2).
+- **Read** (criterion 4): every configuration wrote only its harness's places: `.wingfoil/` (`dna.yaml`,
+  `roles.yaml`, one or two custom directives), `.specify/memory/constitution.md` (the template's placeholders all
+  replaced), `openspec/config.yaml` (`context` and per-artifact `rules` over the commented examples). S8's wingfoil
+  configuration kept r1–r4 and every assignment of its 1.1's own `roles.yaml`. No configuration line equals a line of
+  its version's step prompts or oracle that the seed does not also hold (a scratchpad check, 0 in all twelve). The
+  differences from the defaults are in the note's §3, for the method page's task.
+- **Validated** (criterion 3): a scratch campaign (never committed) on S1, S2, S3 and S8 at 1.1 with the baseline, the
+  three configured arms and the three configured docs controls, the three harnesses pinned as the profile, passes
+  `bench campaign validate` (exit 0). Characterization: the 13 campaign files validate on main and on the branch with
+  identical output (13 of 13).
+- **The note** (criterion 5): `docs/calibration/configuring.md`, its table printed by the new
+  `scripts/configuring-reading.mjs` (one unit test, `test/unit/scripts/configuring-reading.test.ts`). The estimate
+  was too high: each session cost less than its harness arm's dearest Sonnet 5.5 step.
+- **Blocked by bug-047** (found by the targeted suites, after pre-review was green): `bench scenario validate`
+  refuses S2@1.1 and S8@1.1, whose configurations hold an ordinary word an oracle file quotes as a test group's name
+  (`duplicate`, `identifiers`); `bench scenario configure` scans only the prompt, so the sessions did not see it, and
+  `bench campaign validate` passed. S1@1.1 and S3@1.1 validate. 16 tests of `test/acceptance/scenarios.test.ts` fail:
+  two validate the real 1.1 versions (task-131, task-132), one is the leak scan's (its fixture copies S2@1.1), and
+  thirteen of task-141 run `configure` on copies of S1@1.1 and S8@1.1 that now hold a configuration. The bug is filed
+  (pending, the approver's choice of fix); the configurations stay as written, no session reruns.
+- **bug-047 fixed here** (the approver, in chat, 2026-11-09: fix 1, inside this task). Red first at `b1ced387`: the
+  scenario "A configuration may use a one-word literal of the oracle as prose" in `scenarios.feature` and its test,
+  failing on S2's `duplicate`; the real versions' validations (task-131, task-132) red for the same reason. The fix in
+  `src/scenario/leak-scan.ts`: a configuration's files are searched for the oracle literals less those of one word of
+  letters only (narrowed in review round 1 to one prose word, lower case or capitalised); the prompts, the seed and
+  a scenario's `arms/<arm>/` keep every literal. Requirements 1.55 amend
+  REQ-FMT-08. A mutation (no literal searched in a configuration) fails both tests. `bench scenario validate` passes
+  on the four 1.1 versions, with and without the hold-out (exit codes only).
+- **The fixtures** of task-140's and task-141's tests copied the real 1.1 versions whole; they now copy a version less
+  its configurations (`copyUnconfigured` in `test/support/configure-fixture.ts`), and task-131's and task-132's
+  comparisons of 1.1 with 1.0 leave the configurations out. Targeted suites: 85 files, 1368 passed, 10 skipped.
+
+## Review
+
+Round 1 (an independent read-only agent in a fresh clone at `a3ee45f5`; main's HEAD `8e568737` before and after).
+It read all twelve configurations against their seed, prompts and public oracle: no leak beyond the README and the
+agent's domain knowledge, no project file touched, team and roles unchanged, S8's r1–r4 kept, every file as its
+record hashes it; two mutations of the fix each failed the new test.
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| should-fix | `ONE_WORD = /^\p{L}+$/u` also exempted camelCase names and upper-case codes, the values a leak would carry | Narrowed to one prose word, `/^\p{Lu}?\p{Ll}+$/u`; REQ-FMT-08 1.55 and the scenario say so; the test adds a camelCase name and an upper-case code to a copy of S2's oracle, both refused; the old rule fails it |
+| should-fix | The note said the configurations passed the command's leak scan, which covers the prompt only | Reworded: the configurations' scan is `scenario validate`'s; bug-047 in §4 |
+| nit | The no-equal-line claim rests on a scratchpad check | Said so in the note |
+| nit | §3 missed S2's rewritten `determinism.md` and S8's generated r1–r4 kept by Spec Kit and OpenSpec | Added |
+| nit | The hold-out's literals are not pinned by the new test | Not changed: the filter maps every oracle source, the hold-out's included, in one place |
+| nit | The script crashed on a non-directory under `scenarios/` or a record without usage | `statSync(…).isDirectory()`; a missing usage counts zero; the table unchanged |
+| nit | Three lines over 120 characters | Re-wrapped (`scenarios.test.ts:440` predates the task) |
+| nit | `isConfigurationPath` matches any arm named `-configured` | A comment cites REQ-FMT-05's reserved names |
+
+Round 2 (a fresh agent and clone at `5c885fd1`; main unchanged): both should-fixes resolved; the test fails with the
+old rule and with no filter (its own mutations); spec, scenario, comment and note agree with the code; the script's
+table byte-identical; tsc, prettier, eslint, the targeted suites and `scenario validate` on the four versions green.
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| nit | The execution note on the fix still gave round 1's rule | Clarified |
+| nit | bug-047's proposed fix states the broader rule | Left as filed; the closing note says the fix narrowed it |
+
