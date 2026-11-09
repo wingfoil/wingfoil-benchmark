@@ -2,7 +2,7 @@
 id: task-144-w18-every-arm-s-dry-run-on-s1-s2-s3-and-s8-at-1.1-the-configured-arms-included
 type: task
 title: "W18: every arm's dry run on S1, S2, S3 and S8 at 1.1, the configured arms included"
-status: backlog
+status: in-progress
 release: v0.3
 wave: W18
 features: [F7.5]
