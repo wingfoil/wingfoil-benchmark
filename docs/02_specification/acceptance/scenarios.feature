@@ -138,7 +138,7 @@ Feature: Scenario format, hygiene and the v0.1 scenario content
     And a configuration file of S2 1.1 says "duplicate SKUs merged"
     When S2 1.1 is validated
     Then it is valid
-    And a configuration file holding a literal of more than one word, or with a character other than a letter, is still refused
+    And a configuration holding a literal of more than one word, a non-letter or an inner capital is still refused
 
   # task-141, F7.5 (requirements 1.50, 1.53): bench scenario configure and the configuring session
   @F7.5

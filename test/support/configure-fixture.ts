@@ -14,7 +14,10 @@ import { tempDir } from './scenario-fixture.js';
 /** The commit every harness pin of a clone resolves to in these tests. */
 export const HARNESS_SHA = 'f1d3a4f8337ebbd3ae22760a9c12e3352b93a175';
 
-/** Whether `path`, relative to a scenario version, is one of its configurations or their records (REQ-FMT-04, 1.50). */
+/**
+ * Whether `path`, relative to a scenario version, is one of its configurations or their records (REQ-FMT-04, 1.50):
+ * `arms/<harness>-configured/`, a name REQ-FMT-05 reserves for configured arms, and `configured/`.
+ */
 export function isConfigurationPath(path: string): boolean {
   const posix = path.split(sep).join('/');
   return /^configured(\/|$)/.test(posix) || /^arms\/[^/]+-configured(\/|$)/.test(posix);
@@ -29,8 +32,9 @@ export function copyUnconfigured(source: string, target: string): void {
 }
 
 /**
- * A repository for `bench scenario configure` (task-141): the scenario versions `versions` (`S1@1.1`), less their configurations, and the arms
- * `arms` copied from this repository, the leak-scan declarations, the configuring prompt and its profile; the profile's
+ * A repository for `bench scenario configure` (task-141): the scenario versions `versions` (`S1@1.1`), less their
+ * configurations, and the arms `arms` copied from this repository, the leak-scan declarations, the configuring prompt
+ * and its profile; the profile's
  * agent the fake one unless `agent` is `claude-code`, the repository's own.
  */
 export function configureRepo(

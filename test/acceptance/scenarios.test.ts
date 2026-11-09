@@ -763,10 +763,16 @@ describe('an ordinary word in a configuration (task-143, bug-047, F7.5)', () => 
       line: 'scenario S2@1.1 is valid (hold-out: not configured)',
     });
 
-    // And a literal of more than one word, or with a character other than a letter, is still refused
+    // And a literal of more than one word, a non-letter or an inner capital is still refused: S2's own, and a
+    // camelCase name and an upper-case code added to a copy of its oracle (review round 1)
+    const suiteDir = loaded.value.oracle.suites[0]?.dir ?? '';
+    const suiteFile = readdirSync(suiteDir).find((file) => /\.test\.m?ts$/.test(file)) ?? '';
+    appendFileSync(join(suiteDir, suiteFile), "\nexport const extra = ['orderTotalCents', 'WELCOMEBACK'];\n");
     for (const literal of [
       literals.find((l) => /\s/.test(l)),
       literals.find((l) => !/\s/.test(l) && !/^\p{L}+$/u.test(l)),
+      'orderTotalCents',
+      'WELCOMEBACK',
     ]) {
       expect(literal).toBeDefined();
       writeConfiguration(dir, 'wingfoil-configured', { [rule]: `# Orders\n\nRemember: ${literal}\n` });

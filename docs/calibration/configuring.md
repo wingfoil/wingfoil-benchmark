@@ -44,18 +44,22 @@ Sessions: 12; their cost: 0.7237 EUR.
 - **wingfoil:** the setup's `wingfoil init` leaves the built-in directives, a default `roles.yaml` and a project
   `dna.yaml` with nothing of the project in it. Every session filled `dna.yaml` with the project (language,
   runtime, structure, how it is built and tested), wrote one or two custom directives from the README's rules and
-  conventions, and assigned them to roles in `roles.yaml`, keeping the built-in assignments. S8's session started
-  from the wingfoil configuration its 1.1 already held (dl-005) and kept its four rules, r1 to r4, each still assigned.
+  conventions (S2's also rewrote the scaffolded custom `determinism.md`), and assigned them to roles in `roles.yaml`,
+  keeping the built-in assignments. S8's session started from the wingfoil configuration its 1.1 already held
+  (dl-005) and kept its four rules, r1 to r4, each still assigned.
 - **speckit:** the setup's `specify init` leaves `.specify/memory/constitution.md` as a template of placeholders.
   Every session replaced it with a constitution for the project: the README's rules as principles, the test command
-  and the boundaries to test, the library's public API and its no-dependency rule.
+  and the boundaries to test, the library's public API and its no-dependency rule. S8's keeps, verbatim, the r1–r4
+  rules the setup generated into it (REQ-FMT-14).
 - **openspec:** the setup's `openspec init` leaves `openspec/config.yaml` with its schema and commented examples.
   Every session wrote its `context` (the project, its rules, its commands) and `rules` per artifact (proposal,
-  specs, design, tasks).
+  specs, design, tasks). S8's keeps the generated r1–r4 rules verbatim, as Spec Kit's does.
 
-No session touched a project file, recorded work in the tool, or wrote outside the harness's configuration places:
-each configuration passed the command's checks (places, offences, leak scan, symbolic links). No line of a
-configuration equals a line of its version's step prompts or oracle that the seed does not also hold.
+No session touched a project file, recorded work in the tool, changed the team's members or roles, or wrote outside
+the harness's configuration places: each result passed the command's checks (places, offences, symbolic links; the
+command's leak scan covers its prompt only). The configurations' own leak scan is `bench scenario validate`'s, which
+passes on the four versions since bug-047's fix (§4). A scratchpad check found no line of a configuration equal to a
+line of its version's step prompts or oracle that the seed does not also hold.
 
 ## 4. Notes
 
@@ -64,6 +68,13 @@ configuration equals a line of its version's step prompts or oracle that the see
   from the README's "follow the published standards it implements" and the project's name; the session saw no prompt.
   A configured arm carries what its configuring agent knows of the domain: a property of the variant, which the
   method page states (T12), not a leak.
+- **bug-047.** After the sessions, `bench scenario validate` refused S2's and S8's configurations, two each, for one
+  ordinary word an oracle file quotes as a test group's name (`duplicate`, `identifiers`), used as prose. Fixed in
+  task-143 (requirements 1.55): a configuration is not searched for an oracle literal of one prose word; camelCase
+  names and upper-case codes still are. The configurations are as the sessions wrote them.
+- **The boundaries named.** S2's configurations list the boundaries to test (exactly €50.00, half a cent, day 14
+  against day 15, a coupon's first and last day). They follow from the README's thresholds, and they are also where
+  S2's reported defects lie: what the configured arms gain from their configuring agent, which the method page states.
 - **The cost** is small: each session cost less than its harness arm's dearest Sonnet 5.5 step in the stored
   campaigns (task-143's estimate), so M-K3's one-off part (REQ-SCO-08 as amended in 1.49) is a few cents per
   configured arm and version. The estimate, two to four times that step, was too high.

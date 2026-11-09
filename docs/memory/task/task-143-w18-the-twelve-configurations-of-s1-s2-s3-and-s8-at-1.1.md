@@ -129,3 +129,21 @@ profile's cap bounds the worst case at 60 EUR; the ceiling proposed below stops 
 - **The fixtures** of task-140's and task-141's tests copied the real 1.1 versions whole; they now copy a version less
   its configurations (`copyUnconfigured` in `test/support/configure-fixture.ts`), and task-131's and task-132's
   comparisons of 1.1 with 1.0 leave the configurations out. Targeted suites: 85 files, 1368 passed, 10 skipped.
+
+## Review
+
+Round 1 (an independent read-only agent in a fresh clone at `a3ee45f5`; main's HEAD `8e568737` before and after).
+It read all twelve configurations against their seed, prompts and public oracle: no leak beyond the README and the
+agent's domain knowledge, no project file touched, team and roles unchanged, S8's r1–r4 kept, every file as its
+record hashes it; two mutations of the fix each failed the new test.
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| should-fix | `ONE_WORD = /^\p{L}+$/u` also exempted camelCase names and upper-case codes, the values a leak would carry | Narrowed to one prose word, `/^\p{Lu}?\p{Ll}+$/u`; REQ-FMT-08 1.55 and the scenario say so; the test adds a camelCase name and an upper-case code to a copy of S2's oracle, both refused; the old rule fails it |
+| should-fix | The note said the configurations passed the command's leak scan, which covers the prompt only | Reworded: the configurations' scan is `scenario validate`'s; bug-047 in §4 |
+| nit | The no-equal-line claim rests on a scratchpad check | Said so in the note |
+| nit | §3 missed S2's rewritten `determinism.md` and S8's generated r1–r4 kept by Spec Kit and OpenSpec | Added |
+| nit | The hold-out's literals are not pinned by the new test | Not changed: the filter maps every oracle source, the hold-out's included, in one place |
+| nit | The script crashed on a non-directory under `scenarios/` or a record without usage | `statSync(…).isDirectory()`; a missing usage counts zero; the table unchanged |
+| nit | Three lines over 120 characters | Re-wrapped (`scenarios.test.ts:440` predates the task) |
+| nit | `isConfigurationPath` matches any arm named `-configured` | A comment cites REQ-FMT-05's reserved names |
