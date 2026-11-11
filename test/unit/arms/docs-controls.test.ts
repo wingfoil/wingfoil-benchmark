@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 import {
   DOCS_GENERATORS,
@@ -194,6 +195,28 @@ describe('the openspec-docs control (REQ-RUN-11, task-072)', () => {
     const none = '# Project rules\n\nThis project declares no rules beyond its README.\n';
     expect(renderOpenSpecDocs(new Map([[CONFIG, 'schema: spec-driven\n']]))).toBe(none);
     expect(renderOpenSpecDocs(new Map())).toBe(none);
+  });
+
+  it('renders a context with no level-two heading whole, as a configuring agent writes it (bug-048)', () => {
+    const file = readFileSync(repoPath('scenarios/S2/1.1/arms/openspec-configured', CONFIG), 'utf8');
+    const context = (parse(file) as { context: string }).context;
+    expect(context).not.toMatch(/^## /m);
+    expect(renderOpenSpecDocs(new Map([[CONFIG, file]]))).toBe(
+      [
+        '# Project rules',
+        '',
+        'The rules this project follows. Every change follows them.',
+        '',
+        '## Rules',
+        '',
+        context.trimEnd(),
+        '',
+      ].join('\n'),
+    );
+    const blank = 'schema: spec-driven\ncontext: "  \\n"\n';
+    expect(renderOpenSpecDocs(new Map([[CONFIG, blank]]))).toBe(
+      '# Project rules\n\nThis project declares no rules beyond its README.\n',
+    );
   });
 
   it('is the docs control of openspec, without a harness', () => {

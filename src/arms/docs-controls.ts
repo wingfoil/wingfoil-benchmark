@@ -60,8 +60,10 @@ const OPENSPEC_CONFIG = 'openspec/config.yaml';
  * The openspec-docs generator (task-072): the context of the openspec arm's configuration — the scenario's rules, as
  * its rules generator wrote them (REQ-FMT-14, task-071) — as `PROJECT_RULES.md`, in speckit-docs' shape. The context
  * holds each rule under `## <title>`, its body's headings already shifted below it; only those titles move one level
- * down, outside fenced code, so that the same rules give speckit-docs' bytes. A configuration with no context declares
- * no rule, and the file says so; one that is not YAML is refused, rather than read as having no rules.
+ * down, outside fenced code, so that the same rules give speckit-docs' bytes. A context with no `## ` line, as a
+ * configuring agent writes it (REQ-RUN-11 as amended in 1.56, bug-048), is the rules whole. A configuration with no
+ * context, or a blank one, declares no rule, and the file says so; one that is not YAML is refused, rather than read as
+ * having no rules.
  */
 export function renderOpenSpecDocs(files: ReadonlyMap<string, string>): string {
   let parsed: unknown;
@@ -71,7 +73,7 @@ export function renderOpenSpecDocs(files: ReadonlyMap<string, string>): string {
     throw new Error(`${OPENSPEC_CONFIG} is not YAML: ${(error as Error).message}`, { cause: error });
   }
   const context = (parsed as { context?: unknown } | null)?.context;
-  if (typeof context !== 'string') return NO_RULES;
+  if (typeof context !== 'string' || context.trim() === '') return NO_RULES;
   let fenced = false;
   let first = -1;
   const shifted = context.split('\n').map((line, index) => {
@@ -80,8 +82,7 @@ export function renderOpenSpecDocs(files: ReadonlyMap<string, string>): string {
     if (first < 0) first = index;
     return `#${line}`;
   });
-  if (first < 0) return NO_RULES;
-  const rules = shifted.slice(first).join('\n').trimEnd();
+  const rules = (first < 0 ? context : shifted.slice(first).join('\n')).trimEnd();
   return [
     '# Project rules',
     '',
