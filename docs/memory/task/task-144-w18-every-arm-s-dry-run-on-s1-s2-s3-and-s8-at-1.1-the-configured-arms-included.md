@@ -7,8 +7,8 @@ release: v0.3
 wave: W18
 features: [F7.5]
 acceptance: []
-requirements: [REQ-CLI-05, REQ-FMT-04]
-fixes: []
+requirements: [REQ-CLI-05, REQ-FMT-04, REQ-RUN-11]
+fixes: [bug-048-the-openspec-docs-generator-drops-a-configured-context-that-has-no-level-two-heading-so-openspec-docs-configured-runs-with-no-rules]
 tags: ["v0.3","configured","spending","calibration"]
 ---
 
