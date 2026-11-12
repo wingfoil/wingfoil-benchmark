@@ -27,7 +27,7 @@ first task.
 | W15 — Presets and Codex | F1.1 presets and `extends:` | the Codex spike | the Codex baseline campaign run | 2026-10-29: campaign-004 published (2026-10-25); task-101, task-102, task-104 to task-111, task-114 and task-115 done; step A brought ahead by dl-027, campaign-007 published |
 | W16 — The method corrected | F4.1 · F4.3 | — | v0.2's campaigns re-scored offline | 2026-11-05: task-134, `docs/calibration/v0.3-rescore.md` (task-126 to task-134 done; task-112 and task-113, its backlog, done the same day) |
 | W17 — WingFoil 0.3.1, step A | F2.7 · F2.6 | the spike on 0.3.1 | an S1 dry run driving the engine | 2026-11-06: task-114's dry runs `dry-runs/94` and `95` (2026-10-28); campaign-008 published (2026-11-01); task-116 to task-125 and task-135 to task-137 done; `docs/calibration/v0.3.md` 0.1, step A read |
-| W18 — Configured variants | F7.5 | the configuring agent | every arm in a dry run | |
+| W18 — Configured variants | F7.5 | the configuring agent | every arm in a dry run | 2026-11-12: task-144's dry runs `dry-runs/155` to `207`, every arm on S1, S2, S3 and S8 at 1.1 (`160` superseded by `204`, bug-048); task-138 to task-144; `docs/calibration/v0.3.md` 0.2, §5 |
 | W19 — The review loop | F4.9 | F4.9 | the review-loop metrics in the dry runs | |
 
 **Outside the release, by dl-022:** the Codex baseline campaign (arm A), before 2026-11-13.
