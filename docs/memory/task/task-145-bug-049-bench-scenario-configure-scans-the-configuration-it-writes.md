@@ -8,6 +8,7 @@ wave: W18
 features: [F7.5]
 acceptance:
   - "scenarios.feature#A configuration that leaks is reported by the configure that wrote it"
+  - "scenarios.feature#A configuration holding a literal of the hold-out is reported the same way"
 requirements: [REQ-CLI-14, REQ-FMT-08]
 fixes: [bug-049-bench-scenario-configure-writes-a-configuration-without-scanning-it-for-leaks-so-a-leaking-one-is-found-only-by-a-later-validate-or-dry-run]
 tags: ["v0.3","configured","leak-scan"]

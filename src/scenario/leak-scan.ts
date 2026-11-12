@@ -171,6 +171,28 @@ export function scanScenario(
 }
 
 /**
+ * The findings of {@link scanScenario} that concern configured arm `configured` alone (REQ-CLI-14 as amended in 1.57,
+ * bug-049): its files holding an oracle or hold-out literal, and the step prompts repeating one of its lines. What
+ * `bench scenario configure` reports on the configuration it has just written; the version's other findings are
+ * `bench scenario validate`'s.
+ */
+export function scanConfiguration(
+  scenario: Scenario,
+  declarations: LeakScanDeclarations,
+  configured: string,
+  holdout?: HoldoutAdditions,
+): Issue[] {
+  const dir = scenario.configurations[configured]?.dir;
+  if (dir === undefined) return [];
+  const label = `${relative(scenario.dir, dir)}/`;
+  return scanScenario(scenario, declarations, holdout).filter(
+    (issue) =>
+      issue.path === `arms.${configured}` ||
+      (issue.path.startsWith('steps[') && issue.message.startsWith(`repeats a line of ${label}`)),
+  );
+}
+
+/**
  * The public oracle's files: every suite's, in declaration order (dl-001). Not its checks (task-035):
  * their patterns are the words the prompts themselves use, and the loader refuses a check that a
  * step's prompt satisfies, which is the leak that matters for them (REQ-SCO-06 as amended in 1.12).

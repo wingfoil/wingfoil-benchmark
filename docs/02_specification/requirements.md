@@ -1,7 +1,7 @@
 # Requirements (v0.1, v0.2, v0.3)
 
-**Version:** 1.56
-**Date:** 2026-11-11
+**Version:** 1.57
+**Date:** 2026-11-12
 **Status:** Approved
 **Traces to:** [acceptance/](acceptance/) (the v0.1 and v0.2 features), [scenarios/](scenarios/) (K1–K5), [09_experiment-design.md](../01_vision/09_experiment-design.md), [07_sequencer.md](../01_vision/07_sequencer.md) v0.1; v0.2: [rel-v0-2](../memory/release/rel-v0-2.md)
 
@@ -70,7 +70,7 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-CLI-11 | `bench transcripts pack <campaign-id>/<n>` (added in 1.22) packs an aggregated campaign execution's transcripts into one release asset (REQ-RES-06), records it in its runs, and prints the `gh release` command that attaches it, which it does not run. A dry run is refused.<br>**Amended in 1.26 (v0.2):** it also packs the harness artifacts the execution used (REQ-FMT-12) as a second asset, `harnesses.tar.gz`, and the earlier attempts' transcripts (REQ-RUN-19).<br>**Amended in 1.50 (v0.3, W18, task-138, F7.5):** the asset also holds the transcripts of the configuring sessions (REQ-RUN-20) of every configuration the execution ran, every session's (all its records, as M-K3 counts them), under `configuring/<id>@<version>/<harness>/<n>/` in the asset (beside the runs' paths relative to the execution, REQ-RES-06), scanned as the runs' are, and recorded in the runs of the configured arm and of its docs control that read the configuration; a configuring transcript missing on the packing machine is skipped and named, as a run's is. | F5.6, F7.5 |
 | REQ-CLI-12 | `bench campaign compare <campaign-id>/<n> <campaign-id>/<n>` (added in 1.26): the first execution named is the earlier, the second the newer, as the maintainer orders them; two executions that ran side by side, such as dl-007's bridge and its main campaign, are ordered by the maintainer's choice, which the comparison records. It compares the two aggregated executions (REQ-SCO-13) and writes `results/comparisons/<newer-id>-<n>/<earlier-id>-<m>.json`. A dry run, an unaggregated execution, or the same execution twice is refused, naming it. | F5.2 |
 | REQ-CLI-13 | `bench campaign presets` (added in 1.34, dl-022): lists the presets of `campaigns/presets/` that can be extended, one line each, with its name and its `description:`; each one that cannot is named on the error output with the refusal REQ-FMT-01 gives it, and the command then exits 1. | F1.1 |
-| REQ-CLI-14 | `bench scenario configure <id>@<version> --arm <harness> [--allow-spending] [--replace]` (added in 1.50, F7.5): runs the configuring agent (REQ-RUN-20) for that scenario version and harness arm, printing its ceiling first; prints the outcome, the configuration's files, the record's path and the cost. Exits 0 when the configuration is written; 1 when it is refused before any session (`--allow-spending` missing included, with `campaign run`'s message), or the session's result is refused, or the session ends early (its record written then); 2 for a usage error. `scenario validate` then scans the configuration with the version (REQ-FMT-08 as amended in 1.50).<br>**Amended in 1.53 (v0.3, W18, task-141):** it also exits 1 when the session could not start (REQ-RUN-20 as amended in 1.53), writing no record; and it refuses without `--allow-spending` whatever the profile's agent, since every configuring session is a real-agent one.<br>**Amended in 1.54 (v0.3, W18, task-142, F7.5):** `--arm` naming a configured arm is refused, naming its harness arm, the one configured. | F7.5 |
+| REQ-CLI-14 | `bench scenario configure <id>@<version> --arm <harness> [--allow-spending] [--replace]` (added in 1.50, F7.5): runs the configuring agent (REQ-RUN-20) for that scenario version and harness arm, printing its ceiling first; prints the outcome, the configuration's files, the record's path and the cost. Exits 0 when the configuration is written; 1 when it is refused before any session (`--allow-spending` missing included, with `campaign run`'s message), or the session's result is refused, or the session ends early (its record written then); 2 for a usage error. `scenario validate` then scans the configuration with the version (REQ-FMT-08 as amended in 1.50).<br>**Amended in 1.53 (v0.3, W18, task-141):** it also exits 1 when the session could not start (REQ-RUN-20 as amended in 1.53), writing no record; and it refuses without `--allow-spending` whatever the profile's agent, since every configuring session is a real-agent one.<br>**Amended in 1.54 (v0.3, W18, task-142, F7.5):** `--arm` naming a configured arm is refused, naming its harness arm, the one configured.<br>**Amended in 1.57 (v0.3, W18, task-145, bug-049):** once a configuration is written, it runs the leak scan of `scenario validate` (REQ-FMT-08 as amended in 1.50) on it, with the hold-out's additions when one is set: its files holding an oracle or hold-out literal, and the step prompts repeating one of its lines; the version's other findings stay `scenario validate`'s. On a finding it prints them, by file and source and never the literal, and exits 1; the configuration and its record stay written, its outcome `written`, so the approver chooses between `--replace` and a fix of the scan. | F7.5 |
 
 ## 4. Runner (REQ-RUN)
 
@@ -1135,3 +1135,14 @@ generator read only a context in the rules generator's shape.
 
 Source: [task-144](../memory/task/task-144-w18-every-arm-s-dry-run-on-s1-s2-s3-and-s8-at-1.1-the-configured-arms-included.md),
 [bug-048](../memory/bug/bug-048-the-openspec-docs-generator-drops-a-configured-context-that-has-no-level-two-heading-so-openspec-docs-configured-runs-with-no-rules.md).
+
+### Amendment 1.57 (v0.3, W18 task-145, 2026-11-12)
+
+`bench scenario configure` scanned only its prompt: a configuration holding an oracle literal was found by a later
+`scenario validate` or dry run, after the session was paid for (bug-047 surfaced that way in task-143).
+
+- **REQ-CLI-14:** configure runs the leak scan on the configuration it has just written, the hold-out included, and
+  exits 1 on a finding; the configuration and its record stay written.
+
+Source: [task-145](../memory/task/task-145-bug-049-bench-scenario-configure-scans-the-configuration-it-writes.md),
+[bug-049](../memory/bug/bug-049-bench-scenario-configure-writes-a-configuration-without-scanning-it-for-leaks-so-a-leaking-one-is-found-only-by-a-later-validate-or-dry-run.md).

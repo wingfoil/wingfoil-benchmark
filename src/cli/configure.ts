@@ -154,6 +154,8 @@ export async function configureCommand(
   io.stdout(`record ${summary.index}: ${at(summary.recordFile)}\n`);
   io.stdout(`transcript: ${at(summary.transcript)}\n`);
   if (summary.loadIssues.length > 0) return report(summary.loadIssues, io);
+  // A configuration the leak scan refuses stays written with its record: the approver chooses --replace or a fix.
+  if (summary.leakIssues.length > 0) return report(summary.leakIssues, io);
   if (record.outcome === 'written') return EXIT.ok;
   io.stderr(
     `configure ${what}: ${record.outcome}${record.reason === undefined ? '' : `: ${record.reason}`}\n`,
