@@ -97,4 +97,30 @@ and tests only; nothing spent.
 
 ## Execution notes
 
+- 2026-11-12: backlog → in-progress on main; worktree `../WingFoil2-Benchmark-wt/t146`.
+- **Red first** (`550a2b7f`): `test/unit/site/configuring.test.ts` (five tests of the block, red: no module), the
+  form's two tests and the method page's "no configured arm" sentence in `test/unit/site/method.test.ts`, and the two
+  scenarios in `results.feature` with their tests in `test/acceptance/configured-arms.test.ts`.
+- **The work** (`ae59d5ba`):
+  - `.github/ISSUE_TEMPLATE/contest-setup.yml`: the `subject` dropdown after `arm`; the opening text's path from a
+    contested configuration to a new scenario version and campaign.
+  - `src/site/configuring.ts` (new), `configuringSection`: the profile's agent, model and caps and the prompt in full,
+    each with its SHA-256, read by the records' digests (`recordedFile`, `recordedManual` generalized in
+    `src/site/recorded.ts`); per configuration its files, the patch as a material page, its sessions' cost, the files
+    its docs control does not read (outside the generator's `kept`), and the harness arm's places with sources.
+    `RunRecord` gains `scenario` and `version` (`src/site/model.ts`); `methodPages` passes the block as
+    `<!-- configuring -->`, or a sentence when no configured arm ran.
+  - `site-content/method.md`: the arms sentence; "Configured variants" with four statements (`configured-arms`,
+    `configuring-agent`, `configured-defaults`, `configured-properties`), their sources in
+    `test/unit/site/method-statements.test.ts`; T12's line.
+  - `docs/calibration/configuring.md` 1.1: §3's sentence on the command's leak scan (task-145).
+- **Two deviations from the Design, found by the targeted suites:** an arm that is not configured is not loaded
+  (the setup-as-it-ran test removes `arms/wingfoil` from the working tree, and the block must not refuse it); and a
+  version holding no configuration of a configured arm that ran is said on the page, not refused, since
+  `test/unit/site/configured-site.test.ts` (task-142) runs `wingfoil-configured` on a 1.0 stand-in, which may hold
+  none, and a campaign refuses such a run anyway. A configured arm the working tree no longer holds is refused, as
+  the Design's history reading covers the prompt and profile only.
+- Targeted tests green: `test/unit/site/` and `test/acceptance/configured-arms.test.ts`; tsc and eslint clean. No
+  `site/` page changes; nothing spent.
+
 ## Review
