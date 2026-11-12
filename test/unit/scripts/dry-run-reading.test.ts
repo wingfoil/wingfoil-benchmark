@@ -84,8 +84,8 @@ describe('scripts/dry-run-reading.mjs (task-144)', () => {
       '',
       'Dry runs: 4, 3 measured (3 completed), 1 superseded; their cost: 2.0000 EUR against the 10.00 EUR ' +
         'ceiling (20.0%).',
-      'The configured arms: 0.5000 EUR; their base arms on the same versions: 0.5000 EUR; the configured arm ' +
-        'dearer in 0 of the 1 pairs, cheaper or equal in 1.',
+      'The configured arms: 0.5000 EUR; their base arms on the same versions: 0.5000 EUR.',
+      'Pair by pair, the configured arm is dearer in 0 of 1, cheaper or equal in 1.',
       'Superseded: `3` (S2@1.1, wingfoil-configured) by `5`.',
       'Pins: every dry run matches `profile.yaml`.',
       'Harness commits: wingfoil 870bd4406f3b.',

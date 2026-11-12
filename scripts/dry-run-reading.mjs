@@ -151,8 +151,10 @@ console.log(
 );
 console.log(
   `The configured arms: ${configuredSum.toFixed(4)} EUR; their base arms on the same versions: ` +
-    `${baseSum.toFixed(4)} EUR; the configured arm dearer in ${dearer} of the ${pairs} pairs, ` +
-    `cheaper or equal in ${pairs - dearer}.`,
+    `${baseSum.toFixed(4)} EUR.`,
+);
+console.log(
+  `Pair by pair, the configured arm is dearer in ${dearer} of ${pairs}, cheaper or equal in ${pairs - dearer}.`,
 );
 for (const { old, by } of superseded)
   console.log(`Superseded: \`${old.n}\` (${old.scenario}, ${old.arm}) by \`${by.n}\`.`);
