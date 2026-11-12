@@ -3,7 +3,7 @@ id: bug-049-bench-scenario-configure-writes-a-configuration-without-scanning-it-
 type: bug
 title: "bench scenario configure writes a configuration without scanning it for leaks, so a leaking one is found only by a later validate or dry run"
 status: approved
-# fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
+fixed_by: task-145-bug-049-bench-scenario-configure-scans-the-configuration-it-writes
 tags: ["v0.3","configured","leak-scan"]
 ---
 
@@ -46,3 +46,11 @@ session is paid for and its configuration written into the scenario.
    that are not yet on disk.
 
 No change to the 1.1 configurations: they validate today.
+
+## Resolution
+
+Fixed by
+[task-145](../task/task-145-bug-049-bench-scenario-configure-scans-the-configuration-it-writes.md),
+fix 1: `configure` runs `scanConfiguration` on the configuration it has just written (the configured arm's
+findings of `scanScenario`, the hold-out included), prints the findings and exits 1; the configuration and its
+record stay written. Requirements 1.57 (REQ-CLI-14). The twelve 1.1 configurations are unchanged.
