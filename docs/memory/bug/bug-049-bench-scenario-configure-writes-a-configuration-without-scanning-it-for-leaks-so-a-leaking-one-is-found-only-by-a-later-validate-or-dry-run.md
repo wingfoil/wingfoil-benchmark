@@ -2,7 +2,7 @@
 id: bug-049-bench-scenario-configure-writes-a-configuration-without-scanning-it-for-leaks-so-a-leaking-one-is-found-only-by-a-later-validate-or-dry-run
 type: bug
 title: "bench scenario configure writes a configuration without scanning it for leaks, so a leaking one is found only by a later validate or dry run"
-status: approved
+status: fixed
 fixed_by: task-145-bug-049-bench-scenario-configure-scans-the-configuration-it-writes
 tags: ["v0.3","configured","leak-scan"]
 ---
