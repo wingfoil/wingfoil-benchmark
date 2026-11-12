@@ -2,7 +2,7 @@
 id: task-146-w18-the-configured-variants-published-on-the-contest-form-and-the-method-page
 type: task
 title: "W18: the configured variants published, on the contest form and the method page"
-status: in-review
+status: in-progress
 release: v0.3
 wave: W18
 features: [F5.5, F7.2, F7.5]
@@ -12,6 +12,7 @@ acceptance:
 requirements: [REQ-RES-02, REQ-RES-10]
 fixes: []
 tags: ["v0.3","configured","site"]
+rejection_reason: "Full suites red at e086b1e1 (TEST 1, 2330 passed): task-073's characterization test '@F7.2 A setup can be contested from its page' pins the contest form's fields to arm, step, documentation, correction, and the new subject field breaks it. Update that test and its competitors.feature scenario to include the subject, rerun competitors.test.ts, pre-review and the full suites, then resubmit."
 ---
 
 ## Context
