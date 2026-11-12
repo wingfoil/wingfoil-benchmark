@@ -81,3 +81,9 @@ Code, tests and the requirement only: no real-agent session (the tests run `conf
   unchanged and green. Nothing spent; the twelve 1.1 configurations unchanged.
 
 ## Review
+
+- **Round 1** (an independent read-only agent, in a clone under `mktemp`, 2026-11-12): nothing blocking; tsc,
+  prettier and the targeted tests green; the acceptance tests red against the pre-fix code (`expected +0 to be 1`).
+  Three test nits, all fixed: the "leaves out" unit test now pins a prompt repeating a line of another configuration
+  (checked by mutation: dropping the label from the filter turns it red); the hold-out acceptance test asserts the
+  hold-out line is the only finding, and that the configuration stays on disk.

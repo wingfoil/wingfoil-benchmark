@@ -1327,11 +1327,14 @@ describe('a configuration that leaks, reported by the configure that wrote it (t
 
     const result = await benchConfigure(root, ['S2@1.1', '--arm', 'wingfoil', '--allow-spending'], ports);
 
+    // Then configure exits 1, naming only the hold-out file
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain(
+    expect(result.stderr.split('\n').filter((line) => line.includes('holds a literal of'))).toEqual([
       `arms.wingfoil-configured: ${RULE} holds a literal of the hold-out file ${suiteId}/extra.test.ts`,
-    );
+    ]);
     expect(result.stdout + result.stderr).not.toContain('hidden expectation');
+    // And the configuration and its record stay written
+    expect(readFileSync(join(dir, 'arms', 'wingfoil-configured', RULE), 'utf8')).toContain('Mind');
     expect(storedRecords(dir, 'wingfoil').map((record) => record.outcome)).toEqual(['written']);
   });
 });

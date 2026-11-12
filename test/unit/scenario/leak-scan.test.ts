@@ -393,13 +393,26 @@ describe("scanConfiguration: the configured arm's findings only (bug-049, task-1
 
   it("leaves out another configuration's findings and the version's own", () => {
     const scenario = t3Configured({ [RULE]: '# Rule\n\nKeep every order state named.\n' }, (dir) => {
-      writeConfiguration(dir, 'speckit-configured', { '.specify/memory/constitution.md': LEAK });
-      writeFileSync(join(dir, 'prompts', '02.md'), 'Ask WingFoil for the next step.\n');
+      writeConfiguration(dir, 'speckit-configured', {
+        '.specify/memory/constitution.md': `${LEAK}\nEvery shipped order keeps its tracking code.\n`,
+      });
+      writeFileSync(
+        join(dir, 'prompts', '02.md'),
+        'Ask WingFoil for the next step.\n\nEvery shipped order keeps its tracking code.\n',
+      );
     });
-    // scanScenario finds both: the other configuration's literal and the prompt's harness name
-    expect(scanScenario(scenario, DECLARATIONS).map((issue) => issue.path)).toEqual([
-      'steps[1].prompt_file',
-      'arms.speckit-configured',
+    // scanScenario finds them all: the prompt's harness name, the prompt repeating a line of the other configuration,
+    // and the other configuration's literal
+    expect(scanScenario(scenario, DECLARATIONS)).toEqual([
+      { path: 'steps[1].prompt_file', message: "names the harness 'WingFoil'" },
+      {
+        path: 'steps[1].prompt_file',
+        message: 'repeats a line of arms/speckit-configured/.specify/memory/constitution.md',
+      },
+      {
+        path: 'arms.speckit-configured',
+        message: '.specify/memory/constitution.md holds a literal of oracle/public/cancel.test.ts',
+      },
     ]);
 
     expect(scanConfiguration(scenario, DECLARATIONS, 'wingfoil-configured')).toEqual([]);
