@@ -1,0 +1,57 @@
+diff --git a/README.md b/README.md
+index e2d9927a4405846b48fd08fed56d7ba943dd43aa..1a47c0297203b0f3d05bb13086f0905a7e3a4f8e 100644
+--- a/README.md
++++ b/README.md
+@@ -29,8 +29,9 @@ Paths and `from` locations are JSON Pointers, parsed as in `resolvePointer`.
+ - Neither `document` nor `patch` is mutated, and the result shares no structure with them. The patch is
+   atomic: if an operation fails, the error is thrown and no result is returned.
+ - Throws `TypeError` when `patch` is not an array or an operation is malformed (not an object, unknown `op`,
+-  missing or non-string `path`, missing `value` for `add`/`replace`/`test`, missing `from` for `move`/`copy`).
+-  Unrecognized members are ignored (section 4).
++  missing or non-string `path`, missing or `undefined` `value` for `add`/`replace`/`test`, missing `from` for `move`/`copy`).
++  Unrecognized members are ignored (section 4). The whole patch is validated before any operation runs, so a
++  malformed operation is reported even if an earlier one would fail.
+ - Throws `SyntaxError` when a `path` or `from` is not a valid JSON Pointer.
+ - Throws `RangeError` when an operation fails: a target that must exist does not (`remove`, `replace`,
+   `move`/`copy` source, `test`), an array position is out of range or non-canonical, a `move` targets a child
+diff --git a/src/index.ts b/src/index.ts
+index 05e7f077fb47748bcd91c95b26245b3832e5ecef..ae95675a8f75d154a20d3f7625887c1fdd43710c 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -95,7 +95,7 @@ function validateOperation(operation: unknown, index: number): PatchOperation {
+   if (typeof operation.path !== "string") {
+     throw invalidOperation(index, `"path" must be a string`);
+   }
+-  if (required === "value" && !Object.hasOwn(operation, "value")) {
++  if (required === "value" && (!Object.hasOwn(operation, "value") || operation.value === undefined)) {
+     throw invalidOperation(index, `"${op}" requires a "value" member`);
+   }
+   if (required === "from" && typeof operation.from !== "string") {
+@@ -235,8 +235,8 @@ export function applyPatch(document: JsonValue, patch: PatchOperation[]): JsonVa
+   if (!Array.isArray(patch)) {
+     throw new TypeError("A JSON Patch document must be an array of operations");
+   }
+-  return patch.reduce<JsonValue>(
+-    (root, operation, index) => applyOperation(root, validateOperation(operation, index)),
+-    structuredClone(document),
+-  );
++  // Section 4: a malformed operation invalidates the whole patch, whatever earlier operations do.
++  // Array.from visits holes of a sparse array, which reduce would skip.
++  const operations = Array.from(patch, validateOperation);
++  return operations.reduce<JsonValue>(applyOperation, structuredClone(document));
+ }
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index c42436614ed1f7a93800abbd9cda70c13d253a06..0a052d97711557e2117ecdcfc3f25a43f351fa8f 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -59,6 +59,10 @@ const failures: [string, unknown, unknown, new (...args: never[]) => Error][] =
+   ["test a missing location", {}, [{ op: "test", path: "/a", value: null }], RangeError],
+   ["test a different type", { a: 1 }, [{ op: "test", path: "/a", value: "1" }], RangeError],
+   ["a later failure fails the whole patch", {}, [{ op: "add", path: "/a", value: 1 }, { op: "remove", path: "/b" }], RangeError],
++  // RFC 6902 section 4: a malformed operation invalidates the patch, even after a failing one.
++  ["a malformed operation is reported before an earlier failure", {}, [{ op: "remove", path: "/b" }, { op: "bogus", path: "/a" }], TypeError],
++  ["a hole in the patch array", { a: 1 }, [{ op: "remove", path: "/a" }, , { op: "add", path: "/b", value: 1 }], TypeError],
++  ["add with an undefined value", {}, [{ op: "add", path: "/a", value: undefined }], TypeError],
+ ];
+ 
+ for (const [name, doc, patch, error] of failures) {

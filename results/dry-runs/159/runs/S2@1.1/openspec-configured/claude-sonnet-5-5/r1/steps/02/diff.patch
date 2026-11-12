@@ -1,0 +1,451 @@
+diff --git a/README.md b/README.md
+index 669f63c1d48ed691352b729bddab5c8e21baacae..74cdf7bbceecf27d3093a3230c6f360a89bb35ee 100644
+--- a/README.md
++++ b/README.md
+@@ -71,8 +71,9 @@ These are the rules the service implements. When the code and this list disagree
+ - Rates by VAT class: standard 22%, reduced 10%, super-reduced 4%, exempt 0%.
+ - VAT is computed line by line, on each line's net amount after every discount, and rounded half up
+   to the cent on each line.
+-- Shipping is subject to VAT at the standard rate (22%), shown on its own line of the receipt.
+-- The order total is goods + shipping + VAT on goods + VAT on shipping.
++- Shipping carries no VAT: delivery is a service, not goods. The receipt shows no VAT on shipping, and
++  the invoice lists shipping at 0%.
++- The order total is goods + shipping + VAT on goods.
+ 
+ ### Invoices
+ 
+diff --git a/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/.openspec.yaml b/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..ca7e6273f6d99d2742600212cc8024ce08e30dfe
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-11-09
+diff --git a/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/design.md b/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..90494912a2edf54a8bc8a846efbd3b5370feb6d6
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/design.md
+@@ -0,0 +1,30 @@
++# Design
++
++## Context
++
++`priceOrder` (src/pricing.ts) passes the gross total to `couponDiscount`; the subtotal after volume
++discounts (`afterVolume`) is already computed and is what the README requires. `Coupons.redeemable`
++compares the date with `validUntil` using `>= 0`, rejecting the last day. `shippingVat` in src/tax.ts
++applies 22%; the receipt prints a "VAT on shipping" row and `vatSummary` in src/invoices.ts adds shipping at
++the standard rate.
++
++## Goals / Non-Goals
++
++**Goals:** fix both bugs to match the README; make shipping VAT-free consistently in totals, receipt,
++invoice, README.
++
++**Non-Goals:** any other pricing rule; removing `shippingVatCents` from the public types.
++
++## Decisions
++
++- Use `sum(afterVolume)` as the coupon base; keep `percentOf` (half-up, integer cents) and `capped`.
++- Change the expiry check to `> 0` (last day included).
++- `shippingVat` returns 0 and `totalCents = goods + shipping + vat`. `shippingVatCents` stays as an always-0
++  field to avoid an API break. Alternative (removing it) rejected as out of scope.
++- Receipt drops the "VAT on shipping" line. Invoice summary adds shipping under rate 0 (net = shipping, VAT 0).
++
++## Risks / Trade-offs
++
++- The VAT change is a tax-treatment decision requested by a customer; flagged in the proposal for business
++  confirmation.
++- Already placed orders keep their stored totals.
+diff --git a/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/proposal.md b/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..15104e08948f721e8b8b2900e97da914d5564e8f
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/proposal.md
+@@ -0,0 +1,51 @@
++# Proposal
++
++## Why
++
++Three reports on the order service: finance sees orders with a volume discount and a percentage coupon
++discounted too much (12 notebooks at €5.00 with a 10% coupon come to €48.00 of goods instead of €48.60);
++a customer's coupon AUTUMN, advertised until 2026-11-30, was refused on 2026-11-30; and a customer's
++receipt charges VAT on delivery (€1.08 on €4.90).
++
++## What Changes
++
++- **Coupon base (bug):** a percentage coupon is computed on the gross amount instead of the subtotal after
++  volume discounts. 12 × 500 = 6000 gross, volume 600, subtotal 5400, coupon 10% = 540, goods 4860 (today:
++  600 off the gross, goods 4800). Fixed coupons are unaffected in effect (already capped by the subtotal)
++  but use the same base.
++- **Coupon last day (bug):** a coupon is refused as expired on its last day; it must be valid on its last
++  day, both days included.
++- **Shipping VAT (rule change):** shipping no longer carries VAT. VAT on shipping is 0, the receipt shows no
++  "VAT on shipping" line, and the total is goods + shipping + VAT on goods. **This changes the README rule
++  "Shipping is subject to VAT at the standard rate (22%)" and the total formula; the README is updated in
++  this change.** The first two items implement existing README rules and change no rule.
++
++Assumption to confirm with finance/tax: delivery is invoiced without VAT as requested; the rule change was
++requested by a customer's receipt complaint, so the business owner should confirm it is legally right.
++
++## README business rules affected
++
++- Discounts: "Coupons … applies to the order's subtotal after volume discounts" and "valid from its first day
++  to its last day, both included": the code is wrong, the rules stay.
++- VAT: "Shipping is subject to VAT at the standard rate (22%)…" and "The order total is goods + shipping + VAT
++  on goods + VAT on shipping": **changed**.
++- Invoices: VAT summary no longer has shipping VAT; shipping is listed at 0%.
++
++## Capabilities
++
++### New Capabilities
++- `coupons`: coupon discount base and validity period.
++
++### Modified Capabilities
++- `vat`: shipping carries no VAT; total formula.
++
++## Impact
++
++`src/pricing.ts`, `src/coupons.ts`, `src/tax.ts`, `src/receipt.ts`, `src/invoices.ts`, `README.md`,
++`test/*.test.ts`. The `shippingVatCents` total stays in the API (always 0).
++
++## Out of Scope
++
++Rates by VAT class, shipping price bands and the free-shipping threshold, the 50% discount cap, the
++volume discount, minimum-subtotal checks, coupon single-use handling, and recomputing already placed orders
++or issued invoices.
+diff --git a/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/specs/coupons/spec.md b/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/specs/coupons/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ce96bbcf03482c0e4bd9d5f8700319972b20677d
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/specs/coupons/spec.md
+@@ -0,0 +1,37 @@
++# Spec Delta
++
++## Purpose
++Coupon discounts: what a coupon is computed on and on which days it is valid.
++
++## ADDED Requirements
++
++### Requirement: Percentage coupon applies to the subtotal after volume discounts
++A percentage coupon SHALL take its percentage of the order's subtotal after volume discounts, rounded half
++up to the cent, subject to the 50% cap on the gross amount.
++
++#### Scenario: Volume discount and 10% coupon
++- **WHEN** 12 units at 500 cents (gross 6000, volume discount 600, subtotal 5400) use a 10% coupon
++- **THEN** the coupon takes 540 cents off and the goods are 4860 cents
++
++#### Scenario: Half a cent rounds up
++- **WHEN** the subtotal after volume discounts is 1005 cents and the coupon is 10% (100.5 cents)
++- **THEN** the coupon takes 101 cents off
++
++#### Scenario: Cap on gross
++- **WHEN** gross is 6000, volume discount 600 and a 50% coupon would take 2700
++- **THEN** the coupon is reduced to 2400 so all discounts total 3000 (50% of gross)
++
++### Requirement: Coupon valid on its first and last day
++A coupon SHALL be valid on every day from its first day to its last day, both included.
++
++#### Scenario: Last day
++- **WHEN** coupon AUTUMN is valid until 2026-11-30 and an order is placed on 2026-11-30
++- **THEN** the coupon is accepted
++
++#### Scenario: Day after the last day
++- **WHEN** the same order is placed on 2026-12-01
++- **THEN** the coupon is refused as expired
++
++#### Scenario: First day and day before
++- **WHEN** a coupon is valid from 2026-10-01 and orders are placed on 2026-10-01 and 2026-09-30
++- **THEN** the first is accepted and the second is refused as not valid yet
+diff --git a/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/specs/vat/spec.md b/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/specs/vat/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1f8fb0a42394ecddfc8d1f6655641a12c4f8724f
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/specs/vat/spec.md
+@@ -0,0 +1,19 @@
++# Spec Delta
++
++## ADDED Requirements
++
++### Requirement: Shipping carries no VAT
++Shipping SHALL carry no VAT, and the order total SHALL be goods + shipping + VAT on goods. This replaces
++the earlier rule that shipping is subject to VAT at 22%.
++
++#### Scenario: Small order with paid shipping
++- **WHEN** an order has goods of 2000 cents (standard rate, VAT 440) and shipping of 490 cents
++- **THEN** VAT on shipping is 0 and the total is 2000 + 490 + 440 = 2930 cents
++
++#### Scenario: Free shipping
++- **WHEN** goods are 5000 cents and shipping is 0
++- **THEN** VAT on shipping is 0 and the receipt shows no VAT on shipping
++
++#### Scenario: Receipt and invoice
++- **WHEN** an order with shipping of 490 cents is received or invoiced
++- **THEN** the receipt has no "VAT on shipping" line and the invoice lists shipping at 0% with 0 VAT
+diff --git a/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/tasks.md b/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fe451ece9adc7810d2df10767c0f5b509e50ff77
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-09-fix-order-pricing-reports/tasks.md
+@@ -0,0 +1,18 @@
++# Tasks
++
++## 1. Coupon base and validity
++
++- [x] 1.1 In src/pricing.ts compute the coupon on the subtotal after volume discounts
++- [x] 1.2 In src/coupons.ts accept a coupon on its last day (`validUntil`)
++- [x] 1.3 Add tests in test/coupons.test.ts / test/orders.test.ts: 12 × 500 with 10% coupon → goods 4860; last day 2026-11-30 accepted, 2026-12-01 refused; first day boundary; half-cent rounding
++
++## 2. Shipping without VAT (rule change)
++
++- [x] 2.1 Make `shippingVat` return 0 in src/tax.ts and the total goods + shipping + VAT on goods in src/pricing.ts
++- [x] 2.2 Remove the "VAT on shipping" line from src/receipt.ts; list shipping at 0% in `vatSummary` (src/invoices.ts)
++- [x] 2.3 Update the existing small-order test (shippingVatCents 0, total 2930 style) and add receipt/invoice tests in test/*.test.ts
++- [x] 2.4 Update README business rules: VAT section (shipping carries no VAT, new total formula) and Invoices
++
++## 3. Verify
++
++- [x] 3.1 Run `npm test`
+diff --git a/openspec/specs/coupons/spec.md b/openspec/specs/coupons/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..85051c22639da55b15d66e4c4f559efef9b3293c
+--- /dev/null
++++ b/openspec/specs/coupons/spec.md
+@@ -0,0 +1,37 @@
++# coupons Specification
++
++## Purpose
++Coupon discounts: what a coupon is computed on and on which days it is valid.
++
++## Requirements
++
++### Requirement: Percentage coupon applies to the subtotal after volume discounts
++A percentage coupon SHALL take its percentage of the order's subtotal after volume discounts, rounded half
++up to the cent, subject to the 50% cap on the gross amount.
++
++#### Scenario: Volume discount and 10% coupon
++- **WHEN** 12 units at 500 cents (gross 6000, volume discount 600, subtotal 5400) use a 10% coupon
++- **THEN** the coupon takes 540 cents off and the goods are 4860 cents
++
++#### Scenario: Half a cent rounds up
++- **WHEN** the subtotal after volume discounts is 1005 cents and the coupon is 10% (100.5 cents)
++- **THEN** the coupon takes 101 cents off
++
++#### Scenario: Cap on gross
++- **WHEN** gross is 6000, volume discount 600 and a 50% coupon would take 2700
++- **THEN** the coupon is reduced to 2400 so all discounts total 3000 (50% of gross)
++
++### Requirement: Coupon valid on its first and last day
++A coupon SHALL be valid on every day from its first day to its last day, both included.
++
++#### Scenario: Last day
++- **WHEN** coupon AUTUMN is valid until 2026-11-30 and an order is placed on 2026-11-30
++- **THEN** the coupon is accepted
++
++#### Scenario: Day after the last day
++- **WHEN** the same order is placed on 2026-12-01
++- **THEN** the coupon is refused as expired
++
++#### Scenario: First day and day before
++- **WHEN** a coupon is valid from 2026-10-01 and orders are placed on 2026-10-01 and 2026-09-30
++- **THEN** the first is accepted and the second is refused as not valid yet
+diff --git a/openspec/specs/vat/spec.md b/openspec/specs/vat/spec.md
+index f92b026536621e116cd717d3a3b42769fbc78cf9..7b7930cee96118ac60ed54b7e4eb09ecb625298c 100644
+--- a/openspec/specs/vat/spec.md
++++ b/openspec/specs/vat/spec.md
+@@ -19,3 +19,19 @@ VAT of a line SHALL be its net amount times the class rate, rounded half up to t
+ #### Scenario: Just under half a cent
+ - **WHEN** a line nets 124 cents at the reduced rate (10%), i.e. 12.4 cents
+ - **THEN** its VAT is 12 cents
++
++### Requirement: Shipping carries no VAT
++Shipping SHALL carry no VAT, and the order total SHALL be goods + shipping + VAT on goods. This replaces
++the earlier rule that shipping is subject to VAT at 22%.
++
++#### Scenario: Small order with paid shipping
++- **WHEN** an order has goods of 2000 cents (standard rate, VAT 440) and shipping of 490 cents
++- **THEN** VAT on shipping is 0 and the total is 2000 + 490 + 440 = 2930 cents
++
++#### Scenario: Free shipping
++- **WHEN** goods are 5000 cents and shipping is 0
++- **THEN** VAT on shipping is 0 and the receipt shows no VAT on shipping
++
++#### Scenario: Receipt and invoice
++- **WHEN** an order with shipping of 490 cents is received or invoiced
++- **THEN** the receipt has no "VAT on shipping" line and the invoice lists shipping at 0% with 0 VAT
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/invoices.ts b/src/invoices.ts
+index 198c748dcbdc66310b665bd79b8c19725437ff17..439d126dc2cf9c9c338afd9036614b9eb69956e1 100644
+--- a/src/invoices.ts
++++ b/src/invoices.ts
+@@ -1,13 +1,12 @@
+ /**
+  * Invoices. A shipped order gets an invoice, numbered per calendar year (2026/0001, 2026/0002, …) in the
+- * order the invoices are issued, with its VAT summarised by rate: goods at each rate, and shipping at the
+- * standard rate.
++ * order the invoices are issued, with its VAT summarised by rate: goods at each rate, and shipping at
++ * 0%.
+  */
+ import { OrderStateError } from './errors.ts';
+ import { sum } from './money.ts';
+ import type { Cents } from './money.ts';
+ import type { Order } from './orders.ts';
+-import { VAT_RATES } from './tax.ts';
+ 
+ export interface VatSummaryRow {
+   readonly rate: number;
+@@ -24,7 +23,7 @@ export interface Invoice {
+   readonly totalCents: Cents;
+ }
+ 
+-/** VAT by rate, the highest rate first; shipping counts at the standard rate. */
++/** VAT by rate, the highest rate first; shipping counts at 0%. */
+ export function vatSummary(order: Order): VatSummaryRow[] {
+   const rows = new Map<number, { netCents: Cents; vatCents: Cents }>();
+   const add = (rate: number, net: Cents, vat: Cents) => {
+@@ -33,7 +32,7 @@ export function vatSummary(order: Order): VatSummaryRow[] {
+   };
+   for (const line of order.lines) add(line.vatRate, line.netCents, line.vatCents);
+   if (order.totals.shippingCents > 0) {
+-    add(VAT_RATES.standard, order.totals.shippingCents, order.totals.shippingVatCents);
++    add(0, order.totals.shippingCents, order.totals.shippingVatCents);
+   }
+   return [...rows.entries()].map(([rate, row]) => ({ rate, ...row })).sort((a, b) => b.rate - a.rate);
+ }
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..b94e7af80b8f1320932da135cb8413b82a645817 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -56,7 +56,7 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const volumeTotal = sum(volume);
+ 
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal - volumeTotal), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+@@ -91,7 +91,7 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+       shippingCents: shipping,
+       vatCents: vat,
+       shippingVatCents: shippingTax,
+-      totalCents: goods + shipping + vat + shippingTax,
++      totalCents: goods + shipping + vat,
+     },
+   };
+ }
+diff --git a/src/receipt.ts b/src/receipt.ts
+index 732b3de8b6aa10adf22ca78c3fc202cf0b778232..fdaf607b6c9e228914ed319b4a7417efa131cae0 100644
+--- a/src/receipt.ts
++++ b/src/receipt.ts
+@@ -20,7 +20,6 @@ export function receipt(order: Order): string {
+   lines.push(row('Goods', order.totals.goodsCents));
+   lines.push(row('Shipping', order.totals.shippingCents));
+   lines.push(row('VAT on goods', order.totals.vatCents));
+-  lines.push(row('VAT on shipping', order.totals.shippingVatCents));
+   lines.push(row('Total', order.totals.totalCents));
+   if (order.status === 'cancelled') lines.push('', `Cancelled on ${order.cancelledOn ?? ''}`);
+   return `${lines.join('\n')}\n`;
+diff --git a/src/tax.ts b/src/tax.ts
+index 5e12c55f1ca4a2044012df5ea175a5b57febbef3..da2a7845b4db70ab1cb0fa0a80380c19039d89fb 100644
+--- a/src/tax.ts
++++ b/src/tax.ts
+@@ -1,6 +1,6 @@
+ /**
+  * VAT. Every product belongs to a VAT class; each order line pays its class's rate on its net amount
+- * (after every discount), and shipping pays the standard rate. Amounts are rounded half up to the cent,
++ * (after every discount), and shipping pays none. Amounts are rounded half up to the cent,
+  * line by line.
+  */
+ import { percentOf } from './money.ts';
+@@ -26,7 +26,7 @@ export function lineVat(net: Cents, vatClass: VatClass): Cents {
+   return percentOf(net, vatRate(vatClass));
+ }
+ 
+-/** The VAT on a shipping cost: the standard rate. */
+-export function shippingVat(shipping: Cents): Cents {
+-  return percentOf(shipping, VAT_RATES.standard);
++/** The VAT on a shipping cost: none, delivery is a service and carries no VAT. */
++export function shippingVat(_shipping: Cents): Cents {
++  return 0;
+ }
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 1fdc2519dc031050b1b5593605af611816478518..14babe8bc0271d987f8d1262b2a057735e530997 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -40,4 +40,24 @@ describe('coupons', () => {
+     assert.equal(coupons.usedBy('ONCE'), 'ORD-0001');
+     assert.throws(() => orders.place({ customer: 'c-2', date: '2026-05-05', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'ONCE' }), CouponError);
+   });
++
++  it('takes a percentage coupon off the subtotal after volume discounts', () => {
++    const s = shop();
++    s.catalog.add({ sku: 'NB-1', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 100 });
++    s.inventory.restock('NB-1', 20);
++    const order = s.orders.place({ customer: 'c-1', date: '2026-03-15', lines: [{ sku: 'NB-1', quantity: 12 }], coupon: 'SPRING' });
++    assert.equal(order.totals.volumeDiscountCents, 600);
++    assert.equal(order.totals.couponDiscountCents, 540);
++    assert.equal(order.totals.goodsCents, 4860);
++  });
++
++  it('accepts a coupon on its first and last day', () => {
++    const { orders, coupons } = shop();
++    coupons.add({ code: 'AUTUMN', kind: 'percent', value: 10, validFrom: '2026-10-01', validUntil: '2026-11-30' });
++    const request = { customer: 'c-1', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'AUTUMN' };
++    assert.equal(orders.quote({ ...request, date: '2026-10-01' }).totals.couponDiscountCents, 200);
++    assert.equal(orders.quote({ ...request, date: '2026-11-30' }).totals.couponDiscountCents, 200);
++    assert.throws(() => orders.quote({ ...request, date: '2026-09-30' }), CouponError);
++    assert.throws(() => orders.quote({ ...request, date: '2026-12-01' }), CouponError);
++  });
+ });
+diff --git a/test/orders.test.ts b/test/orders.test.ts
+index 98f0637e500558e6d350f427efcd2dc76655d3a7..5f68694173511762e94d47eaa4c52478963a7be0 100644
+--- a/test/orders.test.ts
++++ b/test/orders.test.ts
+@@ -13,7 +13,7 @@ function shop() {
+ }
+ 
+ describe('orders', () => {
+-  it('prices a small order: goods, shipping by weight, VAT per line and on shipping', () => {
++  it('prices a small order: goods, shipping by weight, VAT per line, none on shipping', () => {
+     const { orders } = shop();
+     const order = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'MUG-01', quantity: 2 }, { sku: 'TEA-7', quantity: 2 }] });
+     assert.equal(order.id, 'ORD-0001');
+@@ -24,8 +24,8 @@ describe('orders', () => {
+       goodsCents: 3000,
+       shippingCents: 490,
+       vatCents: 440 + 100,
+-      shippingVatCents: 108,
+-      totalCents: 3000 + 490 + 540 + 108,
++      shippingVatCents: 0,
++      totalCents: 3000 + 490 + 540,
+     });
+   });
+ 
+@@ -106,4 +106,13 @@ describe('orders', () => {
+     assert.match(text, /1 × Enamel mug \(MUG-01\)\s+€10\.00/);
+     assert.match(text, /Total\s+€/);
+   });
++
++  it('charges no VAT on shipping, on the receipt or the invoice', () => {
++    const s = shop();
++    const order = s.orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'MUG-01', quantity: 2 }] });
++    assert.equal(order.totals.shippingCents, 490);
++    assert.equal(order.totals.shippingVatCents, 0);
++    assert.equal(order.totals.totalCents, 2000 + 490 + 440);
++    assert.doesNotMatch(receipt(order), /VAT on shipping/);
++  });
+ });

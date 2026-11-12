@@ -1,0 +1,205 @@
+diff --git a/README.md b/README.md
+index ff92be649ff3f610b38798b3310751534d032814..240e579fba0e5713019717b8efb84f16d8ff7855 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,15 @@
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+ other projects of the team, so its behaviour must follow the published standards it implements.
++
++## JSON Pointer (RFC 6901)
++
++`resolvePointer(document, pointer)`, exported from `src/index.ts`, returns the value that a JSON Pointer
++refers to. It throws a `SyntaxError` if the pointer is not valid (it must be `""` or start with `/`, and
++`~` must be followed by `0` or `1`), and an `Error` if the pointer does not resolve to a value of the
++document (missing member, out-of-range or non-canonical array index, `-`, or descending into a scalar or
++`null`). Only own properties are followed, so `/__proto__` never reaches a prototype.
++
++```ts
++resolvePointer({ "a/b": [10, 20] }, "/a~1b/1"); // 20
++```
+diff --git a/docs/memory/task/task-001-implement-json-pointer-rfc-6901-resolvepointer.md b/docs/memory/task/task-001-implement-json-pointer-rfc-6901-resolvepointer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..61a89cbcc5b6fe995089292b7470b4466d59c7fb
+--- /dev/null
++++ b/docs/memory/task/task-001-implement-json-pointer-rfc-6901-resolvepointer.md
+@@ -0,0 +1,27 @@
++---
++id: task-001-implement-json-pointer-rfc-6901-resolvepointer
++type: task
++title: "Implement JSON Pointer (RFC 6901) resolvePointer"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++# Request
++
++Implement JSON Pointer (RFC 6901). Export `resolvePointer(document, pointer)` from `src/index.ts`: it
++returns the value the pointer refers to, and throws when the pointer is not a valid JSON Pointer or does
++not resolve to a value of the document. Later features build on it.
++
++# Behaviour
++
++- `""` refers to the whole document; otherwise the pointer must start with `/`.
++- `~1` decodes to `/`, `~0` to `~` (in that order); any other `~` escape is invalid.
++- Objects: own properties only (no prototype lookups). Arrays: token must be `0` or a non-zero-leading
++  decimal index within bounds; `-` (past the end) and leading zeros do not resolve.
++- Primitives and `null` have no children.
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..2df0004e8b82163ae2186b8f014e5b50a5b53588
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,2 @@
++export { resolvePointer } from "./pointer.ts";
++export type { JsonValue } from "./pointer.ts";
+diff --git a/src/pointer.test.ts b/src/pointer.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..fc2419f0f52b77708fc961af86defa96c4bfecb1
+--- /dev/null
++++ b/src/pointer.test.ts
+@@ -0,0 +1,59 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { resolvePointer } from "./index.ts";
++
++const doc = {
++  foo: ["bar", "baz"],
++  "": 0,
++  "a/b": 1,
++  "c%d": 2,
++  "e^f": 3,
++  "g|h": 4,
++  "i\\j": 5,
++  'k"l': 6,
++  " ": 7,
++  "m~n": 8,
++  nul: null,
++};
++
++test("RFC 6901 examples", () => {
++  assert.equal(resolvePointer(doc, ""), doc);
++  assert.deepEqual(resolvePointer(doc, "/foo"), ["bar", "baz"]);
++  assert.equal(resolvePointer(doc, "/foo/0"), "bar");
++  assert.equal(resolvePointer(doc, "/"), 0);
++  assert.equal(resolvePointer(doc, "/a~1b"), 1);
++  assert.equal(resolvePointer(doc, "/c%d"), 2);
++  assert.equal(resolvePointer(doc, "/e^f"), 3);
++  assert.equal(resolvePointer(doc, "/g|h"), 4);
++  assert.equal(resolvePointer(doc, "/i\\j"), 5);
++  assert.equal(resolvePointer(doc, '/k"l'), 6);
++  assert.equal(resolvePointer(doc, "/ "), 7);
++  assert.equal(resolvePointer(doc, "/m~0n"), 8);
++});
++
++test("escape order: ~01 is the literal ~1", () => {
++  assert.equal(resolvePointer({ "~1": "x" }, "/~01"), "x");
++});
++
++test("null values resolve; null is not descended", () => {
++  assert.equal(resolvePointer(doc, "/nul"), null);
++  assert.throws(() => resolvePointer(doc, "/nul/x"));
++});
++
++test("invalid pointers throw", () => {
++  assert.throws(() => resolvePointer(doc, "foo"));
++  assert.throws(() => resolvePointer(doc, "/a~"));
++  assert.throws(() => resolvePointer(doc, "/a~2"));
++});
++
++test("unresolvable pointers throw", () => {
++  assert.throws(() => resolvePointer(doc, "/missing"));
++  assert.throws(() => resolvePointer(doc, "/foo/2"));
++  assert.throws(() => resolvePointer(doc, "/foo/-"));
++  assert.throws(() => resolvePointer(doc, "/foo/01"));
++  assert.throws(() => resolvePointer(doc, "/foo/+1"));
++  assert.throws(() => resolvePointer(doc, "/foo/length"));
++  assert.throws(() => resolvePointer(doc, "/foo/0/x"));
++  assert.throws(() => resolvePointer(doc, "/__proto__"));
++  assert.throws(() => resolvePointer(doc, "/constructor"));
++});
+diff --git a/src/pointer.ts b/src/pointer.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..dafb2dee8f7f280de69e5ec401f5e24db396323f
+--- /dev/null
++++ b/src/pointer.ts
+@@ -0,0 +1,61 @@
++/**
++ * JSON Pointer (RFC 6901).
++ *
++ * Why own-property checks: a pointer such as `/__proto__` or `/constructor` must not reach into
++ * prototypes, since pointers come from untrusted input.
++ */
++
++/** A JSON value. */
++export type JsonValue =
++  | null
++  | boolean
++  | number
++  | string
++  | JsonValue[]
++  | { [key: string]: JsonValue };
++
++/** Splits a pointer into its decoded reference tokens; throws if the pointer is syntactically invalid. */
++function parsePointer(pointer: string): string[] {
++  if (typeof pointer !== "string") {
++    throw new TypeError("JSON Pointer must be a string");
++  }
++  if (pointer === "") return [];
++  if (pointer[0] !== "/") {
++    throw new SyntaxError(`Invalid JSON Pointer "${pointer}": must be empty or start with "/"`);
++  }
++  return pointer
++    .slice(1)
++    .split("/")
++    .map((token) => {
++      if (/~(?![01])/.test(token)) {
++        throw new SyntaxError(`Invalid JSON Pointer "${pointer}": "~" must be followed by 0 or 1`);
++      }
++      return token.replace(/~1/g, "/").replace(/~0/g, "~");
++    });
++}
++
++/**
++ * Returns the value of `document` that `pointer` refers to.
++ *
++ * @throws SyntaxError if `pointer` is not a valid JSON Pointer.
++ * @throws Error if `pointer` does not resolve to a value of `document`.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  let current: unknown = document;
++  for (const token of parsePointer(pointer)) {
++    if (Array.isArray(current)) {
++      if (!/^(0|[1-9][0-9]*)$/.test(token) || Number(token) >= current.length) {
++        throw new Error(`JSON Pointer "${pointer}" does not resolve: bad array index "${token}"`);
++      }
++      current = current[Number(token)];
++    } else if (typeof current === "object" && current !== null) {
++      if (!Object.prototype.hasOwnProperty.call(current, token)) {
++        throw new Error(`JSON Pointer "${pointer}" does not resolve: no member "${token}"`);
++      }
++      current = (current as Record<string, unknown>)[token];
++    } else {
++      throw new Error(`JSON Pointer "${pointer}" does not resolve: cannot descend into a scalar at "${token}"`);
++    }
++  }
++  return current;
++}
+diff --git a/tsconfig.json b/tsconfig.json
+index fcd97f5ddbf1cb248969ba1e85bc3d6da5f12237..1ac949f9b3f56c469dddb85105833455a0f8e650 100644
+--- a/tsconfig.json
++++ b/tsconfig.json
+@@ -5,6 +5,7 @@
+     "moduleResolution": "NodeNext",
+     "strict": true,
+     "declaration": true,
++    "rewriteRelativeImportExtensions": true,
+     "outDir": "dist",
+     "skipLibCheck": true
+   },

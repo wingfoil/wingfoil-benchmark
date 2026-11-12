@@ -1,0 +1,112 @@
+diff --git a/src/index.ts b/src/index.ts
+index 6020d9efc4945a506b52547ef0609764222a3f8d..c607cc058e6a39f9de3db9139c1b6af28f5ba121 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -174,6 +174,8 @@ function removeAt(doc: unknown, tokens: string[]): unknown {
+   return doc;
+ }
+ 
++const OPERATIONS = ["add", "remove", "replace", "move", "copy", "test"];
++
+ function pointerTokens(value: unknown, member: string): string[] {
+   if (typeof value !== "string") throw new PatchError("INVALID_PATCH", `'${member}' must be a string`);
+   try {
+@@ -196,52 +198,54 @@ function pointerTokens(value: unknown, member: string): string[] {
+  */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) throw new PatchError("INVALID_PATCH", "A JSON Patch must be an array");
+-  let doc = clone(document);
+-  for (const operation of patch as unknown[]) {
++  // Validate the whole patch first, so a malformed patch is reported as such even if an earlier operation would fail.
++  const operations = (patch as unknown[]).map((operation) => {
+     if (!isObject(operation)) throw new PatchError("INVALID_PATCH", "Each operation must be an object");
+     const op = operation.op;
++    if (typeof op !== "string" || !OPERATIONS.includes(op)) {
++      throw new PatchError("INVALID_PATCH", `Unknown operation '${String(op)}'`);
++    }
+     const path = pointerTokens(operation.path, "path");
+-    const needValue = () => {
+-      if (!Object.hasOwn(operation, "value")) throw new PatchError("INVALID_PATCH", `'${String(op)}' requires 'value'`);
+-      return operation.value;
+-    };
++    const from = op === "move" || op === "copy" ? pointerTokens(operation.from, "from") : [];
++    if ((op === "add" || op === "replace" || op === "test") && !Object.hasOwn(operation, "value")) {
++      throw new PatchError("INVALID_PATCH", `'${op}' requires 'value'`);
++    }
++    return { op, path, from, value: operation.value };
++  });
++
++  let doc = clone(document);
++  for (const { op, path, from, value } of operations) {
+     switch (op) {
+       case "add":
+-        doc = addAt(doc, path, clone(needValue()));
++        doc = addAt(doc, path, clone(value));
+         break;
+       case "remove":
+         doc = removeAt(doc, path);
+         break;
+-      case "replace": {
+-        const value = clone(needValue());
+-        if (path.length === 0) doc = value;
++      case "replace":
++        if (path.length === 0) doc = clone(value);
+         else {
+           getAt(doc, path); // the target must exist
+-          doc = addAt(removeAt(doc, path), path, value);
++          doc = addAt(removeAt(doc, path), path, clone(value));
+         }
+         break;
+-      }
+-      case "move":
+-      case "copy": {
+-        const from = pointerTokens(operation.from, "from");
+-        const value = getAt(doc, from);
+-        if (op === "copy") {
+-          doc = addAt(doc, path, clone(value));
+-        } else {
+-          if (from.length < path.length && from.every((t, i) => t === path[i])) {
+-            failed("'from' must not be a proper prefix of 'path'");
+-          }
+-          doc = addAt(removeAt(doc, from), path, value);
++      case "copy":
++        doc = addAt(doc, path, clone(getAt(doc, from)));
++        break;
++      case "move": {
++        const moved = getAt(doc, from);
++        if (from.length < path.length && from.every((t, i) => t === path[i])) {
++          failed("'from' must not be a proper prefix of 'path'");
++        }
++        // moving a value onto its own location leaves the document unchanged
++        if (from.length !== path.length || !from.every((t, i) => t === path[i])) {
++          doc = addAt(removeAt(doc, from), path, moved);
+         }
+         break;
+       }
+-      case "test": {
+-        const expected = needValue();
+-        if (!jsonEqual(getAt(doc, path), expected)) failed("Test operation did not match");
++      case "test":
++        if (!jsonEqual(getAt(doc, path), value)) failed("Test operation did not match");
+         break;
+-      }
+-      default:
+-        throw new PatchError("INVALID_PATCH", `Unknown operation '${String(op)}'`);
+     }
+   }
+   return doc;
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 1ecd7776211812901c478dafa65ded5a71f3b715..8d00d008ac62bef2f011851803475ac177e204b9 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -167,3 +167,10 @@ test("prototype keys are ordinary members", () => {
+   assert.strictEqual(Object.getPrototypeOf(r2), Object.prototype);
+   assert.deepStrictEqual(Object.getOwnPropertyDescriptor(r2, "__proto__")?.value, { x: 2 });
+ });
++
++test("malformed patch is INVALID_PATCH even after a failing operation", () =>
++  bad({ a: 1 }, [{ op: "test", path: "/a", value: 2 }, { op: "bogus", path: "/a" }], "INVALID_PATCH"));
++test("move onto its own location is a no-op", () => {
++  ok({ a: 1 }, [{ op: "move", from: "/a", path: "/a" }], { a: 1 });
++  ok({ a: 1 }, [{ op: "move", from: "", path: "" }], { a: 1 });
++});

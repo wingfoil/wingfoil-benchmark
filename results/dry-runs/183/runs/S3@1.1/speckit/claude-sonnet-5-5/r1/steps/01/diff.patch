@@ -1,0 +1,225 @@
+diff --git a/specs/001-rental-module/checklists/requirements.md b/specs/001-rental-module/checklists/requirements.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a7a17761e1c7bf728df53c199c1171460ac94f95
+--- /dev/null
++++ b/specs/001-rental-module/checklists/requirements.md
+@@ -0,0 +1,2 @@
++# Specification Quality Checklist: Rental Module
++All items pass; no [NEEDS CLARIFICATION] markers.
+diff --git a/specs/001-rental-module/plan.md b/specs/001-rental-module/plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..050fefed7a911d4daa16817a061dd3e28cdaab98
+--- /dev/null
++++ b/specs/001-rental-module/plan.md
+@@ -0,0 +1,2 @@
++# Plan: Rental Module
++Single module `src/index.ts`, no dependencies, in-memory maps. Day count = (end-start)/86400000; overlap test `aStart < bEnd && bStart < aEnd`. Tests in `test/rental.test.ts` via `node --test`.
+diff --git a/specs/001-rental-module/spec.md b/specs/001-rental-module/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9b62dce339730fd6bbabe4e3b6611d8d5eb81c48
+--- /dev/null
++++ b/specs/001-rental-module/spec.md
+@@ -0,0 +1,43 @@
++# Feature Specification: Rental Module
++
++**Feature Branch**: n/a (main) | **Created**: 2026-11-11 | **Status**: Draft
++
++## User Scenarios & Testing
++
++### User Story 1 - Quote a rental (P1)
++Desk staff register boards and sails, then ask what renting one costs for a period.
++**Acceptance**:
++1. Given a board at 2500 cents/day, when quoting 2026-05-01T00:00:00Z → 2026-05-04T00:00:00Z (3 days), then total is 7500.
++2. Given an unknown item, or a period that is not whole UTC days, empty or reversed, then the quote is refused with an error.
++
++### User Story 2 - Book a rental (P1)
++Desk staff book an item for a period; the booking gets an identifier and the quoted total.
++**Acceptance**:
++1. Given a free item, when booked, then a booking `{id, itemId, start, end, total}` is returned with a unique id.
++2. Given an existing booking, when another overlaps it on the same item, then the booking is refused.
++3. Back-to-back periods (end of one = start of next) do not overlap; other items are unaffected.
++4. A refused booking leaves no trace.
++
++### Edge cases
++- Duplicate equipment id, invalid kind, or non-integer / negative dailyPrice are rejected.
++- Unparseable dates, or dates not written as UTC ISO-8601, are rejected.
++
++## Requirements
++- **FR-001**: `createRentalService()` is exported from `src/index.ts`, in-memory only.
++- **FR-002**: `addEquipment({id, kind, dailyPrice})` with kind `board` or `sail`; dailyPrice is integer euro cents (rule 1).
++- **FR-003**: `quote({itemId,start,end})` returns `{itemId,start,end,total}`, total = days × dailyPrice.
++- **FR-004**: `book(request)` returns `{id,itemId,start,end,total}`.
++- **FR-005**: Times are UTC ISO-8601; start and end must be midnight UTC with end after start (rules 2, 3).
++- **FR-006**: quote/book throw for unknown item or disallowed period; book also throws when the item is not free for the whole period (rule 4).
++- **FR-007**: Cancellation (rule 5) is out of scope now; the data kept per booking must allow it later (start, total, id).
++
++## Key Entities
++Equipment (id, kind, dailyPrice); Booking (id, itemId, start, end, total).
++
++## Success Criteria
++- SC-001: Every quote and booking total is an exact integer number of cents.
++- SC-002: No two bookings of one item ever overlap.
++
++## Assumptions
++- Returned start/end are the request strings as given (canonical form accepted: `YYYY-MM-DDT00:00:00.000Z` or `...T00:00:00Z`).
++- Constitution is an unfilled template; the five school rules are the governing constraints.
+diff --git a/specs/001-rental-module/tasks.md b/specs/001-rental-module/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c09719fb95303241721490d2aaefdbfd3e474cfb
+--- /dev/null
++++ b/specs/001-rental-module/tasks.md
+@@ -0,0 +1,4 @@
++# Tasks
++- [x] T001 Write tests test/rental.test.ts
++- [x] T002 Implement src/index.ts (addEquipment, quote, book)
++- [x] T003 Run `npm test`
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..08ba733bf1ff5b193f1d9cd8f340accf7a5c02d5
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,92 @@
++export type EquipmentKind = 'board' | 'sail';
++
++export interface Equipment {
++  id: string;
++  kind: EquipmentKind;
++  dailyPrice: number;
++}
++
++export interface RentalRequest {
++  itemId: string;
++  start: string;
++  end: string;
++}
++
++export interface Quote extends RentalRequest {
++  total: number;
++}
++
++export interface Booking extends Quote {
++  id: string;
++}
++
++export interface RentalService {
++  addEquipment(item: Equipment): void;
++  quote(request: RentalRequest): Quote;
++  book(request: RentalRequest): Booking;
++}
++
++const DAY_MS = 24 * 60 * 60 * 1000;
++const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
++
++function parseMidnightUtc(value: unknown, label: string): number {
++  if (typeof value !== 'string' || !ISO_UTC.test(value)) {
++    throw new Error(`${label} must be an ISO-8601 UTC string`);
++  }
++  const ms = Date.parse(value);
++  if (Number.isNaN(ms)) throw new Error(`${label} is not a valid date`);
++  if (ms % DAY_MS !== 0) throw new Error(`${label} must be midnight UTC`);
++  return ms;
++}
++
++export function createRentalService(): RentalService {
++  const equipment = new Map<string, Equipment>();
++  const bookings: (Booking & { startMs: number; endMs: number })[] = [];
++
++  function price(request: RentalRequest) {
++    const item = equipment.get(request?.itemId);
++    if (!item) throw new Error(`Unknown item: ${request?.itemId}`);
++    const startMs = parseMidnightUtc(request.start, 'start');
++    const endMs = parseMidnightUtc(request.end, 'end');
++    if (endMs <= startMs) throw new Error('end must be after start');
++    const days = (endMs - startMs) / DAY_MS;
++    const quote: Quote = {
++      itemId: item.id,
++      start: request.start,
++      end: request.end,
++      total: days * item.dailyPrice,
++    };
++    return { quote, startMs, endMs };
++  }
++
++  return {
++    addEquipment(item) {
++      if (!item || typeof item.id !== 'string' || item.id === '') {
++        throw new Error('Equipment id must be a non-empty string');
++      }
++      if (item.kind !== 'board' && item.kind !== 'sail') {
++        throw new Error("Equipment kind must be 'board' or 'sail'");
++      }
++      if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
++        throw new Error('dailyPrice must be a non-negative integer number of cents');
++      }
++      if (equipment.has(item.id)) throw new Error(`Duplicate equipment: ${item.id}`);
++      equipment.set(item.id, { id: item.id, kind: item.kind, dailyPrice: item.dailyPrice });
++    },
++
++    quote(request) {
++      return price(request).quote;
++    },
++
++    book(request) {
++      const { quote, startMs, endMs } = price(request);
++      const clash = bookings.some(
++        (b) => b.itemId === quote.itemId && startMs < b.endMs && b.startMs < endMs,
++      );
++      if (clash) throw new Error(`Item ${quote.itemId} is not free for that period`);
++      const booking: Booking = { id: crypto.randomUUID(), ...quote };
++      bookings.push({ ...booking, startMs, endMs });
++      return booking;
++    },
++  };
++}
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..56933f697f1e205110e739009a00b5804dfaabf5
+--- /dev/null
++++ b/test/rental.test.ts
+@@ -0,0 +1,46 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { createRentalService } from '../src/index.ts';
++
++const d = (day: number) => `2026-05-${String(day).padStart(2, '0')}T00:00:00.000Z`;
++
++function setup() {
++  const s = createRentalService();
++  s.addEquipment({ id: 'b1', kind: 'board', dailyPrice: 2500 });
++  s.addEquipment({ id: 's1', kind: 'sail', dailyPrice: 1500 });
++  return s;
++}
++
++test('quote totals whole days in cents', () => {
++  assert.deepEqual(setup().quote({ itemId: 'b1', start: d(1), end: d(4) }), {
++    itemId: 'b1', start: d(1), end: d(4), total: 7500,
++  });
++});
++
++test('quote rejects bad input', () => {
++  const s = setup();
++  assert.throws(() => s.quote({ itemId: 'x', start: d(1), end: d(2) }));
++  assert.throws(() => s.quote({ itemId: 'b1', start: '2026-05-01T10:00:00Z', end: d(2) }));
++  assert.throws(() => s.quote({ itemId: 'b1', start: d(2), end: d(2) }));
++  assert.throws(() => s.quote({ itemId: 'b1', start: d(3), end: d(2) }));
++  assert.throws(() => s.quote({ itemId: 'b1', start: 'nope', end: d(2) }));
++  assert.throws(() => s.quote({ itemId: 'b1', start: '2026-05-01', end: d(2) }));
++});
++
++test('book returns id and refuses overlaps only on same item', () => {
++  const s = setup();
++  const a = s.book({ itemId: 'b1', start: d(1), end: d(4) });
++  assert.equal(a.total, 7500);
++  assert.throws(() => s.book({ itemId: 'b1', start: d(3), end: d(5) }));
++  assert.throws(() => s.book({ itemId: 'b1', start: d(1), end: d(2) }));
++  const b = s.book({ itemId: 'b1', start: d(4), end: d(5) });
++  s.book({ itemId: 's1', start: d(1), end: d(4) });
++  assert.notEqual(a.id, b.id);
++});
++
++test('addEquipment validates', () => {
++  const s = setup();
++  assert.throws(() => s.addEquipment({ id: 'b1', kind: 'board', dailyPrice: 1 }));
++  assert.throws(() => s.addEquipment({ id: 'z', kind: 'boat' as any, dailyPrice: 1 }));
++  assert.throws(() => s.addEquipment({ id: 'z', kind: 'board', dailyPrice: 1.5 }));
++});

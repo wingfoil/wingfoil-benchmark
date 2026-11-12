@@ -56,12 +56,40 @@ export function renderSpeckitDocs(files: ReadonlyMap<string, string>): string {
 /** Where OpenSpec keeps a project's configuration, its context holding the scenario's rules (task-071). */
 const OPENSPEC_CONFIG = 'openspec/config.yaml';
 
+/** The string items of a YAML list, or none: a configuration's guidance is a list of sentences. */
+function items(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim() !== '')
+    : [];
+}
+
+/** `## <title>`, then per key `### <key>` and its items as a list; `undefined` when no key holds an item. */
+function listSection(
+  title: string,
+  entries: readonly (readonly [string, readonly string[]])[],
+): string | undefined {
+  const kept = entries.filter(([, list]) => list.length > 0);
+  if (kept.length === 0) return undefined;
+  const parts = kept.map(([key, list]) => [`### ${key}`, '', ...list.map((item) => `- ${item}`)].join('\n'));
+  return [`## ${title}`, '', parts.join('\n\n')].join('\n');
+}
+
+/** The entries of a YAML mapping, in the file's order; none for anything else. */
+function entriesOf(value: unknown): [string, unknown][] {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? Object.entries(value) : [];
+}
+
 /**
  * The openspec-docs generator (task-072): the context of the openspec arm's configuration — the scenario's rules, as
  * its rules generator wrote them (REQ-FMT-14, task-071) — as `PROJECT_RULES.md`, in speckit-docs' shape. The context
  * holds each rule under `## <title>`, its body's headings already shifted below it; only those titles move one level
- * down, outside fenced code, so that the same rules give speckit-docs' bytes. A configuration with no context declares
- * no rule, and the file says so; one that is not YAML is refused, rather than read as having no rules.
+ * down, outside fenced code, so that the same rules give speckit-docs' bytes. A configuration a configuring agent
+ * wrote (REQ-RUN-11 as amended in 1.56, bug-048) may hold a context with no `## ` line, rendered whole, and the
+ * per-artifact `rules:` and the `operations:` guidance, each rendered as a section of lists after it; without them the
+ * bytes are as before. A configuration that declares none of the three declares no rule, and the file says so; one
+ * that is not YAML is refused, rather than read as having no rules. Two limits, as speckit-docs' (the rules
+ * generator's own preamble is not a rule): in a context with `## ` lines the text before the first is left out; and
+ * a list item that is not a string (`- Note: x` parses as a map) is left out.
  */
 export function renderOpenSpecDocs(files: ReadonlyMap<string, string>): string {
   let parsed: unknown;
@@ -70,26 +98,42 @@ export function renderOpenSpecDocs(files: ReadonlyMap<string, string>): string {
   } catch (error) {
     throw new Error(`${OPENSPEC_CONFIG} is not YAML: ${(error as Error).message}`, { cause: error });
   }
-  const context = (parsed as { context?: unknown } | null)?.context;
-  if (typeof context !== 'string') return NO_RULES;
-  let fenced = false;
-  let first = -1;
-  const shifted = context.split('\n').map((line, index) => {
-    if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
-    if (fenced || !line.startsWith('## ')) return line;
-    if (first < 0) first = index;
-    return `#${line}`;
-  });
-  if (first < 0) return NO_RULES;
-  const rules = shifted.slice(first).join('\n').trimEnd();
+  const config = (parsed ?? {}) as { context?: unknown; rules?: unknown; operations?: unknown };
+  const sections: string[] = [];
+  const context = config.context;
+  if (typeof context === 'string' && context.trim() !== '') {
+    let fenced = false;
+    let first = -1;
+    const shifted = context.split('\n').map((line, index) => {
+      if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
+      if (fenced || !line.startsWith('## ')) return line;
+      if (first < 0) first = index;
+      return `#${line}`;
+    });
+    sections.push(
+      ['## Rules', '', (first < 0 ? context : shifted.slice(first).join('\n')).trimEnd()].join('\n'),
+    );
+  }
+  const perArtifact = listSection(
+    'Rules per artifact',
+    entriesOf(config.rules).map(([artifact, list]) => [artifact, items(list)] as const),
+  );
+  if (perArtifact !== undefined) sections.push(perArtifact);
+  const operations = listSection(
+    'Operations',
+    entriesOf(config.operations).map(
+      ([operation, body]) =>
+        [operation, items(entriesOf(body).find(([key]) => key === 'guidance')?.[1])] as const,
+    ),
+  );
+  if (operations !== undefined) sections.push(operations);
+  if (sections.length === 0) return NO_RULES;
   return [
     '# Project rules',
     '',
     'The rules this project follows. Every change follows them.',
     '',
-    '## Rules',
-    '',
-    rules,
+    sections.join('\n\n'),
     '',
   ].join('\n');
 }
@@ -155,8 +199,8 @@ export const DOCS_GENERATORS: Readonly<Record<string, DocsGenerator>> = {
       { kind: "`config.yaml`'s `schema:`", rendered: false, why: "the tool's own mechanics" },
       {
         kind: 'per-artifact `rules:` and `operations:` guidance',
-        rendered: false,
-        why: 'absent: the rules generator writes the schema and the context only',
+        rendered: true,
+        why: 'project rules a configuration may hold; the rules generator writes the context only',
       },
       {
         kind: 'commands and skills (`.claude/commands/opsx`, `.claude/skills/openspec-*`)',

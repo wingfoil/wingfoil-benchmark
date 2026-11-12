@@ -1,0 +1,152 @@
+diff --git a/specs/001-json-pointer/plan.md b/specs/001-json-pointer/plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..cd1b9447f22273b8d549ca1afde726fd0609280d
+--- /dev/null
++++ b/specs/001-json-pointer/plan.md
+@@ -0,0 +1,2 @@
++# Plan
++Single module `src/pointer.ts` (parse pointer into tokens; walk document), re-exported from `src/index.ts`. Tests in `test/pointer.test.ts` run with `node --test`.
+diff --git a/specs/001-json-pointer/spec.md b/specs/001-json-pointer/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3e001d1e2be043369e153e203de2f81b6277e30c
+--- /dev/null
++++ b/specs/001-json-pointer/spec.md
+@@ -0,0 +1,38 @@
++# Feature Specification: JSON Pointer resolution (RFC 6901)
++
++**Feature Directory**: `specs/001-json-pointer`
++**Status**: Draft
++
++## User Scenarios & Testing
++
++### User Story 1 - Read a value by pointer (P1)
++A service developer passes a JSON document and a JSON Pointer and gets the referenced value.
++
++**Acceptance scenarios**:
++1. Given `{"foo":["bar","baz"]}` and `/foo/0`, the result is `"bar"`.
++2. Given any document and `""`, the result is the whole document.
++3. Given `{"a/b":1,"m~n":2,"":0}`, `/a~1b` → 1, `/m~0n` → 2, `/` → 0.
++4. `/~01` addresses the key `~1` (decode `~1` first, then `~0`).
++
++### User Story 2 - Reject bad or unresolvable pointers (P1)
++**Acceptance scenarios**:
++1. A non-empty pointer not starting with `/` (e.g. `foo`, `#/foo`) throws.
++2. A `~` not followed by `0` or `1` (e.g. `/a~`, `/a~2`) throws.
++3. A missing object member throws.
++4. An array index that is out of range, has leading zeros (`/01`), a sign, or is not digits throws; `-` (past-the-end) throws since it references no value.
++5. Stepping into a string, number, boolean or null throws.
++6. Names such as `__proto__`, `constructor`, `toString`, `length` never resolve through inheritance; only own members of objects and elements of arrays count.
++
++## Requirements
++- **FR-001**: `resolvePointer(document, pointer)` is exported from `src/index.ts`.
++- **FR-002**: It follows RFC 6901 syntax and evaluation (string form; URI fragment form is out of scope).
++- **FR-003**: It throws an `Error` for an invalid pointer or one that does not resolve; it never returns `undefined` for those cases, and a member whose value is `null` resolves normally.
++- **FR-004**: It does not mutate the document and has no runtime dependencies.
++- **FR-005**: Non-string `pointer` input throws.
++
++## Assumptions
++- Later features (e.g. set/remove, patch) will build on this; the pointer parsing is kept in a reusable internal function.
++
++## Success Criteria
++- All RFC 6901 section 5 examples produce the specified results.
++- Every invalid or unresolvable case above throws.
+diff --git a/specs/001-json-pointer/tasks.md b/specs/001-json-pointer/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ccd7bf68b23d458a9a824336a6885f23043c83af
+--- /dev/null
++++ b/specs/001-json-pointer/tasks.md
+@@ -0,0 +1,3 @@
++# Tasks
++- [X] T001 Write tests in test/pointer.test.ts (RFC examples, errors)
++- [X] T002 Implement src/pointer.ts, export from src/index.ts
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..16fd4fe99ca9695c80cc3861acbe25d4a73dd861
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,42 @@
++/** Parses a JSON Pointer (RFC 6901 string form) into its reference tokens. */
++export function parsePointer(pointer: string): string[] {
++  if (typeof pointer !== "string") {
++    throw new TypeError("JSON Pointer must be a string");
++  }
++  if (pointer === "") return [];
++  if (pointer[0] !== "/") {
++    throw new Error(`Invalid JSON Pointer: must be empty or start with "/": ${pointer}`);
++  }
++  return pointer.slice(1).split("/").map((token) => {
++    if (/~(?![01])/.test(token)) {
++      throw new Error(`Invalid JSON Pointer: bad "~" escape: ${pointer}`);
++    }
++    return token.replace(/~1/g, "/").replace(/~0/g, "~");
++  });
++}
++
++const hasOwn = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
++
++/**
++ * Returns the value of `document` referred to by the JSON Pointer `pointer`.
++ * Throws if the pointer is invalid or does not resolve to a value.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  let current = document;
++  for (const token of parsePointer(pointer)) {
++    if (Array.isArray(current)) {
++      if (!/^(0|[1-9][0-9]*)$/.test(token) || Number(token) >= current.length) {
++        throw new Error(`JSON Pointer does not resolve: bad array index "${token}"`);
++      }
++      current = current[Number(token)];
++    } else if (typeof current === "object" && current !== null) {
++      if (!hasOwn(current, token)) {
++        throw new Error(`JSON Pointer does not resolve: no member "${token}"`);
++      }
++      current = (current as Record<string, unknown>)[token];
++    } else {
++      throw new Error(`JSON Pointer does not resolve: cannot descend into a scalar at "${token}"`);
++    }
++  }
++  return current;
++}
+diff --git a/test/pointer.test.ts b/test/pointer.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..4fb1bb1a1f9204ab1122e94565224f9906968e9a
+--- /dev/null
++++ b/test/pointer.test.ts
+@@ -0,0 +1,37 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { resolvePointer } from "../src/index.ts";
++
++const doc = {
++  foo: ["bar", "baz"], "": 0, "a/b": 1, "c%d": 2, "e^f": 3, "g|h": 4,
++  "i\\j": 5, 'k"l': 6, " ": 7, "m~n": 8, nul: null,
++};
++
++test("RFC 6901 section 5 examples", () => {
++  const cases: [string, unknown][] = [
++    ["", doc], ["/foo", ["bar", "baz"]], ["/foo/0", "bar"], ["/", 0],
++    ["/a~1b", 1], ["/c%d", 2], ["/e^f", 3], ["/g|h", 4], ["/i\\j", 5],
++    ['/k"l', 6], ["/ ", 7], ["/m~0n", 8], ["/nul", null],
++  ];
++  for (const [p, v] of cases) assert.deepEqual(resolvePointer(doc, p), v, p);
++});
++
++test("escape order", () => {
++  assert.equal(resolvePointer({ "~1": "x" }, "/~01"), "x");
++});
++
++test("invalid pointers throw", () => {
++  for (const p of ["foo", "#/foo", "/a~", "/a~2", "/foo/~"]) {
++    assert.throws(() => resolvePointer(doc, p), p);
++  }
++  assert.throws(() => resolvePointer(doc, undefined as any));
++});
++
++test("unresolvable pointers throw", () => {
++  for (const p of ["/missing", "/foo/2", "/foo/01", "/foo/-", "/foo/-1", "/foo/+1",
++    "/foo/1.0", "/foo/a", "/foo/0/x", "/nul/x", "/foo/length", "/__proto__",
++    "/constructor", "/toString", "/foo/0/length"]) {
++    assert.throws(() => resolvePointer(doc, p), p);
++  }
++  assert.throws(() => resolvePointer(5, "/a"));
++});

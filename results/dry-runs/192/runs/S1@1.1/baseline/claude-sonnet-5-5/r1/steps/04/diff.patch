@@ -1,0 +1,88 @@
+diff --git a/src/index.ts b/src/index.ts
+index 6fe7ff4f2ec33a3da19ffc1e507efaf3714a0081..5ac7506b9e0e0d9140754c8e98e87a9e53288f57 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -2,3 +2,4 @@ export { resolvePointer, parsePointer, JsonPointerError } from "./pointer.ts";
+ export type { JsonValue } from "./pointer.ts";
+ export { applyPatch, JsonPatchError } from "./patch.ts";
+ export type { PatchOperation } from "./patch.ts";
++export { applyMergePatch } from "./merge-patch.ts";
+diff --git a/src/merge-patch.ts b/src/merge-patch.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..119cd4fd3b32cd6ca56795fe04b64fa3fdac43b7
+--- /dev/null
++++ b/src/merge-patch.ts
+@@ -0,0 +1,34 @@
++import type { JsonValue } from "./pointer.ts";
++
++const has = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
++const isObject = (v: unknown): v is Record<string, unknown> =>
++  typeof v === "object" && v !== null && !Array.isArray(v);
++
++function setMember(obj: Record<string, unknown>, key: string, value: unknown): void {
++  // defineProperty so that a "__proto__" member is an ordinary own property
++  Object.defineProperty(obj, key, { value, writable: true, enumerable: true, configurable: true });
++}
++
++// RFC 7386 section 2 (MergePatch). Inputs are never mutated.
++function merge(target: unknown, patch: unknown): unknown {
++  if (!isObject(patch)) {
++    return Array.isArray(patch) ? structuredClone(patch) : patch;
++  }
++  const result: Record<string, unknown> = {};
++  if (isObject(target)) {
++    for (const k of Object.keys(target)) setMember(result, k, target[k]);
++  }
++  for (const k of Object.keys(patch)) {
++    const v = patch[k];
++    if (v === null) {
++      delete result[k];
++    } else {
++      setMember(result, k, merge(has(result, k) ? result[k] : undefined, v));
++    }
++  }
++  return result;
++}
++
++export function applyMergePatch(target: unknown, patch: unknown): JsonValue {
++  return merge(target, patch) as JsonValue;
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..693b5fac249c01945b547983547b15548332e16a
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,33 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch as mp } from "../src/index.ts";
++
++test("RFC 7386 examples", () => {
++  assert.deepEqual(mp({ a: "b" }, { a: "c" }), { a: "c" });
++  assert.deepEqual(mp({ a: "b" }, { b: "c" }), { a: "b", b: "c" });
++  assert.deepEqual(mp({ a: "b" }, { a: null }), {});
++  assert.deepEqual(mp({ a: "b", b: "c" }, { a: null }), { b: "c" });
++  assert.deepEqual(mp({ a: ["b"] }, { a: "c" }), { a: "c" });
++  assert.deepEqual(mp({ a: "c" }, { a: ["b"] }), { a: ["b"] });
++  assert.deepEqual(mp({ a: { b: "c" } }, { a: { b: "d", c: null } }), { a: { b: "d" } });
++  assert.deepEqual(mp({ a: [{ b: "c" }] }, { a: [1] }), { a: [1] });
++  assert.deepEqual(mp(["a", "b"], ["c", "d"]), ["c", "d"]);
++  assert.deepEqual(mp({ a: "b" }, ["c"]), ["c"]);
++  assert.deepEqual(mp({ a: "foo" }, null), null);
++  assert.deepEqual(mp({ a: "foo" }, "bar"), "bar");
++  assert.deepEqual(mp({ e: null }, { a: 1 }), { e: null, a: 1 });
++  assert.deepEqual(mp([1, 2], { a: "b", c: null }), { a: "b" });
++  assert.deepEqual(mp({}, { a: { bb: { ccc: null } } }), { a: { bb: {} } });
++});
++
++test("does not mutate inputs; handles __proto__", () => {
++  const t = { a: { b: 1 } };
++  const p = { a: { c: 2 } };
++  const r = mp(t, p) as any;
++  assert.deepEqual(t, { a: { b: 1 } });
++  assert.deepEqual(p, { a: { c: 2 } });
++  assert.notEqual(r.a, t.a);
++  const r2 = mp({}, JSON.parse('{"__proto__":{"x":1}}')) as any;
++  assert.equal(({} as any).x, undefined);
++  assert.deepEqual(Object.keys(r2), ["__proto__"]);
++});

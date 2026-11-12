@@ -1,0 +1,272 @@
+diff --git a/README.md b/README.md
+index 2359fa317056cf70c030585e6a8874ae9bac9643..dfc7442c6fcfe1cb7e315e21aaacc3d1e11c8524 100644
+--- a/README.md
++++ b/README.md
+@@ -39,3 +39,16 @@ ordinary member and never reaches a prototype.
+ ```ts
+ applyMergePatch({ a: "b", c: 1 }, { a: null, d: 2 }); // { c: 1, d: 2 }
+ ```
++
++## Creating a JSON Patch
++
++`createPatch(from, to)`, exported from `src/index.ts`, returns a JSON Patch (RFC 6902) that turns `from`
++into `to` when passed to `applyPatch`; neither input is mutated and the patch shares no value with them.
++It describes only what changed: objects are compared member by member, and arrays are aligned on their
++longest common subsequence, so an item gained or lost is one `add` or `remove`, and a moved item a
++`remove` plus an `add`, without touching the items around it. A change of type, or of a scalar, is a
++`replace` (at path `""` for the whole document).
++
++```ts
++createPatch({ a: [1, 2, 3] }, { a: [1, 3] }); // [{ op: "remove", path: "/a/1" }]
++```
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fe2a589944d4886d75b0c9e86dcce54fa6ab778c
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-5-plan
++type: plan
++title: "createPatch JSON Patch diff"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-5"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-005-createpatch-json-patch-diff-of-two-documents.md b/docs/memory/task/task-005-createpatch-json-patch-diff-of-two-documents.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..38b6eab5b4f7de37c8f643460660828f3dae1ab9
+--- /dev/null
++++ b/docs/memory/task/task-005-createpatch-json-patch-diff-of-two-documents.md
+@@ -0,0 +1,13 @@
++---
++id: task-005-createpatch-json-patch-diff-of-two-documents
++type: task
++title: "createPatch: JSON Patch diff of two documents"
++status: approved
++format: 1
++---
++
++Add `createPatch(from, to)` (exported from `src/index.ts`): returns an RFC 6902 JSON Patch turning `from`
++into `to`; inputs are not mutated. The patch is minimal in spirit: member-wise object diff, arrays aligned
++by longest common subsequence so inserts/removes are single `add`/`remove` and moves are `remove` + `add`,
++never rewriting neighbouring items. Implemented in `src/diff.ts`, tested in `src/diff.test.ts` (including
++randomized round trips through `applyPatch`), documented in `README.md`.
+diff --git a/src/diff.test.ts b/src/diff.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..38eba404063af7cf01afc19cf1fe2ab159b5a5ff
+--- /dev/null
++++ b/src/diff.test.ts
+@@ -0,0 +1,80 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "./index.ts";
++
++const roundTrip = (from: unknown, to: unknown) => {
++  const before = JSON.stringify(from);
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.equal(JSON.stringify(from), before);
++  return patch;
++};
++
++test("identical values give an empty patch", () => {
++  assert.deepEqual(roundTrip({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] }), []);
++});
++
++test("small change deep inside is a single operation", () => {
++  const from = { a: { b: { c: 1, d: [1, 2] }, e: "x" }, f: 1 };
++  const to = { a: { b: { c: 2, d: [1, 2] }, e: "x" }, f: 1 };
++  assert.deepEqual(roundTrip(from, to), [{ op: "replace", path: "/a/b/c", value: 2 }]);
++});
++
++test("object member add, remove, escaping and __proto__", () => {
++  assert.deepEqual(roundTrip({ "a/b": 1, "~": 2 }, { "~": 2, "c/d": 3 }), [
++    { op: "remove", path: "/a~1b" },
++    { op: "add", path: "/c~1d", value: 3 },
++  ]);
++  const to = JSON.parse('{"__proto__": {"x": 1}}');
++  roundTrip({}, to);
++  assert.equal(({} as any).x, undefined);
++});
++
++test("root and type changes replace", () => {
++  assert.deepEqual(roundTrip(1, { a: 1 }), [{ op: "replace", path: "", value: { a: 1 } }]);
++  roundTrip([1], { a: 1 });
++  roundTrip({ a: null }, { a: [] });
++  roundTrip(null, null);
++});
++
++test("array insert and remove touch one item", () => {
++  assert.deepEqual(roundTrip([1, 2, 3, 4], [1, 2, 9, 3, 4]), [{ op: "add", path: "/2", value: 9 }]);
++  assert.deepEqual(roundTrip([1, 2, 3, 4], [1, 3, 4]), [{ op: "remove", path: "/1" }]);
++  assert.deepEqual(roundTrip([{ a: 1 }, { a: 2 }], [{ a: 0 }, { a: 1 }, { a: 2 }]), [
++    { op: "add", path: "/0", value: { a: 0 } },
++  ]);
++  assert.equal(roundTrip([1, 2, 3], [1, 2, 3, 4]).length, 1);
++  assert.equal(roundTrip([1, 2, 3], []).length, 3);
++});
++
++test("array move is at most a remove and an add", () => {
++  const from = [1, 2, 3, 4, 5, 6];
++  assert.equal(roundTrip(from, [1, 5, 2, 3, 4, 6]).length, 2);
++  assert.equal(roundTrip(from, [2, 3, 4, 5, 6, 1]).length, 2);
++});
++
++test("changed items inside arrays are diffed in depth", () => {
++  assert.deepEqual(roundTrip([{ a: 1, b: 2 }, 5], [{ a: 1, b: 3 }, 5]), [{ op: "replace", path: "/0/b", value: 3 }]);
++});
++
++test("patch shares nothing with the inputs", () => {
++  const to = { a: { b: 1 } };
++  const patch = createPatch({}, to);
++  (patch[0].value as any).b = 2;
++  assert.equal(to.a.b, 1);
++});
++
++test("random round trips", () => {
++  let seed = 7;
++  const rnd = (n: number) => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff), seed % n);
++  const gen = (d: number): unknown => {
++    const t = rnd(d > 2 ? 4 : 6);
++    if (t === 0) return rnd(4);
++    if (t === 1) return ["a", "b", null][rnd(3)];
++    if (t === 2) return rnd(2) === 0;
++    if (t === 3) return rnd(3);
++    if (t === 4) return Array.from({ length: rnd(6) }, () => gen(d + 1));
++    return Object.fromEntries(Array.from({ length: rnd(4) }, () => ["k" + rnd(4), gen(d + 1)]));
++  };
++  for (let i = 0; i < 500; i++) roundTrip(gen(0), gen(0));
++});
+diff --git a/src/diff.ts b/src/diff.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..5800e7b9764b29507cb63bd185dcbf8f2dd41e10
+--- /dev/null
++++ b/src/diff.ts
+@@ -0,0 +1,108 @@
++/**
++ * JSON Patch generation (RFC 6902): the minimal-ish patch that turns one JSON value into another.
++ *
++ * Objects are compared member by member. Arrays are aligned on their longest common subsequence of
++ * deeply equal items, so an inserted or removed item yields one `add` or `remove` and a moved item a
++ * `remove` plus an `add`; items that sit between kept ones in the same place are diffed in depth.
++ * Values put in the patch are copies, so the patch shares nothing with the inputs.
++ */
++type Op = { op: "add" | "remove" | "replace"; path: string; value?: unknown };
++
++const has = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
++const isObject = (v: unknown): v is Record<string, unknown> =>
++  typeof v === "object" && v !== null && !Array.isArray(v);
++
++function clone(value: unknown): unknown {
++  if (Array.isArray(value)) return value.map(clone);
++  if (isObject(value)) {
++    const out: Record<string, unknown> = {};
++    for (const k of Object.keys(value)) {
++      Object.defineProperty(out, k, { value: clone(value[k]), writable: true, enumerable: true, configurable: true });
++    }
++    return out;
++  }
++  return value;
++}
++
++function equal(a: unknown, b: unknown): boolean {
++  if (a === b) return true;
++  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((x, i) => equal(x, b[i]));
++  if (isObject(a) && isObject(b)) {
++    const ka = Object.keys(a);
++    return ka.length === Object.keys(b).length && ka.every((k) => has(b, k) && equal(a[k], b[k]));
++  }
++  return false;
++}
++
++const escape = (token: string): string => token.replace(/~/g, "~0").replace(/\//g, "~1");
++
++function diffValue(from: unknown, to: unknown, path: string, ops: Op[]): void {
++  if (equal(from, to)) return;
++  if (Array.isArray(from) && Array.isArray(to)) return diffArray(from, to, path, ops);
++  if (isObject(from) && isObject(to)) {
++    for (const k of Object.keys(from)) if (!has(to, k)) ops.push({ op: "remove", path: `${path}/${escape(k)}` });
++    for (const k of Object.keys(to)) {
++      const p = `${path}/${escape(k)}`;
++      if (has(from, k)) diffValue(from[k], to[k], p, ops);
++      else ops.push({ op: "add", path: p, value: clone(to[k]) });
++    }
++    return;
++  }
++  ops.push({ op: "replace", path, value: clone(to) });
++}
++
++function diffArray(from: unknown[], to: unknown[], path: string, ops: Op[]): void {
++  let start = 0;
++  while (start < from.length && start < to.length && equal(from[start], to[start])) start++;
++  let endF = from.length;
++  let endT = to.length;
++  while (endF > start && endT > start && equal(from[endF - 1], to[endT - 1])) {
++    endF--;
++    endT--;
++  }
++  const n = endF - start;
++  const m = endT - start;
++  // lcs[i][j]: length of the longest common subsequence of from[start+i..endF) and to[start+j..endT).
++  const lcs: Uint32Array[] = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
++  for (let i = n - 1; i >= 0; i--) {
++    for (let j = m - 1; j >= 0; j--) {
++      lcs[i][j] = equal(from[start + i], to[start + j])
++        ? lcs[i + 1][j + 1] + 1
++        : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
++    }
++  }
++  let pos = start; // index in the array as it stands after the operations emitted so far
++  let i = 0;
++  let j = 0;
++  while (i < n || j < m) {
++    if (i < n && j < m && equal(from[start + i], to[start + j])) {
++      i++;
++      j++;
++      pos++;
++      continue;
++    }
++    // A run of unmatched items on both sides: pair them up in place, then remove or add the rest.
++    const di = i;
++    const dj = j;
++    while (i < n || j < m) {
++      if (i < n && j < m && equal(from[start + i], to[start + j]) && lcs[i][j] === lcs[i + 1][j + 1] + 1) break;
++      if (i < n && (j === m || lcs[i + 1][j] >= lcs[i][j + 1])) i++;
++      else j++;
++    }
++    const removed = i - di;
++    const added = j - dj;
++    const paired = Math.min(removed, added);
++    for (let k = 0; k < paired; k++) diffValue(from[start + di + k], to[start + dj + k], `${path}/${pos++}`, ops);
++    for (let k = paired; k < removed; k++) ops.push({ op: "remove", path: `${path}/${pos}` });
++    for (let k = paired; k < added; k++) {
++      ops.push({ op: "add", path: `${path}/${pos++}`, value: clone(to[start + dj + k]) });
++    }
++  }
++}
++
++/** Returns a JSON Patch that turns `from` into `to`. Neither input is mutated. */
++export function createPatch(from: unknown, to: unknown): Op[] {
++  const ops: Op[] = [];
++  diffValue(from, to, "", ops);
++  return ops;
++}
+diff --git a/src/index.ts b/src/index.ts
+index 76833e7685169df8bfe1e77b1396509294d7fd29..07276cc7748f2369fb0bb5a1103699d1869d60b7 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -2,3 +2,4 @@ export { resolvePointer } from "./pointer.ts";
+ export type { JsonValue } from "./pointer.ts";
+ export { applyPatch } from "./patch.ts";
+ export { applyMergePatch } from "./merge.ts";
++export { createPatch } from "./diff.ts";

@@ -1,0 +1,59 @@
+# Project rules
+
+The rules this project follows. Every change follows them.
+
+## Rules
+
+order-service: TypeScript library (ESM, Node 22.18+ runs .ts directly, no runtime dependencies, no build step).
+Public API is src/index.ts; createShop() wires the shop. Tests: `npm test` (node --test "test/*.test.ts",
+node:test + node:assert/strict). tsconfig is strict, NodeNext, erasableSyntaxOnly: no enums, namespaces or
+parameter properties; relative imports use the `.ts` extension; use `import type` for types.
+README.md "Business rules" is the source of truth: when code and README disagree, the README is right.
+Specs, designs and tasks must be consistent with those rules; a change that alters a rule must say so
+explicitly and include the README update.
+Domain invariants every artifact must preserve:
+- All amounts are integer euro cents; percentages are applied to cents and rounded half up (use src/money.ts
+  helpers such as percentOf, divideHalfUp), never floating-point money.
+- Dates are YYYY-MM-DD calendar days; "from … to …" periods include both days.
+- SKUs are case-insensitive, trimmed, shown upper case; coupon codes are case-insensitive.
+- Placing an order is all-or-nothing (price, reserve stock, use coupon); cancelling returns units and a
+  single-use coupon; shipped orders cannot be cancelled and cancelled orders cannot be shipped.
+- Cancellation window: up to and including day 14 after placement. Orders numbered ORD-0001…; invoices per
+  year (2026/0001…).
+- Discount order: volume discount (10+ units, 10% of line) → coupon on subtotal → total discounts capped at
+  50% of gross. Free shipping at goods >= €50.00 after discounts, before VAT. VAT per line, rounded half up
+  per line; shipping VAT 22%.
+- Errors are ShopError subclasses with stable `code` values (src/errors.ts); new failure modes extend them.
+Code style: small modules per domain area, JSDoc comment on exported items, readonly types.
+
+## Rules per artifact
+
+### proposal
+
+- State which README business rules are affected, or that none are
+- Always state what is out of scope
+
+### specs
+
+- Express requirements in terms of the README rules, with concrete cent amounts and YYYY-MM-DD dates in scenarios
+- Include boundary scenarios (rounding at 0.5 cent, day 14 of cancellation, 10 units, €50.00, 5 units low stock, coupon first/last day)
+
+### design
+
+- Keep money in integer cents and reuse src/money.ts; do not introduce dependencies
+
+### tasks
+
+- Each behaviour change includes a task for a test in test/*.test.ts and a final task running `npm test`
+- Include a task to update README business rules if a rule changes
+
+## Operations
+
+### apply
+
+- Change only what the tasks require; run `npm test` before marking tasks complete
+- Never edit tests to fit code when they disagree with the README rules; the README wins
+
+### archive
+
+- Summarize the archive outcome before finishing

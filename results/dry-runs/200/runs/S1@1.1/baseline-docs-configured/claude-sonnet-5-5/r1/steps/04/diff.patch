@@ -1,0 +1,139 @@
+diff --git a/README.md b/README.md
+index 1a47c0297203b0f3d05bb13086f0905a7e3a4f8e..6a0eaeb1e0367ea47d1b1b8305d774e27428b96a 100644
+--- a/README.md
++++ b/README.md
+@@ -40,3 +40,18 @@ Paths and `from` locations are JSON Pointers, parsed as in `resolvePointer`.
+ - `add` with `-` appends to an array; the path `""` targets the whole document, so `add`, `replace` and `test`
+   work on it. `remove` of the whole document throws `RangeError`, since no document would remain.
+ - `__proto__`, `constructor` and `prototype` are ordinary member names: they never reach the prototype chain.
++
++### `applyMergePatch(target, patch)`
++
++Applies a JSON Merge Patch ([RFC 7386](https://www.rfc-editor.org/rfc/rfc7386), obsoleted by
++[RFC 7396](https://www.rfc-editor.org/rfc/rfc7396), which specifies the same algorithm) to a JSON document and
++returns the merged document as a new value.
++
++- Object members of `patch` are merged recursively; a `null` member removes the member from the target; any
++  other value, arrays included, replaces the target's value whole.
++- A `patch` that is not an object replaces the whole document (`null` included). An object `patch` applied to a
++  non-object target is merged into `{}`, so `null` members never appear in the result.
++- Merge Patch cannot set a member to `null`; use `applyPatch` for that.
++- Never throws: every JSON value is a valid target and a valid patch. Neither argument is mutated and the
++  result shares no structure with them.
++- `__proto__`, `constructor` and `prototype` are ordinary member names: they never reach the prototype chain.
+diff --git a/src/index.ts b/src/index.ts
+index ae95675a8f75d154a20d3f7625887c1fdd43710c..e8bd29a14f776ff288c18d9413a458a831cff478 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -240,3 +240,41 @@ export function applyPatch(document: JsonValue, patch: PatchOperation[]): JsonVa
+   const operations = Array.from(patch, validateOperation);
+   return operations.reduce<JsonValue>(applyOperation, structuredClone(document));
+ }
++
++/**
++ * RFC 7386 section 2 (MergePatch): merges `patch` into `target`, returning a new value.
++ * A non-object patch replaces the target; an object patch merges into the target when that is an
++ * object and into an empty object otherwise, so `null` members of the patch never survive.
++ */
++function mergeValue(target: JsonValue | undefined, patch: JsonValue): JsonValue {
++  if (!isObject(patch)) {
++    return structuredClone(patch);
++  }
++  const result: { [key: string]: JsonValue } = {};
++  if (isObject(target)) {
++    for (const key of Object.keys(target)) {
++      setMember(result, key, structuredClone(target[key] as JsonValue));
++    }
++  }
++  for (const key of Object.keys(patch)) {
++    const value = patch[key] as JsonValue;
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, mergeValue(Object.hasOwn(result, key) ? result[key] : undefined, value));
++    }
++  }
++  return result;
++}
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to `target` and returns the merged document as a new value.
++ *
++ * Object members of `patch` are merged recursively, a `null` member removes the member of the target,
++ * and any other value, arrays included, replaces the target's value whole. A `patch` that is not an
++ * object replaces the whole document. Neither argument is mutated and the result shares no structure
++ * with them. `__proto__`, `constructor` and `prototype` are ordinary member names.
++ */
++export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  return mergeValue(target, patch);
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..7bf1be51a80b272edf740f5c2224936fa8d6a38f
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,64 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch, type JsonValue } from "../src/index.ts";
++
++const merge = (target: unknown, patch: unknown): JsonValue =>
++  applyMergePatch(target as JsonValue, patch as JsonValue);
++
++// RFC 7386 Appendix A examples (RFC 7396 section 3 carries the same table).
++const appendix: [string, unknown, unknown, unknown][] = [
++  ["replace a member", { a: "b" }, { a: "c" }, { a: "c" }],
++  ["add a member", { a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++  ["null removes a member", { a: "b" }, { a: null }, {}],
++  ["null removes only the named member", { a: "b", b: "c" }, { a: null }, { b: "c" }],
++  ["array replaces a string", { a: ["b"] }, { a: "c" }, { a: "c" }],
++  ["string replaces an array", { a: "c" }, { a: ["b"] }, { a: ["b"] }],
++  ["nested objects merge", { a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++  ["arrays are replaced whole", { a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++  ["array patch replaces an array", ["a", "b"], ["c", "d"], ["c", "d"]],
++  ["object patch replaces an array", { a: "b" }, ["c"], ["c"]],
++  ["null patch replaces the object", { a: "foo" }, null, null],
++  ["string patch replaces the object", { a: "foo" }, "bar", "bar"],
++  ["null members of the patch are dropped", { e: null }, { a: 1 }, { e: null, a: 1 }],
++  ["object patch on an array target starts from {}", [1, 2], { a: "b", c: null }, { a: "b" }],
++  ["nulls nested in a new member are dropped", {}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++  ["an empty patch changes nothing", { a: 1 }, {}, { a: 1 }],
++];
++
++for (const [name, target, patch, expected] of appendix) {
++  test(`RFC 7386 section 2: ${name}`, () => {
++    assert.deepEqual(merge(target, patch), expected);
++  });
++}
++
++test("neither argument is mutated and the result shares no structure", () => {
++  const target = { a: { b: 1 }, keep: [1] };
++  const patch = { a: { c: { d: 2 } }, x: [3] };
++  const targetCopy = structuredClone(target);
++  const patchCopy = structuredClone(patch);
++  const result = merge(target, patch) as { [k: string]: any };
++  assert.deepEqual(target, targetCopy);
++  assert.deepEqual(patch, patchCopy);
++  assert.notEqual(result.keep, target.keep);
++  assert.notEqual(result.x, patch.x);
++  assert.notEqual(result.a.c, patch.a.c);
++});
++
++test("a non-object patch result is a copy of the patch", () => {
++  const patch = [{ a: 1 }];
++  assert.notEqual(merge({}, patch), patch);
++});
++
++test("__proto__, constructor and prototype are ordinary members", () => {
++  const patch = JSON.parse('{"__proto__":{"polluted":true},"constructor":{"prototype":{"polluted":true}}}');
++  const result = merge({}, patch) as { [k: string]: any };
++  assert.equal(({} as any).polluted, undefined);
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepEqual(Object.keys(result), ["__proto__", "constructor"]);
++  assert.deepEqual(result["__proto__"], { polluted: true });
++});
++
++test("null removes an own __proto__ member but never touches the prototype", () => {
++  const target = JSON.parse('{"__proto__":1,"a":2}');
++  assert.deepEqual(Object.keys(merge(target, JSON.parse('{"__proto__":null}')) as object), ["a"]);
++});

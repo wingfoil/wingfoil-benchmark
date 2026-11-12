@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 import {
   DOCS_GENERATORS,
@@ -194,6 +195,74 @@ describe('the openspec-docs control (REQ-RUN-11, task-072)', () => {
     const none = '# Project rules\n\nThis project declares no rules beyond its README.\n';
     expect(renderOpenSpecDocs(new Map([[CONFIG, 'schema: spec-driven\n']]))).toBe(none);
     expect(renderOpenSpecDocs(new Map())).toBe(none);
+  });
+
+  it('renders a context with no level-two heading whole, as a configuring agent writes it (bug-048)', () => {
+    const file = readFileSync(repoPath('scenarios/S2/1.1/arms/openspec-configured', CONFIG), 'utf8');
+    const config = parse(file) as { context: string; rules: unknown; operations: unknown };
+    expect(config.context).not.toMatch(/^## /m);
+    const rendered = renderOpenSpecDocs(new Map([[CONFIG, file]]));
+    const header = '# Project rules\n\nThe rules this project follows. Every change follows them.\n\n';
+    expect(
+      rendered.startsWith(`${header}## Rules\n\n${config.context.trimEnd()}\n\n## Rules per artifact\n`),
+    ).toBe(true);
+    const blank = 'schema: spec-driven\ncontext: "  \\n"\n';
+    expect(renderOpenSpecDocs(new Map([[CONFIG, blank]]))).toBe(
+      '# Project rules\n\nThis project declares no rules beyond its README.\n',
+    );
+  });
+
+  it('renders the per-artifact rules and the operations guidance a configuration holds, in its order (bug-048)', () => {
+    const file = [
+      'schema: spec-driven',
+      'rules:',
+      '  proposal:',
+      '    - State the rules affected',
+      '  tasks: [Add a test task, Run npm test]',
+      '  design: []',
+      'operations:',
+      '  apply:',
+      '    guidance:',
+      '      - Change only what the tasks require',
+      '  archive:',
+      '    other: [not guidance]',
+      '',
+    ].join('\n');
+    expect(renderOpenSpecDocs(new Map([[CONFIG, file]]))).toBe(
+      [
+        '# Project rules',
+        '',
+        'The rules this project follows. Every change follows them.',
+        '',
+        '## Rules per artifact',
+        '',
+        '### proposal',
+        '',
+        '- State the rules affected',
+        '',
+        '### tasks',
+        '',
+        '- Add a test task',
+        '- Run npm test',
+        '',
+        '## Operations',
+        '',
+        '### apply',
+        '',
+        '- Change only what the tasks require',
+        '',
+      ].join('\n'),
+    );
+    const s2 = readFileSync(repoPath('scenarios/S2/1.1/arms/openspec-configured', CONFIG), 'utf8');
+    const rendered = renderOpenSpecDocs(new Map([[CONFIG, s2]]));
+    for (const line of [
+      '### specs',
+      '- Keep money in integer cents and reuse src/money.ts; do not introduce dependencies',
+      '### apply',
+      '- Summarize the archive outcome before finishing',
+    ]) {
+      expect(rendered).toContain(`\n${line}\n`);
+    }
   });
 
   it('is the docs control of openspec, without a harness', () => {
