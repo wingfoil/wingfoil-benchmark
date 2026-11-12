@@ -45,7 +45,9 @@ No configuration changes either way (REQ-FMT-04): the defect is the generator's.
 
 ## Resolution
 
-Fixed inside [task-144](../task/task-144-w18-every-arm-s-dry-run-on-s1-s2-s3-and-s8-at-1.1-the-configured-arms-included.md), option 1, widened at the approver's choice. `1c3fc8d5` renders a context
+Fixed inside
+[task-144](../task/task-144-w18-every-arm-s-dry-run-on-s1-s2-s3-and-s8-at-1.1-the-configured-arms-included.md),
+option 1, widened at the approver's choice. `1c3fc8d5` renders a context
 with no `## ` line whole under `## Rules`, after a red test with S2's configuration; `ffc9a132` also renders a
 configuration's per-artifact `rules:` and `operations:` guidance (requirements 1.56). A context with a `## ` line
 keeps its rendering, so the non-configured openspec-docs control and its pinned digest are unchanged.
