@@ -64,5 +64,13 @@ describe('the site of an execution that ran a configured arm (REQ-FMT-05 as amen
     // And the method page's harness line counts the configured arm's runs under the entry it shares
     const method = readFileSync(join(root, PAGE, 'method.html'), 'utf8');
     expect(method).toContain(`wingfoil 3df305e; commits recorded by its runs: ${'a'.repeat(40)}`);
+    // And its configured variants section reaches the run's version (task-146): a 1.0 stand-in holds no configuration,
+    // which the page says rather than hide the run
+    const variants = method.slice(
+      method.indexOf('id="configured-variants"'),
+      method.indexOf('id="how-a-run-goes"'),
+    );
+    expect(variants).toContain(`${standIn.id}@1.0 holds no configuration of wingfoil-configured.`);
+    expect(variants).not.toContain('No configured arm ran in this execution.');
   });
 });

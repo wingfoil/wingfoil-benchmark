@@ -441,7 +441,8 @@ describe('results.feature, the configured variants published (task-146, F7.5)', 
   });
 
   it('@F7.5 The method page states the configuring agent and each configuration', async () => {
-    const constitution = '# Constitution\n\nKeep every function small.\n';
+    const constitution =
+      '# Constitution\n\n## Core Principles\n\n### I. Small functions\n\nKeep every function small.\n';
     const override = '.specify/templates/overrides/plan-template.md';
     const repo = configuredRepo(
       ['baseline', 'speckit-configured', 'speckit-docs-configured'],

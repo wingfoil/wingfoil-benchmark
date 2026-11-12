@@ -118,9 +118,31 @@ and tests only; nothing spent.
   (the setup-as-it-ran test removes `arms/wingfoil` from the working tree, and the block must not refuse it); and a
   version holding no configuration of a configured arm that ran is said on the page, not refused, since
   `test/unit/site/configured-site.test.ts` (task-142) runs `wingfoil-configured` on a 1.0 stand-in, which may hold
-  none, and a campaign refuses such a run anyway. A configured arm the working tree no longer holds is refused, as
-  the Design's history reading covers the prompt and profile only.
+  none, and a campaign refuses such a run anyway.
 - Targeted tests green: `test/unit/site/` and `test/acceptance/configured-arms.test.ts`; tsc and eslint clean. No
   `site/` page changes; nothing spent.
 
 ## Review
+
+- **Round 1** (an independent read-only agent, in a clone under `mktemp`, 2026-11-12): nothing blocking; tsc,
+  prettier, the targeted suites and red-first confirmed. Seven should-fix findings and six nits, all addressed:
+  1. "Not rendered by its docs control" read the generator's `kept` directories, not what it reads: now a file is
+     not rendered when the generator's output, the configuration rendered alone with its docs control's options, is
+     the same without it. A scratchpad script (`unrendered-146.mjs`) on the twelve 1.1 configurations: none
+     unrendered, as the reviewer found by hand. Tests: an OpenSpec schema under `openspec/` and a constitution with
+     no principle heading are listed.
+  2. The arms are read as their runs recorded them: `setupPages` returns the arms it resolved (working tree or
+     history) and the block reads them, the tree's only for an arm no run recorded. Test added.
+  3. The method page's session sentence: the project as the setup leaves it (seed, tool, the scenario's rules),
+     without manual or MCP server, never a step's prompt, the oracle's hidden tests or the hold-out.
+  4. S1's three configurations name the RFCs, and S2's boundaries are "such as": checked against the configuration
+     files (every S1 configuration names RFC 6901, 6902, 7396, 8259; S2's wingfoil one has no coupon days).
+     `configuring.md` §4 corrected the same way, beyond criterion 5's one sentence: a fact the page now repeats.
+  5. Tests on a real profile's shape (model, effort, caps), an escaped prompt, the profile from the history.
+  6. The site build reaches the block: `configured-site.test.ts` asserts the configured-variants section names its
+     run's version.
+  7. Several prompt or profile digests: each configuration names its own; "the same for every harness" only with
+     one.
+  Nits: no agent header when no configuration was found; the profile's effort shown; the form's later fields cover
+  a configuration; "leak-scanned" without "as the seed is"; "The 1.1 versions hold configurations"; S8's rules
+  sentence per tool.

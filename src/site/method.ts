@@ -119,7 +119,7 @@ export async function methodPages(
   if (!contests.ok) return contests;
   const setups = await setupPages(root, model, history, contests.value);
   if (!setups.ok) return setups;
-  for (const [name, page] of setups.value) material.set(name, page);
+  for (const [name, page] of setups.value.pages) material.set(name, page);
   for (const [name, page] of publishedMaterial(
     root,
     model.categories.flatMap((row) => row.scenarios.map((s) => s.scenario)),
@@ -127,7 +127,7 @@ export async function methodPages(
     material.set(name, page);
   }
 
-  const configuring = await configuringSection(root, model.records, history);
+  const configuring = await configuringSection(root, model.records, history, setups.value.arms);
   if (!configuring.ok) return configuring;
   for (const [name, page] of configuring.value.material) material.set(name, page);
 
@@ -216,12 +216,18 @@ export interface SetupContest {
  * holds is refused. A control (an arm without a harness) has none either. Each page links the contest form and, for a
  * contested arm, its contest and the campaign that followed (REQ-RES-10).
  */
+/** The setup pages by file name, and each arm of the execution as its runs recorded it (task-146 reads it too). */
+interface SetupPages {
+  readonly pages: ReadonlyMap<string, string>;
+  readonly arms: ReadonlyMap<string, Arm>;
+}
+
 async function setupPages(
   root: string,
   model: SiteModel,
   history: HistoryPort,
   contests: Contests | undefined,
-): Promise<Result<ReadonlyMap<string, string>>> {
+): Promise<Result<SetupPages>> {
   const armsRoot = join(root, 'arms');
   const pages = new Map<string, string>();
   const issues: Issue[] = [];
@@ -237,7 +243,7 @@ async function setupPages(
     for (const cleanup of cleanups) cleanup();
   }
 
-  async function pagesOf(): Promise<Result<ReadonlyMap<string, string>>> {
+  async function pagesOf(): Promise<Result<SetupPages>> {
     for (const name of model.arms) {
       const recorded = digestsOf(name);
       const loaded = loadArm(armsRoot, name);
@@ -302,7 +308,9 @@ async function setupPages(
         );
       }
     }
-    return issues.length > 0 ? fail(issues) : ok(pages);
+    return issues.length > 0
+      ? fail(issues)
+      : ok({ pages, arms: new Map([...arms].map(([name, { arm }]) => [name, arm])) });
   }
 }
 

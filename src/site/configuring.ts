@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { parse } from 'yaml';
@@ -7,6 +7,7 @@ import { fail, ok } from '../core/index.js';
 import type { Arm, HistoryPort, Issue, Result } from '../core/index.js';
 
 import { docsGeneratorOf, loadArm } from '../arms/index.js';
+import type { RenderOptions } from '../arms/index.js';
 import { CONFIGURING_PROFILE, CONFIGURING_PROMPT, loadScenario } from '../scenario/index.js';
 
 import { recordedFile } from './recorded.js';
@@ -17,7 +18,7 @@ import { escapeHtml, materialPage } from './render.js';
  * configuring agent, as `configuring/profile.yaml` states it, and its prompt quoted in full with its SHA-256, both read
  * as the configurations' records name them; then, for each configuration of the scenario versions the execution ran,
  * its files, its session's patch against the workspace after the base arm's setup (the tool's defaults), its sessions'
- * cost, the files its docs control does not read, and the harness arm's configuration places with their sources.
+ * cost, the files its docs control does not render, and the harness arm's configuration places with their sources.
  */
 
 /** A run of the execution, as the block reads it: its scenario version and arm. */
@@ -39,6 +40,28 @@ function row(label: string, value: string): string {
   return `<tr><th scope="row">${e(label)}</th><td>${value}</td></tr>\n`;
 }
 
+function optionsOf(control: Arm): RenderOptions {
+  return control.docsDirectives === 'every-role' ? { everyRole: true } : {};
+}
+
+/**
+ * The configuration's files its docs control does not render (REQ-RUN-11 as amended in 1.50): those whose removal
+ * leaves the generator's output unchanged, the configuration rendered alone with the control's options. A file under a
+ * place the generator keeps but never reads (an OpenSpec schema, a directive no role loads) is one.
+ */
+function notRendered(
+  dir: string,
+  files: readonly { readonly path: string }[],
+  render: (files: ReadonlyMap<string, string>, options?: RenderOptions) => string,
+  options: RenderOptions,
+): string[] {
+  const all = new Map(files.map((file) => [file.path, readFileSync(join(dir, file.path), 'utf8')]));
+  const whole = render(all, options);
+  return files
+    .map((file) => file.path)
+    .filter((path) => render(new Map([...all].filter(([other]) => other !== path)), options) === whole);
+}
+
 /** The configured arm whose configuration `arm` reads: itself, or the one a configured docs control is generated from. */
 function configurationArm(arm: Arm): string | undefined {
   if (arm.configuredOf !== undefined) return arm.name;
@@ -48,7 +71,7 @@ function configurationArm(arm: Arm): string | undefined {
 /** The profile's statement of the agent, its model and its caps; what it does not state is said. */
 function profileRows(text: string): string {
   const profile = (parse(text) ?? {}) as {
-    agent?: { name?: string; version?: string };
+    agent?: { name?: string; version?: string; effort?: Record<string, string> };
     models?: { default?: string };
     caps?: { step_time_s?: number; step_tokens?: number; run_cost_eur?: number };
   };
@@ -63,6 +86,10 @@ function profileRows(text: string): string {
     ) +
     row('Model', stated(profile.models?.default)) +
     row(
+      'Effort',
+      stated(profile.models?.default === undefined ? undefined : agent?.effort?.[profile.models.default]),
+    ) +
+    row(
       'Caps',
       caps === undefined
         ? 'not stated'
@@ -73,16 +100,22 @@ function profileRows(text: string): string {
 
 /**
  * The block for the runs `ran`, from the repository at `root`: empty when none ran a configured arm or its docs
- * control. A version holding no configuration of a configured arm that ran is said. Refused: a configured arm the
- * working tree does not hold, and a prompt or profile a record names that neither the working tree nor any commit
- * holds.
+ * control; `asRan` holds the execution's arms as their runs recorded them (the setup pages'). A version holding no
+ * configuration of a configured arm that ran is said. Refused: a configured arm neither `asRan` nor the working tree
+ * holds, and a prompt or profile a record names that neither the working tree nor any commit holds.
  */
 export async function configuringSection(
   root: string,
   ran: readonly RanArm[],
   history: HistoryPort,
+  asRan: ReadonlyMap<string, Arm> = new Map(),
 ): Promise<Result<ConfiguringSection>> {
   const issues: Issue[] = [];
+  // An arm as its runs recorded it (the setup pages' reading, from the history when the tree differs), else the tree's
+  const armOf = (name: string): Result<Arm> => {
+    const found = asRan.get(name);
+    return found === undefined ? loadArm(join(root, 'arms'), name) : ok(found);
+  };
   // Each configuration once, by its version and configured arm, in a stable order
   const wanted = new Map<string, { id: string; version: string; configured: string }>();
   // Each arm read once: an execution has many runs of few arms
@@ -92,7 +125,7 @@ export async function configuringSection(
     // the working tree no longer holds is no refusal here (its setup page reads it from the history).
     if (!run.arm.endsWith('-configured')) continue;
     if (!reads.has(run.arm)) {
-      const arm = loadArm(join(root, 'arms'), run.arm);
+      const arm = armOf(run.arm);
       if (!arm.ok) return arm;
       reads.set(run.arm, configurationArm(arm.value));
     }
@@ -138,14 +171,14 @@ export async function configuringSection(
       } else into.set(digest, text);
     }
 
-    const harness = loadArm(join(root, 'arms'), configured);
+    const harness = armOf(configured);
     if (!harness.ok) return harness;
     const docs = docsGeneratorOf(harness.value.requires);
-    const kept = docs?.kept ?? [];
     const files = record.files ?? [];
-    const unread = files
-      .map((file) => file.path)
-      .filter((path) => !kept.some((dir) => path === dir || path.startsWith(`${dir}/`)));
+    const control = docsControlOf(configured);
+    if (!control.ok) return control;
+    const unrendered =
+      docs === undefined ? undefined : notRendered(configuration.dir, files, docs.render, control.value);
     const cost = records.reduce((sum, entry) => sum + entry.cost_eur, 0);
     const page = `configuration-${ref}-${configured}.html`;
     const patch = readFileSync(configuration.patchPath, 'utf8');
@@ -165,14 +198,18 @@ export async function configuringSection(
           `<a href="material/${e(page)}">the patch against the workspace after the ${e(harness.value.configuredOf ?? configured)} arm's setup</a>`,
         ) +
         row(
+          'Configuring agent',
+          `profile sha256:${e(record.profile_sha256)}, prompt sha256:${e(record.prompt_sha256)}`,
+        ) +
+        row(
           'Sessions',
           `${records.length} session${records.length === 1 ? '' : 's'}, ${cost.toFixed(4)} EUR (M-K3's one-off part)`,
         ) +
         row(
           'Not rendered by its docs control',
-          docs === undefined
+          unrendered === undefined
             ? 'its harness has no docs generator'
-            : unread.map((path) => `<code>${e(path)}</code>`).join(', ') || 'none',
+            : unrendered.map((path) => `<code>${e(path)}</code>`).join(', ') || 'none',
         ) +
         row(
           'Configuration places',
@@ -193,14 +230,29 @@ export async function configuringSection(
   const prompt = [...prompts]
     .map(
       ([digest, text]) =>
-        `<p>The prompt, <code>${CONFIGURING_PROMPT}</code> sha256:${e(digest)}, the same for every harness:</p>\n` +
+        `<p>The prompt, <code>${CONFIGURING_PROMPT}</code> sha256:${e(digest)}` +
+        `${prompts.size === 1 ? ', the same for every harness' : ''}:</p>\n` +
         `<pre><code>${e(text)}</code></pre>`,
     )
     .join('\n');
-  return ok({
-    html:
-      `<p>The configuring agent of this execution's configurations:</p>\n${agent}\n${prompt}\n` +
-      configurations.join('\n'),
-    material,
-  });
+  const several =
+    prompts.size > 1 || profiles.size > 1
+      ? "<p>The configurations' records name more than one profile or prompt: each configuration names its own.</p>\n"
+      : '';
+  const head =
+    profiles.size === 0 && prompts.size === 0
+      ? ''
+      : `<p>The configuring agent of this execution's configurations:</p>\n${several}${agent}\n${prompt}\n`;
+  return ok({ html: head + configurations.join('\n'), material });
+
+  /** The docs control generated from `configured` (its `docs_of`), as it ran when it did: its render options. */
+  function docsControlOf(configured: string): Result<RenderOptions> {
+    const ranControl = [...asRan.values()].find((arm) => arm.docsOf === configured);
+    if (ranControl !== undefined) return ok(optionsOf(ranControl));
+    for (const name of readdirSync(join(root, 'arms')).sort()) {
+      const arm = loadArm(join(root, 'arms'), name);
+      if (arm.ok && arm.value.docsOf === configured) return ok(optionsOf(arm.value));
+    }
+    return ok({});
+  }
 }

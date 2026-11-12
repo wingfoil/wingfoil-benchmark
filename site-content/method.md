@@ -67,14 +67,15 @@ tool copied over the project after the setup. Their docs controls, `baseline-doc
 `speckit-docs-configured` and `openspec-docs-configured`, get the configured arm's information, generated as for the
 plain controls; a configuration file the generator does not read is not rendered, and is listed below. A plain arm
 measures a harness as its init leaves it; a configured arm measures it once it is set up for the project, as a team
-would. Only versions 1.1 hold configurations, so there are thirteen arms on them. {#configured-arms}
+would. The 1.1 versions hold configurations, so there are thirteen arms on them. {#configured-arms}
 
 A configuration is written once per scenario version and harness by a configuring agent: a session of the same agent,
-the same model and the same prompt for every harness, which sees the seed and the installed harness only, never a
-step's prompt, a test or the hold-out. It may change only the tool's configuration places, which each harness arm
+the same model and the same prompt for every harness. It works in the project as the harness arm's setup leaves it
+(the seed, the installed tool, the scenario's rules), without the arm's operating manual or MCP server, and never sees
+a step's prompt, the oracle's hidden tests or the hold-out. It may change only the tool's configuration places, which each harness arm
 declares with the documentation they come from; a session that touches anything else is refused, and the session that
 wrote a configuration checks it for leaks. The configuration is then scenario content: pinned by the version's hash,
-leak-scanned as the seed is (no expected value, no hidden test's name, no line of a step's prompt), and never
+leak-scanned (no expected value, no hidden test's name, no line of a step's prompt), and never
 rewritten once the version has run; a correction is a new scenario version. Its sessions' cost counts once in the
 configured arm's setup cost (M-K3). {#configuring-agent}
 
@@ -83,16 +84,17 @@ with nothing of the project in it: every session filled it (language, runtime, s
 wrote one or two directives from the README's rules and conventions, and assigned them to roles. Spec Kit's init
 leaves a constitution of placeholders: every session wrote one for the project, the README's rules as principles, with
 the test command and the boundaries to test. OpenSpec's init leaves a project configuration with commented examples:
-every session wrote its context (the project, its rules, its commands) and rules per artifact. On S8, whose rules the
-setup already writes, every configuration keeps them verbatim. Each configuration's files, and its session's patch
+every session wrote its context (the project, its rules, its commands) and rules per artifact. On S8, whose rules
+every arm already gets (WingFoil's as the scenario's configuration, Spec Kit's and OpenSpec's written by the setup),
+every configuration keeps them verbatim. Each configuration's files, and its session's patch
 against the project as the tool's init left it, are listed below for the versions this execution ran.
 {#configured-defaults}
 
 Two properties come with a configured arm; they are part of what it measures, not leaks. It carries what its
-configuring agent knows of the domain beyond the seed: S1's wingfoil configuration names JSON standards by number that
+configuring agent knows of the domain beyond the seed: S1's three configurations name JSON standards by number that
 the seed does not, from the README's "follow the published standards it implements" and the project's name. And it may
-spell out what the README implies: S2's configurations list the boundaries to test (exactly €50.00, half a cent, day
-14 against day 15, a coupon's first and last day), which follow from the README's thresholds and are also where S2's
+spell out what the README implies: S2's configurations list boundaries to test (such as exactly €50.00, half a cent,
+day 14 against day 15), which follow from the README's thresholds and are also where S2's
 reported defects lie. {#configured-properties}
 
 <!-- configuring -->
