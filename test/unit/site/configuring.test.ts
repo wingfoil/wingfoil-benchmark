@@ -338,7 +338,7 @@ describe("the configuring block's unrendered files, as the docs control composes
     // developer assignment is the base's
     const control = loadArm(join(root, 'arms'), 'baseline-docs-configured');
     if (!control.ok) throw new Error(JSON.stringify(control.issues));
-    const { docsDirectives: _everyRole, ...developerOnly } = control.value;
+    const developerOnly = { ...control.value, docsDirectives: undefined };
     const asRan = await configuringSection(
       root,
       ran,
