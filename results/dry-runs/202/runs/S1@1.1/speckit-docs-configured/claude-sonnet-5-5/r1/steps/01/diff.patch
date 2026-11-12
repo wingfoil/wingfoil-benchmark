@@ -1,0 +1,182 @@
+diff --git a/README.md b/README.md
+index ff92be649ff3f610b38798b3310751534d032814..6ba0fc622fd38bd07c9ad6533acc1c593d7405c3 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,10 @@
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+ other projects of the team, so its behaviour must follow the published standards it implements.
++
++## API
++
++- `resolvePointer(document, pointer)` — JSON Pointer (RFC 6901) evaluation. Returns the referenced value;
++  throws `JsonPointerError` for an invalid pointer or one that does not resolve (missing member,
++  out-of-range index, `-`, or traversal through a scalar). Only own properties are resolved. The URI
++  fragment form (`#/...`, RFC 6901 section 6) is not accepted.
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..bec8120b842f71de23995db1aeca5a793a33cbc8
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,62 @@
++/** Error thrown for an invalid JSON Pointer or one that does not resolve (RFC 6901). */
++export class JsonPointerError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "JsonPointerError";
++  }
++}
++
++/** Parses a JSON Pointer into reference tokens (RFC 6901, sections 3 and 4). */
++function parse(pointer: string): string[] {
++  if (typeof pointer !== "string") {
++    throw new JsonPointerError("JSON Pointer must be a string");
++  }
++  if (pointer === "") return [];
++  if (pointer[0] !== "/") {
++    throw new JsonPointerError(`Invalid JSON Pointer "${pointer}": must be empty or start with "/"`);
++  }
++  return pointer
++    .slice(1)
++    .split("/")
++    .map((token) => {
++      if (/~(?![01])/.test(token)) {
++        throw new JsonPointerError(`Invalid JSON Pointer "${pointer}": "~" must be followed by 0 or 1`);
++      }
++      // Section 4: ~1 first, then ~0, so that "~01" becomes "~1".
++      return token.replace(/~1/g, "/").replace(/~0/g, "~");
++    });
++}
++
++/**
++ * Resolves a JSON Pointer against a JSON document, as specified by RFC 6901
++ * (syntax in section 3, evaluation in section 4; the URI fragment form of
++ * section 6 is not accepted). Does not modify the document.
++ *
++ * @throws {JsonPointerError} if the pointer is invalid, or does not refer to
++ * a value of the document (missing member, out-of-range index, the "-"
++ * array token, or traversal through a scalar or null).
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  let current = document;
++  for (const token of parse(pointer)) {
++    if (Array.isArray(current)) {
++      // Section 4: index is "0" or digits without a leading zero.
++      if (!/^(0|[1-9][0-9]*)$/.test(token)) {
++        throw new JsonPointerError(`Pointer "${pointer}": "${token}" is not a valid array index`);
++      }
++      const index = Number(token);
++      if (index >= current.length) {
++        throw new JsonPointerError(`Pointer "${pointer}": index ${token} does not exist`);
++      }
++      current = current[index];
++    } else if (typeof current === "object" && current !== null) {
++      if (!Object.prototype.hasOwnProperty.call(current, token)) {
++        throw new JsonPointerError(`Pointer "${pointer}": member "${token}" does not exist`);
++      }
++      current = (current as Record<string, unknown>)[token];
++    } else {
++      throw new JsonPointerError(`Pointer "${pointer}": cannot traverse a non-container value at "${token}"`);
++    }
++  }
++  return current;
++}
+diff --git a/test/pointer.test.ts b/test/pointer.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ee8f5e4c42efe9ec7b5efaab96fae2f36973ac58
+--- /dev/null
++++ b/test/pointer.test.ts
+@@ -0,0 +1,93 @@
++import { test } from "node:test";
++import assert from "node:assert";
++import { resolvePointer, JsonPointerError } from "../src/index.ts";
++
++// RFC 6901 section 5 document and section 5/6 examples.
++const doc = {
++  foo: ["bar", "baz"],
++  "": 0,
++  "a/b": 1,
++  "c%d": 2,
++  "e^f": 3,
++  "g|h": 4,
++  "i\\j": 5,
++  'k"l': 6,
++  " ": 7,
++  "m~n": 8,
++};
++
++test("RFC 6901 section 5 examples", () => {
++  assert.strictEqual(resolvePointer(doc, ""), doc);
++  assert.deepStrictEqual(resolvePointer(doc, "/foo"), ["bar", "baz"]);
++  assert.strictEqual(resolvePointer(doc, "/foo/0"), "bar");
++  assert.strictEqual(resolvePointer(doc, "/"), 0);
++  assert.strictEqual(resolvePointer(doc, "/a~1b"), 1);
++  assert.strictEqual(resolvePointer(doc, "/c%d"), 2);
++  assert.strictEqual(resolvePointer(doc, "/e^f"), 3);
++  assert.strictEqual(resolvePointer(doc, "/g|h"), 4);
++  assert.strictEqual(resolvePointer(doc, "/i\\j"), 5);
++  assert.strictEqual(resolvePointer(doc, '/k"l'), 6);
++  assert.strictEqual(resolvePointer(doc, "/ "), 7);
++  assert.strictEqual(resolvePointer(doc, "/m~0n"), 8);
++});
++
++test("RFC 6901 section 6 URI fragment strings are not pointers", () => {
++  assert.throws(() => resolvePointer(doc, "#/foo"), JsonPointerError);
++});
++
++test("unescaping order: ~01 is the key ~1", () => {
++  assert.strictEqual(resolvePointer({ "~1": "x", "/": "y" }, "/~01"), "x");
++  assert.strictEqual(resolvePointer({ "~1": "x", "/": "y" }, "/~1"), "y");
++});
++
++test("invalid pointers", () => {
++  for (const p of ["foo", "a/b", " ", "/~", "/~2", "/a~", "/a~x/b"]) {
++    assert.throws(() => resolvePointer({ a: {} }, p), JsonPointerError, p);
++  }
++  assert.throws(() => resolvePointer({}, undefined as unknown as string), JsonPointerError);
++});
++
++test("whole-document pointer returns falsy and null documents", () => {
++  assert.strictEqual(resolvePointer(null, ""), null);
++  assert.strictEqual(resolvePointer(0, ""), 0);
++});
++
++test("null versus missing", () => {
++  assert.strictEqual(resolvePointer({ a: null }, "/a"), null);
++  assert.throws(() => resolvePointer({ a: null }, "/b"), JsonPointerError);
++  assert.throws(() => resolvePointer({ a: null }, "/a/b"), JsonPointerError);
++});
++
++test("array indices", () => {
++  const d = { a: ["x", "y", "z"] };
++  assert.strictEqual(resolvePointer(d, "/a/2"), "z");
++  assert.throws(() => resolvePointer(d, "/a/3"), JsonPointerError); // out of range
++  assert.throws(() => resolvePointer(d, "/a/-"), JsonPointerError); // nonexistent element
++  assert.throws(() => resolvePointer(d, "/a/01"), JsonPointerError); // leading zero
++  assert.throws(() => resolvePointer(d, "/a/+1"), JsonPointerError);
++  assert.throws(() => resolvePointer(d, "/a/-1"), JsonPointerError);
++  assert.throws(() => resolvePointer(d, "/a/1.0"), JsonPointerError);
++  assert.throws(() => resolvePointer(d, "/a/"), JsonPointerError);
++  assert.throws(() => resolvePointer(d, "/a/length"), JsonPointerError);
++  assert.throws(() => resolvePointer([], "/0"), JsonPointerError);
++});
++
++test("scalars cannot be traversed", () => {
++  assert.throws(() => resolvePointer({ a: "str" }, "/a/0"), JsonPointerError);
++  assert.throws(() => resolvePointer({ a: 1 }, "/a/b"), JsonPointerError);
++});
++
++test("only own properties resolve (prototype safety)", () => {
++  for (const p of ["/__proto__", "/constructor", "/toString", "/a/prototype", "/constructor/prototype"]) {
++    assert.throws(() => resolvePointer({ a: {} }, p), JsonPointerError, p);
++  }
++  const parsed = JSON.parse('{"__proto__": 5}');
++  assert.strictEqual(resolvePointer(parsed, "/__proto__"), 5);
++});
++
++test("does not mutate the document", () => {
++  const d = { a: [1, { b: 2 }] };
++  const copy = structuredClone(d);
++  resolvePointer(d, "/a/1/b");
++  assert.deepStrictEqual(d, copy);
++});

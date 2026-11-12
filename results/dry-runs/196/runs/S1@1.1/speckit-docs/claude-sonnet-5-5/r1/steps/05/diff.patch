@@ -1,0 +1,149 @@
+diff --git a/src/index.ts b/src/index.ts
+index ebd1157723dee4daf3c9e7f27ffff080f4c75b2c..d8fda9082cbb70c6e89f8ea7c99cff6aece1fcca 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -240,3 +240,97 @@ export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue
+   }
+   return result as JsonValue;
+ }
++
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++function diffArrays(from: JsonValue[], to: JsonValue[], path: string, ops: PatchOperation[]): void {
++  let start = 0;
++  while (start < from.length && start < to.length && deepEqual(from[start], to[start])) start++;
++  let endFrom = from.length;
++  let endTo = to.length;
++  while (endFrom > start && endTo > start && deepEqual(from[endFrom - 1], to[endTo - 1])) {
++    endFrom--;
++    endTo--;
++  }
++  const a = from.slice(start, endFrom);
++  const b = to.slice(start, endTo);
++
++  // Longest common subsequence of the differing middle part.
++  const lcs: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
++  for (let i = a.length - 1; i >= 0; i--) {
++    for (let j = b.length - 1; j >= 0; j--) {
++      lcs[i][j] = deepEqual(a[i], b[j]) ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
++    }
++  }
++
++  let i = 0;
++  let j = 0;
++  let index = start; // position in the array as it is after the operations emitted so far
++  const flushGap = (oldEnd: number, newEnd: number): void => {
++    const removed = oldEnd - i;
++    const added = newEnd - j;
++    const paired = Math.min(removed, added);
++    for (let t = 0; t < paired; t++) {
++      diffValues(a[i + t], b[j + t], `${path}/${index + t}`, ops);
++    }
++    for (let t = paired; t < removed; t++) {
++      ops.push({ op: "remove", path: `${path}/${index + paired}` });
++    }
++    for (let t = paired; t < added; t++) {
++      ops.push({ op: "add", path: `${path}/${index + t}`, value: structuredClone(b[j + t]) });
++    }
++    index += added;
++    i = oldEnd;
++    j = newEnd;
++  };
++  while (i < a.length || j < b.length) {
++    if (i < a.length && j < b.length && deepEqual(a[i], b[j])) {
++      i++;
++      j++;
++      index++;
++      continue;
++    }
++    // Find the end of this gap: the next position where both sides match along the LCS.
++    let ei = i;
++    let ej = j;
++    while (ei < a.length || ej < b.length) {
++      if (ei < a.length && ej < b.length && deepEqual(a[ei], b[ej]) && lcs[ei][ej] === lcs[ei + 1][ej + 1] + 1) break;
++      if (ei < a.length && (ej >= b.length || lcs[ei + 1][ej] >= lcs[ei][ej + 1])) ei++;
++      else ej++;
++    }
++    flushGap(ei, ej);
++  }
++}
++
++function diffValues(from: JsonValue, to: JsonValue, path: string, ops: PatchOperation[]): void {
++  if (deepEqual(from, to)) return;
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArrays(from, to, path, ops);
++  } else if (isObject(from) && isObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!Object.hasOwn(to, key)) ops.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++    for (const key of Object.keys(to)) {
++      const child = `${path}/${escapeToken(key)}`;
++      if (Object.hasOwn(from, key)) {
++        diffValues(from[key] as JsonValue, to[key] as JsonValue, child, ops);
++      } else {
++        ops.push({ op: "add", path: child, value: structuredClone(to[key]) as JsonValue });
++      }
++    }
++  } else {
++    ops.push({ op: "replace", path, value: structuredClone(to) });
++  }
++}
++
++/**
++ * Returns a JSON Patch (RFC 6902) that turns `from` into `to` when applied, describing only what
++ * changed. Neither input is mutated.
++ */
++export function createPatch(from: JsonValue, to: JsonValue): PatchOperation[] {
++  const ops: PatchOperation[] = [];
++  diffValues(from, to, "", ops);
++  return ops;
++}
+diff --git a/test/create-patch.test.ts b/test/create-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..2e828cde7decebc6bc28904c1b155a7c60fd9a64
+--- /dev/null
++++ b/test/create-patch.test.ts
+@@ -0,0 +1,41 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch, type JsonValue } from "../src/index.ts";
++
++function roundTrip(from: JsonValue, to: JsonValue) {
++  const before = structuredClone(from);
++  const patch = createPatch(from, to);
++  assert.deepEqual(from, before);
++  assert.deepEqual(applyPatch(from, patch), to);
++  return patch;
++}
++
++test("identical documents give an empty patch", () => {
++  assert.deepEqual(roundTrip({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] }), []);
++});
++
++test("a small change gives a small patch, with escaped pointers", () => {
++  assert.deepEqual(roundTrip({ "a/b": { "c~": 1, d: 2 } }, { "a/b": { "c~": 5, d: 2 } }), [
++    { op: "replace", path: "/a~1b/c~0", value: 5 },
++  ]);
++});
++
++test("array insertions and removals do not rewrite neighbours", () => {
++  assert.deepEqual(roundTrip([1, 2, 3, 4], [1, 3, 4]), [{ op: "remove", path: "/1" }]);
++  assert.deepEqual(roundTrip([1, 3], [1, 2, 3]), [{ op: "add", path: "/1", value: 2 }]);
++});
++
++test("a move within an array does not rewrite the items in between", () => {
++  assert.equal(roundTrip([1, 2, 3, 4, 5], [2, 3, 4, 5, 1]).length, 2);
++});
++
++test("changed array items are patched in place", () => {
++  assert.deepEqual(roundTrip([{ a: 1 }, { b: 2 }], [{ a: 1 }, { b: 3 }]), [
++    { op: "replace", path: "/1/b", value: 3 },
++  ]);
++});
++
++test("type changes and root replacement", () => {
++  roundTrip({ a: 1 }, [1]);
++  roundTrip(null, { a: null });
++});

@@ -1,0 +1,249 @@
+diff --git a/README.md b/README.md
+index 669f63c1d48ed691352b729bddab5c8e21baacae..dd6314bd0171363f6df95367bf1226cac75f33c1 100644
+--- a/README.md
++++ b/README.md
+@@ -71,8 +71,8 @@ These are the rules the service implements. When the code and this list disagree
+ - Rates by VAT class: standard 22%, reduced 10%, super-reduced 4%, exempt 0%.
+ - VAT is computed line by line, on each line's net amount after every discount, and rounded half up
+   to the cent on each line.
+-- Shipping is subject to VAT at the standard rate (22%), shown on its own line of the receipt.
+-- The order total is goods + shipping + VAT on goods + VAT on shipping.
++- Shipping is a service and carries no VAT.
++- The order total is goods + shipping + VAT on goods.
+ 
+ ### Invoices
+ 
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8a5468ec2e8e0e3121a3117e4679cbbb7be803cb
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "Fix coupon base, AUTUMN last day, shipping VAT"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-fix-coupon-base-autumn-last-day-shipping-vat.md b/docs/memory/task/task-002-fix-coupon-base-autumn-last-day-shipping-vat.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4556b5e10810164235a2afa2421480d1dd762f70
+--- /dev/null
++++ b/docs/memory/task/task-002-fix-coupon-base-autumn-last-day-shipping-vat.md
+@@ -0,0 +1,23 @@
++---
++id: task-002-fix-coupon-base-autumn-last-day-shipping-vat
++type: task
++title: "Fix coupon base, AUTUMN last day, shipping VAT"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++# Request
++
++Three reports against the order service, fixed to match the README business rules:
++
++1. Percentage coupon was taken on the gross amount, not the subtotal after volume discounts (12 × €5.00 with 10%: €48.00 instead of €48.60): `priceOrder` now applies the coupon to the amount after volume discounts.
++2. A coupon was refused on its last day (AUTUMN on 30 November): `Coupons.redeemable` now refuses only after `validUntil`.
++3. Shipping carried 22% VAT. Per the request, shipping is a service and carries none: removed `shippingVat` / `shippingVatCents`, the receipt line and the invoice VAT row; the README rule is updated (the old rule said shipping is subject to 22%).
++
++Tests added in `test/coupons.test.ts` and `test/orders.test.ts`; `npm test` passes.
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/invoices.ts b/src/invoices.ts
+index 198c748dcbdc66310b665bd79b8c19725437ff17..451cf0d298e0c712e2b3625313d158720863969d 100644
+--- a/src/invoices.ts
++++ b/src/invoices.ts
+@@ -7,7 +7,6 @@ import { OrderStateError } from './errors.ts';
+ import { sum } from './money.ts';
+ import type { Cents } from './money.ts';
+ import type { Order } from './orders.ts';
+-import { VAT_RATES } from './tax.ts';
+ 
+ export interface VatSummaryRow {
+   readonly rate: number;
+@@ -24,7 +23,7 @@ export interface Invoice {
+   readonly totalCents: Cents;
+ }
+ 
+-/** VAT by rate, the highest rate first; shipping counts at the standard rate. */
++/** VAT by rate, the highest rate first; shipping carries no VAT. */
+ export function vatSummary(order: Order): VatSummaryRow[] {
+   const rows = new Map<number, { netCents: Cents; vatCents: Cents }>();
+   const add = (rate: number, net: Cents, vat: Cents) => {
+@@ -32,9 +31,6 @@ export function vatSummary(order: Order): VatSummaryRow[] {
+     rows.set(rate, { netCents: row.netCents + net, vatCents: row.vatCents + vat });
+   };
+   for (const line of order.lines) add(line.vatRate, line.netCents, line.vatCents);
+-  if (order.totals.shippingCents > 0) {
+-    add(VAT_RATES.standard, order.totals.shippingCents, order.totals.shippingVatCents);
+-  }
+   return [...rows.entries()].map(([rate, row]) => ({ rate, ...row })).sort((a, b) => b.rate - a.rate);
+ }
+ 
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..c01666e17ceabb66ac24f7a41fac0515e179c6ac 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -1,7 +1,7 @@
+ /**
+  * Pricing an order, in the order the README documents: gross lines, volume discounts, the coupon
+  * (spread over the lines in proportion to their amounts, for VAT), shipping on the goods amount, VAT
+- * per line and on shipping, and the total.
++ * per line (shipping carries none), and the total.
+  */
+ import type { Product } from './catalog.ts';
+ import type { Coupon } from './coupons.ts';
+@@ -9,7 +9,7 @@ import { capped, couponDiscount, volumeDiscount } from './discounts.ts';
+ import { allocate, sum } from './money.ts';
+ import type { Cents } from './money.ts';
+ import { shippingCost } from './shipping.ts';
+-import { lineVat, shippingVat, vatRate } from './tax.ts';
++import { lineVat, vatRate } from './tax.ts';
+ 
+ export interface PricedLine {
+   readonly sku: string;
+@@ -33,7 +33,6 @@ export interface Totals {
+   readonly goodsCents: Cents;
+   readonly shippingCents: Cents;
+   readonly vatCents: Cents;
+-  readonly shippingVatCents: Cents;
+   readonly totalCents: Cents;
+ }
+ 
+@@ -56,7 +55,7 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const volumeTotal = sum(volume);
+ 
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined ? 0 : capped(couponDiscount(coupon, sum(afterVolume)), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+@@ -79,7 +78,6 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const weight = sum(inputs.map(({ product, quantity }) => product.weightGrams * quantity));
+   const shipping = shippingCost(goods, weight);
+   const vat = sum(lines.map((line) => line.vatCents));
+-  const shippingTax = shippingVat(shipping);
+   return {
+     lines,
+     weightGrams: weight,
+@@ -90,8 +88,7 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+       goodsCents: goods,
+       shippingCents: shipping,
+       vatCents: vat,
+-      shippingVatCents: shippingTax,
+-      totalCents: goods + shipping + vat + shippingTax,
++      totalCents: goods + shipping + vat,
+     },
+   };
+ }
+diff --git a/src/receipt.ts b/src/receipt.ts
+index 732b3de8b6aa10adf22ca78c3fc202cf0b778232..fdaf607b6c9e228914ed319b4a7417efa131cae0 100644
+--- a/src/receipt.ts
++++ b/src/receipt.ts
+@@ -20,7 +20,6 @@ export function receipt(order: Order): string {
+   lines.push(row('Goods', order.totals.goodsCents));
+   lines.push(row('Shipping', order.totals.shippingCents));
+   lines.push(row('VAT on goods', order.totals.vatCents));
+-  lines.push(row('VAT on shipping', order.totals.shippingVatCents));
+   lines.push(row('Total', order.totals.totalCents));
+   if (order.status === 'cancelled') lines.push('', `Cancelled on ${order.cancelledOn ?? ''}`);
+   return `${lines.join('\n')}\n`;
+diff --git a/src/tax.ts b/src/tax.ts
+index 5e12c55f1ca4a2044012df5ea175a5b57febbef3..330d5dd5a67464acaa1533c71df705f7e572ef14 100644
+--- a/src/tax.ts
++++ b/src/tax.ts
+@@ -1,6 +1,6 @@
+ /**
+  * VAT. Every product belongs to a VAT class; each order line pays its class's rate on its net amount
+- * (after every discount), and shipping pays the standard rate. Amounts are rounded half up to the cent,
++ * (after every discount), and shipping carries no VAT. Amounts are rounded half up to the cent,
+  * line by line.
+  */
+ import { percentOf } from './money.ts';
+@@ -25,8 +25,3 @@ export function vatRate(vatClass: VatClass): number {
+ export function lineVat(net: Cents, vatClass: VatClass): Cents {
+   return percentOf(net, vatRate(vatClass));
+ }
+-
+-/** The VAT on a shipping cost: the standard rate. */
+-export function shippingVat(shipping: Cents): Cents {
+-  return percentOf(shipping, VAT_RATES.standard);
+-}
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 1fdc2519dc031050b1b5593605af611816478518..a5db42c05d607dcd5bde5eb9375b9ae0eb23d0cf 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -33,6 +33,18 @@ describe('coupons', () => {
+     assert.throws(() => orders.quote({ ...request, date: '2026-04-01' }), CouponError);
+   });
+ 
++  it('accepts a coupon on its last day', () => {
++    const { orders } = shop();
++    const request = { customer: 'c-1', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'SPRING' };
++    assert.doesNotThrow(() => orders.quote({ ...request, date: '2026-03-31' }));
++  });
++
++  it('applies a percentage coupon to the subtotal after volume discounts', () => {
++    const { orders } = shop();
++    const order = orders.place({ customer: 'c-1', date: '2026-03-15', lines: [{ sku: 'PEN-4', quantity: 12 }], coupon: 'SPRING' });
++    assert.equal(order.totals.couponDiscountCents, Math.round((order.totals.grossCents - order.totals.volumeDiscountCents) / 10));
++  });
++
+   it('lets a single-use coupon be used once', () => {
+     const { orders, coupons } = shop();
+     coupons.add({ code: 'ONCE', kind: 'fixed', value: 100, validFrom: '2026-01-01', validUntil: '2026-12-31', singleUse: true });
+diff --git a/test/orders.test.ts b/test/orders.test.ts
+index 16a753693efb791b7120d2923fb2cd92f58fe4fe..abce4fd2ec7c6453a61b83ec24c7b5222b353d38 100644
+--- a/test/orders.test.ts
++++ b/test/orders.test.ts
+@@ -24,11 +24,18 @@ describe('orders', () => {
+       goodsCents: 3000,
+       shippingCents: 490,
+       vatCents: 440 + 100,
+-      shippingVatCents: 108,
+-      totalCents: 3000 + 490 + 540 + 108,
++      totalCents: 3000 + 490 + 540,
+     });
+   });
+ 
++  it('charges no VAT on shipping', () => {
++    const { orders } = shop();
++    const order = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'TEA-7', quantity: 1 }] });
++    assert.equal(order.totals.shippingCents, 490);
++    assert.equal(order.totals.totalCents, 500 + 490 + 50);
++    assert.ok(!receipt(order).includes('VAT on shipping'));
++  });
++
+   it('ships a large order free', () => {
+     const { orders } = shop();
+     const order = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'MUG-01', quantity: 8 }] });

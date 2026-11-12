@@ -1,0 +1,69 @@
+diff --git a/specs/001-order-fixes/spec.md b/specs/001-order-fixes/spec.md
+index b707b422a85a89345bdfcea8e5fe14a9bcf17a01..e7ff62e0a424c7a22b48dbaba8614d21486bfa58 100644
+--- a/specs/001-order-fixes/spec.md
++++ b/specs/001-order-fixes/spec.md
+@@ -7,3 +7,11 @@ Rules are those of README.md; the code was wrong, not the README.
+ 3. Line VAT is rounded half up, not down (€1.99 × 22% = €0.4378 → €0.44) — `lineVat` used `floor`.
+ 
+ Tests: test/catalog.test.ts, test/orders.test.ts.
++
++## Second batch
++
++4. Percentage coupons apply to the subtotal after volume discounts, not to the gross amount (12 × €5.00 with 10% coupon → €48.60) — `priceOrder`.
++5. A coupon is valid on its last day (`validUntil` is inclusive) — `Coupons.redeemable` used `>=`.
++6. Not changed: VAT on shipping. README says shipping is subject to 22% VAT and the README wins; a change needs a business/legal decision.
++
++Tests: test/coupons.test.ts.
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..8d2e07ede7fc792a7a1ada9fffd4bebfedb73c6c 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -56,7 +56,7 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const volumeTotal = sum(volume);
+ 
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined ? 0 : capped(couponDiscount(coupon, sum(afterVolume)), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 1fdc2519dc031050b1b5593605af611816478518..8c38804f08d9262023058258917cf11ad8158847 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -41,3 +41,22 @@ describe('coupons', () => {
+     assert.throws(() => orders.place({ customer: 'c-2', date: '2026-05-05', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'ONCE' }), CouponError);
+   });
+ });
++
++describe('coupon rules (reports)', () => {
++  it('applies a percentage coupon to the subtotal after volume discounts', () => {
++    const s = createShop();
++    s.catalog.add({ sku: 'NB-1', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 100 });
++    s.inventory.restock('NB-1', 20);
++    s.coupons.add({ code: 'TEN', kind: 'percent', value: 10, validFrom: '2026-01-01', validUntil: '2026-12-31' });
++    const t = s.orders.quote({ customer: 'c-1', date: '2026-06-01', lines: [{ sku: 'NB-1', quantity: 12 }], coupon: 'TEN' }).totals;
++    assert.equal(t.goodsCents, 4860);
++  });
++
++  it('is still valid on its last day', () => {
++    const { orders, coupons } = shop();
++    coupons.add({ code: 'AUTUMN', kind: 'percent', value: 10, validFrom: '2026-09-01', validUntil: '2026-11-30' });
++    const line = { customer: 'c-1', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'AUTUMN' };
++    assert.equal(orders.quote({ ...line, date: '2026-11-30' }).totals.couponDiscountCents, 200);
++    assert.throws(() => orders.quote({ ...line, date: '2026-12-01' }), CouponError);
++  });
++});

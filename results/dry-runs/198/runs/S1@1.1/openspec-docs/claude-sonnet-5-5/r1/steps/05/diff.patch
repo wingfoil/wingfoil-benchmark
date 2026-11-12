@@ -1,0 +1,158 @@
+diff --git a/src/index.ts b/src/index.ts
+index c76b66f665012d639b6ae612ed00c7d375063f26..4abd2cade2cd7fc93f803fa4444c11d2b113760e 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -242,3 +242,104 @@ export function applyMergePatch(target: unknown, patch: unknown): any {
+   }
+   return result;
+ }
++
++export type PatchOperation =
++  | { op: "add" | "replace"; path: string; value: JsonValue }
++  | { op: "remove"; path: string };
++
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++function diffInto(ops: PatchOperation[], path: string, from: unknown, to: unknown): void {
++  if (deepEqual(from, to)) return;
++
++  if (isObject(from) && isObject(to)) {
++    const has = (o: Record<string, unknown>, k: string) => Object.prototype.hasOwnProperty.call(o, k);
++    for (const key of Object.keys(from)) {
++      if (!has(to, key)) ops.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++    for (const key of Object.keys(to)) {
++      const child = `${path}/${escapeToken(key)}`;
++      if (!has(from, key)) ops.push({ op: "add", path: child, value: clone(to[key]) as JsonValue });
++      else diffInto(ops, child, from[key], to[key]);
++    }
++    return;
++  }
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArrays(ops, path, from, to);
++    return;
++  }
++
++  ops.push({ op: "replace", path, value: clone(to) as JsonValue });
++}
++
++function diffArrays(ops: PatchOperation[], path: string, from: unknown[], to: unknown[]): void {
++  let start = 0;
++  while (start < from.length && start < to.length && deepEqual(from[start], to[start])) start++;
++  let endA = from.length;
++  let endB = to.length;
++  while (endA > start && endB > start && deepEqual(from[endA - 1], to[endB - 1])) {
++    endA--;
++    endB--;
++  }
++
++  // Longest common subsequence of the middle parts.
++  const n = endA - start;
++  const m = endB - start;
++  const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
++  for (let i = n - 1; i >= 0; i--) {
++    for (let j = m - 1; j >= 0; j--) {
++      lcs[i][j] = deepEqual(from[start + i], to[start + j])
++        ? lcs[i + 1][j + 1] + 1
++        : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
++    }
++  }
++
++  // `index` is the position in the array being transformed, which already matches `to` before it.
++  let index = start;
++  const flushGap = (i0: number, i1: number, j0: number, j1: number) => {
++    const removed = i1 - i0;
++    const added = j1 - j0;
++    const paired = Math.min(removed, added);
++    for (let t = 0; t < paired; t++) {
++      diffInto(ops, `${path}/${index + t}`, from[start + i0 + t], to[start + j0 + t]);
++    }
++    for (let t = paired; t < removed; t++) ops.push({ op: "remove", path: `${path}/${index + paired}` });
++    for (let t = paired; t < added; t++) {
++      ops.push({ op: "add", path: `${path}/${index + t}`, value: clone(to[start + j0 + t]) as JsonValue });
++    }
++    index += added;
++  };
++
++  let i = 0;
++  let j = 0;
++  let gapI = 0;
++  let gapJ = 0;
++  while (i < n && j < m) {
++    if (deepEqual(from[start + i], to[start + j])) {
++      flushGap(gapI, i, gapJ, j);
++      index++;
++      i++;
++      j++;
++      gapI = i;
++      gapJ = j;
++    } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
++      i++;
++    } else {
++      j++;
++    }
++  }
++  flushGap(gapI, n, gapJ, m);
++}
++
++/**
++ * Creates a JSON Patch (RFC 6902) that turns `from` into `to` when applied.
++ * Only the parts that differ are described. Neither input is mutated.
++ */
++export function createPatch(from: unknown, to: unknown): PatchOperation[] {
++  const ops: PatchOperation[] = [];
++  diffInto(ops, "", from, to);
++  return ops;
++}
+diff --git a/test/createPatch.test.ts b/test/createPatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d77b7ba048e96233021dd34e133ce72345607206
+--- /dev/null
++++ b/test/createPatch.test.ts
+@@ -0,0 +1,43 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++test("small change gives small patch", () => {
++  const from = { a: { b: 1, c: [1, 2, 3] }, d: "x" };
++  const to = { a: { b: 2, c: [1, 2, 3] }, d: "x" };
++  assert.deepEqual(createPatch(from, to), [{ op: "replace", path: "/a/b", value: 2 }]);
++});
++
++test("array insert, remove and move do not rewrite neighbours", () => {
++  assert.deepEqual(createPatch([1, 2, 3], [1, 9, 2, 3]), [{ op: "add", path: "/1", value: 9 }]);
++  assert.deepEqual(createPatch([1, 2, 3], [1, 3]), [{ op: "remove", path: "/1" }]);
++  assert.equal(createPatch([1, 2, 3, 4, 5], [2, 3, 4, 5, 1]).length, 2);
++});
++
++test("escaping, root and no mutation", () => {
++  const from = { "a/b": 1, "~": 2 };
++  const copy = JSON.stringify(from);
++  const patch = createPatch(from, { "a/b": 3, "~": 2 });
++  assert.deepEqual(patch, [{ op: "replace", path: "/a~1b", value: 3 }]);
++  assert.equal(JSON.stringify(from), copy);
++  assert.deepEqual(createPatch(1, [1]), [{ op: "replace", path: "", value: [1] }]);
++  assert.deepEqual(createPatch({ a: 1 }, { a: 1 }), []);
++});
++
++test("random round trip", () => {
++  let seed = 7;
++  const rnd = (n: number) => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff), seed % n);
++  const gen = (d: number): any => {
++    const k = rnd(d > 2 ? 3 : 6);
++    if (k === 0) return rnd(4);
++    if (k === 1) return "s" + rnd(3);
++    if (k === 2) return rnd(2) ? null : true;
++    if (k <= 4) return Array.from({ length: rnd(6) }, () => gen(d + 1));
++    return Object.fromEntries(Array.from({ length: rnd(4) }, () => ["k" + rnd(4), gen(d + 1)]));
++  };
++  for (let i = 0; i < 3000; i++) {
++    const a = gen(0), b = rnd(2) ? gen(0) : JSON.parse(JSON.stringify(a));
++    if (Array.isArray(b) && b.length && rnd(2)) b.push(b.shift());
++    assert.deepEqual(applyPatch(a, createPatch(a, b)), b);
++  }
++});

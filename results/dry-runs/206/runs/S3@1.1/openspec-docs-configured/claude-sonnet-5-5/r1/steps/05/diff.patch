@@ -1,0 +1,116 @@
+diff --git a/src/index.ts b/src/index.ts
+index 080c9d5fceb9cbb9d09ceba465b4e52763f3888e..2598d52cd44e8ccfb51cb98919433022a28278c5 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -35,6 +35,17 @@ export interface RentalService {
+   book(request: RentalRequest): Booking;
+   /** Sorted ids of the items (of `kind`, if given) free for the whole period. */
+   availability(query: AvailabilityQuery): string[];
++  /**
++   * Cancels a booking at time `at` and returns the refund in euro cents. The booking stops holding its
++   * item. Throws for an unknown or already cancelled booking, or if the rental has already ended.
++   */
++  cancel(bookingId: string, at: string): Cancellation;
++}
++
++export interface Cancellation {
++  bookingId: string;
++  /** Euro cents given back to the customer. */
++  refund: number;
+ }
+ 
+ export interface AvailabilityQuery {
+@@ -50,6 +61,9 @@ const DAY_MS = 24 * HOUR_MS;
+ /** Rentals of at least this many days get LONG_RENTAL_PERCENT_OFF. */
+ const LONG_RENTAL_DAYS = 3;
+ const LONG_RENTAL_PERCENT_OFF = 10;
++/** Cancelling at least this long before the start refunds the whole total; later, nothing. */
++const FULL_REFUND_NOTICE_MS = DAY_MS;
++const INSTANT_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?Z$/;
+ const MIDNIGHT_UTC = /^\d{4}-\d{2}-\d{2}T00:00(:00(\.0+)?)?Z$/;
+ const ON_THE_HOUR_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:00(:00(\.0+)?)?Z$/;
+ 
+@@ -71,7 +85,7 @@ function parseMidnightUtc(value: unknown, name: string): number {
+ 
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+-  const bookings: (Booking & { startMs: number; endMs: number })[] = [];
++  const bookings: (Booking & { startMs: number; endMs: number; cancelled: boolean })[] = [];
+   let nextBookingId = 1;
+ 
+   function price(request: RentalRequest) {
+@@ -141,11 +155,11 @@ export function createRentalService(): RentalService {
+     book(request) {
+       const { startMs, endMs, quote } = price(request);
+       const clash = bookings.some(
+-        (b) => b.itemId === quote.itemId && startMs < b.endMs && b.startMs < endMs,
++        (b) => !b.cancelled && b.itemId === quote.itemId && startMs < b.endMs && b.startMs < endMs,
+       );
+       if (clash) throw new Error(`Item ${quote.itemId} is not free for the whole period`);
+       const booking = { id: `booking-${nextBookingId++}`, ...quote };
+-      bookings.push({ ...booking, startMs, endMs });
++      bookings.push({ ...booking, startMs, endMs, cancelled: false });
+       return booking;
+     },
+ 
+@@ -159,10 +173,21 @@ export function createRentalService(): RentalService {
+       return [...equipment.values()]
+         .filter((item) => query.kind === undefined || item.kind === query.kind)
+         .filter(
+-          (item) => !bookings.some((b) => b.itemId === item.id && startMs < b.endMs && b.startMs < endMs),
++          (item) => !bookings.some((b) => !b.cancelled && b.itemId === item.id && startMs < b.endMs && b.startMs < endMs),
+         )
+         .map((item) => item.id)
+         .sort();
+     },
++
++    cancel(bookingId, at) {
++      const atMs = parseUtc(at, 'at', INSTANT_UTC, 'with a time');
++      const booking = bookings.find((b) => b.id === bookingId);
++      if (!booking) throw new Error(`Unknown booking: ${String(bookingId)}`);
++      if (booking.cancelled) throw new Error(`Booking ${booking.id} is already cancelled`);
++      if (atMs >= booking.endMs) throw new Error(`Booking ${booking.id} has already ended`);
++      booking.cancelled = true;
++      const refund = booking.startMs - atMs >= FULL_REFUND_NOTICE_MS ? booking.total : 0;
++      return { bookingId: booking.id, refund };
++    },
+   };
+ }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 9dc8e00b93e44e69a9e3935f456865f4d6d59694..d303b62befd07edda697e63fabaa43c3428691ea 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -125,3 +125,33 @@ test('hourly rentals need an hourly price and whole hours', () => {
+   assert.throws(() => s.addEquipment({ id: 'x', kind: 'board', dailyPrice: 1, hourlyPrice: -1 }));
+   assert.throws(() => s.addEquipment({ id: 'y', kind: 'board', dailyPrice: 1, hourlyPrice: 1.5 }));
+ });
++
++test('cancel refunds in full with a day of notice, nothing later', () => {
++  const s = setup();
++  const a = s.book({ itemId: 'b1', start: d('05-03'), end: d('05-05') });
++  assert.deepEqual(s.cancel(a.id, '2026-05-02T00:00:00Z'), { bookingId: a.id, refund: 9000 });
++  const b = s.book({ itemId: 'b1', start: d('05-03'), end: d('05-05') });
++  assert.deepEqual(s.cancel(b.id, '2026-05-02T00:00:01Z'), { bookingId: b.id, refund: 0 });
++  const c = s.book({ itemId: 'b1', start: d('05-03'), end: d('05-05') });
++  assert.equal(s.cancel(c.id, '2026-05-04T10:00:00Z').refund, 0);
++});
++
++test('a cancelled booking frees its item and cannot be cancelled again', () => {
++  const s = setup();
++  const r = { itemId: 'b1', start: d('05-03'), end: d('05-05') };
++  const a = s.book(r);
++  assert.deepEqual(s.availability({ start: d('05-03'), end: d('05-05'), kind: 'board' }), []);
++  s.cancel(a.id, d('05-01'));
++  assert.deepEqual(s.availability({ start: d('05-03'), end: d('05-05'), kind: 'board' }), ['b1']);
++  s.book(r);
++  assert.throws(() => s.cancel(a.id, d('05-01')));
++});
++
++test('cancel rejects unknown bookings, bad times and ended rentals', () => {
++  const s = setup();
++  const a = s.book({ itemId: 'b1', start: d('05-03'), end: d('05-05') });
++  assert.throws(() => s.cancel('nope', d('05-01')));
++  assert.throws(() => s.cancel(a.id, '2026-05-01'));
++  assert.throws(() => s.cancel(a.id, d('05-05')));
++  s.cancel(a.id, d('05-01'));
++});

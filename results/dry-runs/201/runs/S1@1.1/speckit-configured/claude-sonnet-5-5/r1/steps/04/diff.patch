@@ -1,0 +1,157 @@
+diff --git a/README.md b/README.md
+index 48e492f698d87e6be2833482c01cbfa35d413a17..d6a1bcb5ef95537921c2844a9fe6d043085b2989 100644
+--- a/README.md
++++ b/README.md
+@@ -34,3 +34,17 @@ mutated. It is atomic: on error nothing is returned. It throws a `PatchError` wh
+ `"OPERATION_FAILED"` (missing target, bad array index, `move` into its own child, failed `test`). `test` compares
+ JSON values deeply (object member order is irrelevant). `__proto__`, `constructor` and `prototype` are ordinary
+ member names and cannot pollute prototypes.
++
++## JSON Merge Patch (RFC 7396)
++
++```ts
++import { applyMergePatch } from "json-toolkit";
++
++applyMergePatch({ a: "b", c: { d: "e" } }, { a: "z", c: { d: null } }); // { a: "z", c: {} }
++```
++
++`applyMergePatch(target, patch)` implements the RFC 7396 §2 algorithm (RFC 7386, which it obsoletes, is the same
++algorithm) and returns the merged document as a new value sharing no structure with the inputs; neither is mutated.
++An object patch merges member by member and `null` removes a member; any other patch (including arrays and `null`)
++replaces the target. A non-object target is treated as `{}` when the patch is an object. It never throws. As the RFC
++notes, `null` cannot be set as a member value. `__proto__`, `constructor` and `prototype` are ordinary member names.
+diff --git a/specs/003-json-merge-patch/plan.md b/specs/003-json-merge-patch/plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..14a5d78f0fe2805d5689f9e4449da1226c926962
+--- /dev/null
++++ b/specs/003-json-merge-patch/plan.md
+@@ -0,0 +1,6 @@
++# Plan: JSON Merge Patch
++Add `applyMergePatch` in `src/index.ts`, reusing `setMember`/`clone` helpers; recursive per RFC 7396 §2. README section.
++
++## Constitution Check
++I: RFC 7396 §2 named, conflict with 7386 surfaced. II: no deps. III: tests first (RFC 7396 Appendix A cases).
++IV: no mutation, prototype-safe. V: exported, doc-commented, typed. VI: one small function.
+diff --git a/specs/003-json-merge-patch/spec.md b/specs/003-json-merge-patch/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..702c52d15cd7661f7faba6735dcd4992ad0efe0d
+--- /dev/null
++++ b/specs/003-json-merge-patch/spec.md
+@@ -0,0 +1,15 @@
++# Spec: JSON Merge Patch
++
++Request: `applyMergePatch(target, patch)` applying a JSON Merge Patch and returning the merged document.
++
++**Standard conflict:** the request cites RFC 7386; that RFC was obsoleted by **RFC 7396** (same algorithm), which the
++constitution names. We implement RFC 7396 §2 (MergePatch pseudocode) exactly.
++
++## Behaviour (RFC 7396 §2)
++- Patch not an object (including array, `null`, scalar): result is a copy of the patch (arrays replaced wholesale).
++- Patch is an object: a non-object target is treated as `{}`; each member with `null` value removes that member;
++  other members are merged recursively. Nulls nested in patch objects that land on a missing target are dropped.
++- Empty-object patch leaves an object target unchanged; on a non-object target it yields `{}`.
++- Neither input is mutated; result shares no structure with inputs. `__proto__`, `constructor`, `prototype` are
++  ordinary member names. Only own members of the target are considered.
++- No errors: every JSON value is a valid patch.
+diff --git a/specs/003-json-merge-patch/tasks.md b/specs/003-json-merge-patch/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1bb5d4b12dcb19d7de0544b5855fdcf71a76c321
+--- /dev/null
++++ b/specs/003-json-merge-patch/tasks.md
+@@ -0,0 +1,6 @@
++# Tasks: JSON Merge Patch
++- [X] T001 Write `test/merge-patch.test.ts` (RFC 7396 Appendix A, null handling, no mutation, prototype keys)
++- [X] T002 Run `npm test`; confirm failure
++- [X] T003 Implement `applyMergePatch` in `src/index.ts`
++- [X] T004 Run `npm test`; all pass
++- [X] T005 Document in `README.md`
+diff --git a/src/index.ts b/src/index.ts
+index c607cc058e6a39f9de3db9139c1b6af28f5ba121..42977362d9f73a5427679a54c9df90111ab9b72c 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -250,3 +250,25 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   }
+   return doc;
+ }
++
++/**
++ * Applies a JSON Merge Patch to `target`, per RFC 7396 §2 (obsoletes RFC 7386).
++ * A non-object patch replaces the target; an object patch is merged member by
++ * member, with `null` removing a member. Arrays are replaced, never merged.
++ * Neither argument is mutated and the result shares no structure with them.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (typeof patch !== "object" || patch === null || Array.isArray(patch)) return clone(patch);
++  const isObject = typeof target === "object" && target !== null && !Array.isArray(target);
++  const out = isObject ? (clone(target) as Record<string, unknown>) : {};
++  const source = isObject ? (target as Record<string, unknown>) : {};
++  for (const [name, value] of Object.entries(patch)) {
++    if (value === null) {
++      delete out[name];
++    } else {
++      const current = Object.hasOwn(source, name) ? source[name] : undefined;
++      setMember(out, name, applyMergePatch(current, value));
++    }
++  }
++  return out;
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..929a2706386d35e053bb6751a09897c7e71d7984
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,54 @@
++import { test } from "node:test";
++import assert from "node:assert";
++import { applyMergePatch } from "../src/index.ts";
++
++const ok = (target: unknown, patch: unknown, expected: unknown) =>
++  assert.deepStrictEqual(applyMergePatch(target, patch), expected);
++
++test("RFC 7396 Appendix A examples", () => {
++  ok({ a: "b" }, { a: "c" }, { a: "c" });
++  ok({ a: "b" }, { b: "c" }, { a: "b", b: "c" });
++  ok({ a: "b" }, { a: null }, {});
++  ok({ a: "b", b: "c" }, { a: null }, { b: "c" });
++  ok({ a: ["b"] }, { a: "c" }, { a: "c" });
++  ok({ a: "c" }, { a: ["b"] }, { a: ["b"] });
++  ok({ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } });
++  ok({ a: [{ b: "c" }] }, { a: [1] }, { a: [1] });
++  ok(["a", "b"], ["c", "d"], ["c", "d"]);
++  ok({ a: "b" }, ["c"], ["c"]);
++  ok({ a: "foo" }, null, null);
++  ok({ a: "foo" }, "bar", "bar");
++  ok({ e: null }, { a: 1 }, { e: null, a: 1 });
++  ok([1, 2], { a: "b", c: null }, { a: "b" });
++  ok({}, { a: { bb: { ccc: null } } }, { a: { bb: {} } });
++});
++
++test("empty object patch", () => {
++  ok({ a: 1 }, {}, { a: 1 });
++  ok(5, {}, {});
++});
++
++test("does not mutate or share structure", () => {
++  const target = { a: { b: 1 }, l: [1] };
++  const patch = { a: { c: { d: 1 } }, x: { y: [1] } };
++  const t = structuredClone(target);
++  const p = structuredClone(patch);
++  const r = applyMergePatch(target, patch) as any;
++  assert.deepStrictEqual(target, t);
++  assert.deepStrictEqual(patch, p);
++  assert.notStrictEqual(r.l, target.l);
++  assert.notStrictEqual(r.a.c, patch.a.c);
++  assert.notStrictEqual(r.x.y, patch.x.y);
++});
++
++test("prototype keys are ordinary members", () => {
++  const patch = JSON.parse('{"__proto__":{"polluted":1},"constructor":{"prototype":{"p":2}}}');
++  const r = applyMergePatch({}, patch) as any;
++  assert.strictEqual(({} as any).polluted, undefined);
++  assert.strictEqual(({} as any).p, undefined);
++  assert.deepStrictEqual(Object.keys(r), ["__proto__", "constructor"]);
++  assert.deepStrictEqual(Object.getOwnPropertyDescriptor(r, "__proto__")!.value, { polluted: 1 });
++  ok({}, JSON.parse('{"__proto__":null}'), {});
++  const inherited = applyMergePatch({}, JSON.parse('{"constructor":{"a":1}}')) as any;
++  assert.deepStrictEqual(inherited.constructor, { a: 1 });
++});

@@ -1,0 +1,112 @@
+diff --git a/specs/003-long-stay-discount/plan.md b/specs/003-long-stay-discount/plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e23e71da64b3b0c173709de49084ea46edcaccc
+--- /dev/null
++++ b/specs/003-long-stay-discount/plan.md
+@@ -0,0 +1,2 @@
++# Plan
++Change `price()` in `src/index.ts` (shared by quote and book): apply 10% off when days >= 3 using integer math `Math.round` of `(full * 9) / 10`. Add tests in `test/rental.test.ts`.
+diff --git a/specs/003-long-stay-discount/spec.md b/specs/003-long-stay-discount/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..51614f0f9f2a1fe2d69c982223182c88912798a1
+--- /dev/null
++++ b/specs/003-long-stay-discount/spec.md
+@@ -0,0 +1,23 @@
++# Feature Specification: Long-stay discount
++
++**Created**: 2026-11-11 | **Status**: Implemented
++
++## User Scenarios & Testing
++
++### User Story 1 - Cheaper long rentals (P1)
++A rental of 3 or more days costs 10% less than full price (days × daily price). Quotes and bookings show the reduced total.
++**Acceptance**:
++1. Given a 3-day rental at 2500/day, quote and booking total are 6750 (not 7500).
++2. Given a 2-day rental, the total is the full price.
++3. Longer rentals (e.g. 7 days) are discounted the same 10%.
++
++### Edge cases
++- Reduced total is a whole number of cents, rounded half up (e.g. 3 × 2505 = 7515 → 6763.5 → 6764).
++
++## Requirements
++- **FR-001**: If days >= 3, total = round(days × dailyPrice × 0.9) computed in integer arithmetic; otherwise days × dailyPrice.
++- **FR-002**: `quote` and `book` use the same computation.
++
++## Assumptions
++- Constitution is an unfilled template; no extra rules apply.
++- Discount is a flat 10% on the whole rental, not only on days beyond the third.
+diff --git a/specs/003-long-stay-discount/tasks.md b/specs/003-long-stay-discount/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f263fcb40cf39f0cf28a8eda2f2bb2ebb91882bb
+--- /dev/null
++++ b/specs/003-long-stay-discount/tasks.md
+@@ -0,0 +1,3 @@
++# Tasks
++- [X] T001 Add tests for 2-day, 3-day, 7-day, rounding, booking total
++- [X] T002 Apply discount in `price()` in src/index.ts
+diff --git a/src/index.ts b/src/index.ts
+index c13e03b7719f19d0a21d230bb1afbaa9647defd5..e62d3c0627151a43c3b7a74a9764aa76dc43fe31 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -34,6 +34,7 @@ export interface RentalService {
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
++const LONG_STAY_DAYS = 3; // rentals of this many days or more get 10% off
+ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+ 
+ function parseMidnightUtc(value: unknown, label: string): number {
+@@ -62,11 +63,12 @@ export function createRentalService(): RentalService {
+     if (!item) throw new Error(`Unknown item: ${request?.itemId}`);
+     const { startMs, endMs } = parsePeriod(request.start, request.end);
+     const days = (endMs - startMs) / DAY_MS;
++    const full = days * item.dailyPrice;
+     const quote: Quote = {
+       itemId: item.id,
+       start: request.start,
+       end: request.end,
+-      total: days * item.dailyPrice,
++      total: days >= LONG_STAY_DAYS ? Math.round((full * 9) / 10) : full,
+     };
+     return { quote, startMs, endMs };
+   }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index e60508c11d7f5099334ac7ede87e9e9be5a77cbe..80ac8957adf8e1a554f05f1ecbbb715a0e87b447 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -13,7 +13,7 @@ function setup() {
+ 
+ test('quote totals whole days in cents', () => {
+   assert.deepEqual(setup().quote({ itemId: 'b1', start: d(1), end: d(4) }), {
+-    itemId: 'b1', start: d(1), end: d(4), total: 7500,
++    itemId: 'b1', start: d(1), end: d(4), total: 6750,
+   });
+ });
+ 
+@@ -30,7 +30,7 @@ test('quote rejects bad input', () => {
+ test('book returns id and refuses overlaps only on same item', () => {
+   const s = setup();
+   const a = s.book({ itemId: 'b1', start: d(1), end: d(4) });
+-  assert.equal(a.total, 7500);
++  assert.equal(a.total, 6750);
+   assert.throws(() => s.book({ itemId: 'b1', start: d(3), end: d(5) }));
+   assert.throws(() => s.book({ itemId: 'b1', start: d(1), end: d(2) }));
+   const b = s.book({ itemId: 'b1', start: d(4), end: d(5) });
+@@ -69,3 +69,17 @@ test('availability rejects bad input', () => {
+   assert.throws(() => s.availability({ start: '2026-05-01T10:00:00Z', end: d(2) }));
+   assert.throws(() => s.availability({ start: d(1), end: d(2), kind: 'boat' as any }));
+ });
++
++test('rentals of 3+ days get 10% off in quote and booking', () => {
++  const s = setup();
++  assert.equal(s.quote({ itemId: 'b1', start: d(1), end: d(3) }).total, 5000);
++  assert.equal(s.quote({ itemId: 'b1', start: d(1), end: d(4) }).total, 6750);
++  assert.equal(s.quote({ itemId: 'b1', start: d(1), end: d(8) }).total, 15750);
++  assert.equal(s.book({ itemId: 'b1', start: d(1), end: d(4) }).total, 6750);
++});
++
++test('discounted total rounds half up to whole cents', () => {
++  const s = createRentalService();
++  s.addEquipment({ id: 'x', kind: 'board', dailyPrice: 2505 });
++  assert.equal(s.quote({ itemId: 'x', start: d(1), end: d(4) }).total, 6764);
++});

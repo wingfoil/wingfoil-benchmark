@@ -1,0 +1,98 @@
+diff --git a/src/domain/import.ts b/src/domain/import.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ed3ebe96519f2e761e4395c9a853d0f5531227b2
+--- /dev/null
++++ b/src/domain/import.ts
+@@ -0,0 +1,57 @@
++import type { TaskList } from './list.ts';
++import { err, ok } from './result.ts';
++import type { Result } from './result.ts';
++import type { NewTask } from './task.ts';
++import { validatePriority } from './task.ts';
++
++/** A line of an import that could not be added: its number, counting from 1, and why. */
++export interface RejectedLine {
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** The outcome of an import: how many tasks were added, and the lines that were not. */
++export interface ImportReport {
++  readonly imported: number;
++  readonly rejected: readonly RejectedLine[];
++}
++
++/**
++ * Reads one `title;priority;tags` line: the priority may be empty for a normal one, the tags are
++ * separated by spaces, and both may be left out.
++ *
++ * @param line - the line to read
++ */
++export function parseTaskLine(line: string): Result<NewTask> {
++  const fields = line.split(';');
++  if (fields.length > 3) {
++    return err('invalid-input', 'the line has more than 3 fields: use title;priority;tags');
++  }
++  const [title = '', priorityText = '', tagsText = ''] = fields;
++  const priorityName = priorityText.trim().toLowerCase();
++  const tags = tagsText.split(/\s+/).filter((tag) => tag !== '');
++  if (priorityName === '') return ok({ title, tags });
++  const priority = validatePriority(priorityName);
++  if (!priority.ok) return priority;
++  return ok({ title, priority: priority.value, tags });
++}
++
++/**
++ * Adds the tasks written in `text`, one per line as `title;priority;tags`, to a list. Blank lines are
++ * skipped; a line that cannot be added is reported and does not stop the others.
++ *
++ * @param list - the list to add the tasks to
++ * @param text - the lines to import
++ */
++export function importTasks(list: TaskList, text: string): ImportReport {
++  let imported = 0;
++  const rejected: RejectedLine[] = [];
++  text.split(/\r\n|\r|\n/).forEach((content, index) => {
++    if (content.trim() === '') return;
++    const parsed = parseTaskLine(content);
++    const added = parsed.ok ? list.add(parsed.value) : parsed;
++    if (added.ok) imported += 1;
++    else rejected.push({ line: index + 1, reason: added.error.message });
++  });
++  return { imported, rejected };
++}
+diff --git a/src/index.ts b/src/index.ts
+index 0a5057adcf8207955821f65477973536424badd7..3a6bbfd7761ce4b96381e1b5f7255fe7d82f8a44 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -3,6 +3,8 @@ import type { TaskList } from './domain/list.ts';
+ 
+ export type { TaskFilter, TaskList } from './domain/list.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
++export { importTasks } from './domain/import.ts';
++export type { ImportReport, RejectedLine } from './domain/import.ts';
+ export { summarize } from './domain/summary.ts';
+ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+diff --git a/test/list.test.ts b/test/list.test.ts
+index e6e89a14c54a81a4c47d268c44e4a420838f2d8b..0d0a86a0dc254d9b423fbabdfc00f88f14f26553 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -137,3 +137,17 @@ describe('input validation', () => {
+     assert.equal(list.add({ title: 'x'.repeat(120) }).ok, true);
+   });
+ });
++
++describe('importTasks', () => {
++  it('imports valid lines and reports the others by line number', async () => {
++    const { importTasks } = await import('../src/index.ts');
++    const list = createTodoList();
++    const report = importTasks(
++      list,
++      'Renew the insurance;high;admin money\n\nBuy milk\nPay rent;urgent;x\nBuy milk;;\nA;low;b;c\r\nWater plants;;home',
++    );
++    assert.equal(report.imported, 3);
++    assert.deepEqual(report.rejected.map((r) => r.line), [4, 5, 6]);
++    assert.deepEqual(list.find('Renew the insurance').ok && valueOf(list.find('Renew the insurance')).tags, ['admin', 'money']);
++  });
++});

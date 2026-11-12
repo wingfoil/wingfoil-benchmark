@@ -1,0 +1,231 @@
+diff --git a/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/.openspec.yaml b/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..ca7e6273f6d99d2742600212cc8024ce08e30dfe
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-11-09
+diff --git a/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/design.md b/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..408511e87a1961b745066f00e924f199fdcf028d
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/design.md
+@@ -0,0 +1,18 @@
++## Context
++
++`OrderService.place` records a single-use coupon under the new order id (`coupons.use(code, id)`), but
++`cancel` calls `coupons.giveBack(code, order.customer)`. `Coupons.giveBack` only releases when the recorded
++order matches, so it never releases. Shipping (`shippingCost`, `priceOrder`) already compares goods after
++discounts with 5000 cents using `>=`.
++
++## Decisions
++
++- Fix at the call site: pass `id` instead of `order.customer` in `cancel`. `Coupons.giveBack` stays unchanged.
++- No code change for shipping; the reported case is consistent with the README (threshold on goods after
++  discounts). Pin it with tests rather than alter the rule. If support's case turns out to be something else
++  (goods really >= €50.00 after discounts), it needs a reproduction, outside this change.
++- Money stays in integer cents; no new dependencies.
++
++## Risks
++
++Minimal: one argument changed. Orders without a coupon are unaffected.
+diff --git a/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/proposal.md b/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..51116a9a942a7d7eca9a5275afdf5468fd8de757
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/proposal.md
+@@ -0,0 +1,36 @@
++## Why
++
++Two customer reports. (1) A customer cancelled an order that used a single-use welcome coupon and the
++coupon was then refused as "already used" on the corrected order. The cause: `OrderService.cancel` gives
++the coupon back under the customer's name, but the coupon was recorded under the order id, so the give-back
++never matches. (2) A customer paid €4.90 shipping on an order "of exactly €50". The code already ships free
++at goods >= 5000 cents after discounts (and a test covers it); the likely cause is an order whose lines came
++to €50.00 *before* a discount, so goods after discounts were below €50.00 — which the README says is paid
++shipping.
++
++## What Changes
++
++- Fix cancellation so a single-use coupon is given back to the order that used it (code fix in `src/orders.ts`).
++- Report 2: no behaviour change. Add regression tests pinning the boundary on goods *after* discounts
++  (gross €50.00 with a discount pays shipping; goods of exactly €50.00 after a discount ship free).
++- No README change: the README already states both rules correctly.
++
++## Capabilities
++
++### New Capabilities
++
++None.
++
++### Modified Capabilities
++
++- `coupons`: add the requirement that cancelling an order makes its single-use coupon usable again.
++- `shipping`: add a scenario clarifying that the €50.00 threshold applies to goods after discounts.
++
++## Impact
++
++README business rules affected: Orders (cancellation gives back the coupon), Discounts (single-use coupon),
++Shipping (free from €50.00 after discounts) — all are restated, none altered. Code: `src/orders.ts`;
++tests: `test/orders.test.ts`.
++
++Out of scope: any other rule, VAT on shipping, changing the free-shipping threshold, coupon rules other
++than give-back, and the cancellation window.
+diff --git a/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/specs/coupons/spec.md b/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/specs/coupons/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0514a2dc14f39844d970ce2699060fc7dd80eb10
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/specs/coupons/spec.md
+@@ -0,0 +1,21 @@
++## ADDED Requirements
++
++### Requirement: Cancelling an order gives back its single-use coupon
++A single-use coupon SHALL be usable again once the order that used it is cancelled, and SHALL stay used while
++that order is not cancelled.
++
++#### Scenario: Cancel then reorder with the same coupon
++- **WHEN** order ORD-0001 is placed on 2026-03-02 with single-use coupon WELCOME and cancelled on 2026-03-02, then a new order is placed on 2026-03-02 with WELCOME
++- **THEN** the new order is accepted with the coupon applied
++
++#### Scenario: Cancelled on day 14
++- **WHEN** an order with a single-use coupon is placed on 2026-03-02 and cancelled on 2026-03-16
++- **THEN** the coupon can be used by a new order
++
++#### Scenario: Coupon still used without cancellation
++- **WHEN** order ORD-0001 used single-use coupon WELCOME and is not cancelled
++- **THEN** another order with WELCOME is refused as already used
++
++#### Scenario: Another customer's cancellation does not free it
++- **WHEN** ORD-0002 (a different order) is cancelled while ORD-0001 holds WELCOME
++- **THEN** WELCOME stays used by ORD-0001
+diff --git a/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/specs/shipping/spec.md b/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/specs/shipping/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d8846a409fa227ab8e59bd1e81a8c4573042708c
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/specs/shipping/spec.md
+@@ -0,0 +1,12 @@
++## ADDED Requirements
++
++### Requirement: Free-shipping threshold looks at goods after discounts
++The 5000-cent threshold SHALL be compared with the goods amount after every discount, not with the gross amount of the lines.
++
++#### Scenario: Gross €50.00 reduced by a coupon
++- **WHEN** the lines total 5000 cents gross and a coupon takes 500 cents off (goods 4500) and the parcel weighs 500 g
++- **THEN** shipping is 490 cents
++
++#### Scenario: Discounted goods of exactly €50.00
++- **WHEN** the lines total 5500 cents gross and a coupon takes 500 cents off (goods 5000)
++- **THEN** shipping is 0 cents
+diff --git a/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/tasks.md b/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d438707042d829644eccda8af191333bc2b5cfd0
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-09-fix-coupon-giveback-and-free-shipping/tasks.md
+@@ -0,0 +1,13 @@
++## 1. Coupon give-back on cancel
++
++- [x] 1.1 In `src/orders.ts` `cancel`, give the coupon back with the order id instead of the customer
++- [x] 1.2 Add tests in `test/orders.test.ts`: cancel then reorder with a single-use coupon succeeds; coupon stays used while the order is not cancelled; cancel on day 14 gives it back
++
++## 2. Free shipping boundary (tests only)
++
++- [x] 2.1 Add tests in `test/orders.test.ts`: gross 5000 with 500 coupon (goods 4500) pays 490; gross 5500 with 500 coupon (goods 5000) ships free
++
++## 3. Verify
++
++- [x] 3.1 No README update needed (rules unchanged); confirm
++- [x] 3.2 Run `npm test`
+diff --git a/openspec/specs/coupons/spec.md b/openspec/specs/coupons/spec.md
+index 85051c22639da55b15d66e4c4f559efef9b3293c..b1c8ef709e366ff8a004770dac0942345a95adf2 100644
+--- a/openspec/specs/coupons/spec.md
++++ b/openspec/specs/coupons/spec.md
+@@ -35,3 +35,23 @@ A coupon SHALL be valid on every day from its first day to its last day, both in
+ #### Scenario: First day and day before
+ - **WHEN** a coupon is valid from 2026-10-01 and orders are placed on 2026-10-01 and 2026-09-30
+ - **THEN** the first is accepted and the second is refused as not valid yet
++
++### Requirement: Cancelling an order gives back its single-use coupon
++A single-use coupon SHALL be usable again once the order that used it is cancelled, and SHALL stay used while
++that order is not cancelled.
++
++#### Scenario: Cancel then reorder with the same coupon
++- **WHEN** order ORD-0001 is placed on 2026-03-02 with single-use coupon WELCOME and cancelled on 2026-03-02, then a new order is placed on 2026-03-02 with WELCOME
++- **THEN** the new order is accepted with the coupon applied
++
++#### Scenario: Cancelled on day 14
++- **WHEN** an order with a single-use coupon is placed on 2026-03-02 and cancelled on 2026-03-16
++- **THEN** the coupon can be used by a new order
++
++#### Scenario: Coupon still used without cancellation
++- **WHEN** order ORD-0001 used single-use coupon WELCOME and is not cancelled
++- **THEN** another order with WELCOME is refused as already used
++
++#### Scenario: Another customer's cancellation does not free it
++- **WHEN** ORD-0002 (a different order) is cancelled while ORD-0001 holds WELCOME
++- **THEN** WELCOME stays used by ORD-0001
+diff --git a/openspec/specs/shipping/spec.md b/openspec/specs/shipping/spec.md
+index 2a30fab1c4e2c7d97c6bcd35e715e21a3290ab78..5c48a6dad8aa54b568dd0dbb17087056fbafed64 100644
+--- a/openspec/specs/shipping/spec.md
++++ b/openspec/specs/shipping/spec.md
+@@ -19,3 +19,14 @@ Shipping SHALL be free when the goods come to 5000 cents or more after every dis
+ #### Scenario: Above
+ - **WHEN** goods after discounts are 5001 cents
+ - **THEN** shipping is 0 cents
++
++### Requirement: Free-shipping threshold looks at goods after discounts
++The 5000-cent threshold SHALL be compared with the goods amount after every discount, not with the gross amount of the lines.
++
++#### Scenario: Gross €50.00 reduced by a coupon
++- **WHEN** the lines total 5000 cents gross and a coupon takes 500 cents off (goods 4500) and the parcel weighs 500 g
++- **THEN** shipping is 490 cents
++
++#### Scenario: Discounted goods of exactly €50.00
++- **WHEN** the lines total 5500 cents gross and a coupon takes 500 cents off (goods 5000)
++- **THEN** shipping is 0 cents
+diff --git a/src/orders.ts b/src/orders.ts
+index 0c0b1ae889c9df13dffa9de7ed1924a4e8b09afd..e4c175527cc500b240776198678b04a3145894ea 100644
+--- a/src/orders.ts
++++ b/src/orders.ts
+@@ -153,7 +153,7 @@ export class OrderService {
+       throw new OrderStateError(`order ${id} can no longer be cancelled`);
+     }
+     for (const line of order.lines) this.#inventory.release(line.sku, line.quantity, id);
+-    if (order.coupon !== undefined) this.#coupons.giveBack(order.coupon, order.customer);
++    if (order.coupon !== undefined) this.#coupons.giveBack(order.coupon, id);
+     const cancelled: Order = { ...order, status: 'cancelled', cancelledOn: date };
+     this.#orders.set(id, cancelled);
+     return cancelled;
+diff --git a/test/orders.test.ts b/test/orders.test.ts
+index 5f68694173511762e94d47eaa4c52478963a7be0..4cf472a0d02c07eb21ad13818ef1c26f561222ae 100644
+--- a/test/orders.test.ts
++++ b/test/orders.test.ts
+@@ -53,6 +53,28 @@ describe('orders', () => {
+     assert.equal(below.totals.shippingCents, 490);
+   });
+ 
++  it('gives a single-use coupon back when its order is cancelled, up to day 14', () => {
++    const s = shop();
++    s.coupons.add({ code: 'WELCOME', kind: 'percent', value: 10, validFrom: '2026-03-01', validUntil: '2026-03-31', singleUse: true });
++    const first = s.orders.place({ customer: 'c-1', date: '2026-03-02', coupon: 'welcome', lines: [{ sku: 'MUG-01', quantity: 1 }] });
++    assert.throws(() => s.orders.place({ customer: 'c-2', date: '2026-03-02', coupon: 'WELCOME', lines: [{ sku: 'MUG-01', quantity: 1 }] }), /already used/);
++    s.orders.cancel(first.id, '2026-03-16');
++    const again = s.orders.place({ customer: 'c-1', date: '2026-03-16', coupon: 'WELCOME', lines: [{ sku: 'MUG-01', quantity: 1 }] });
++    assert.equal(again.totals.couponDiscountCents, 100);
++  });
++
++  it('looks at goods after discounts for free shipping', () => {
++    const s = shop();
++    s.coupons.add({ code: 'FIVE', kind: 'fixed', value: 500, validFrom: '2026-03-01', validUntil: '2026-03-31' });
++    const under = s.orders.place({ customer: 'c-1', date: '2026-03-02', coupon: 'FIVE', lines: [{ sku: 'MUG-01', quantity: 5 }] });
++    assert.equal(under.totals.grossCents, 5000);
++    assert.equal(under.totals.goodsCents, 4500);
++    assert.equal(under.totals.shippingCents, 890);
++    const exact = s.orders.place({ customer: 'c-1', date: '2026-03-02', coupon: 'FIVE', lines: [{ sku: 'MUG-01', quantity: 5 }, { sku: 'TEA-7', quantity: 1 }] });
++    assert.equal(exact.totals.goodsCents, 5000);
++    assert.equal(exact.totals.shippingCents, 0);
++  });
++
+   it('rounds the VAT of a line half up', () => {
+     const s = shop();
+     s.catalog.add({ sku: 'LB-220', name: 'Lamp', priceCents: 199, vatClass: 'standard', weightGrams: 100 });

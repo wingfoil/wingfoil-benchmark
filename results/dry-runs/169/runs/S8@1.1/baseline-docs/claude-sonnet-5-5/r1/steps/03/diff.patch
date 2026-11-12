@@ -1,0 +1,178 @@
+diff --git a/src/domain/list.ts b/src/domain/list.ts
+index 66e0a6266ceb6920e2da99329b7ed004e376916d..9d90941a372e6d3124f5cb21e45791e7d8b4afda 100644
+--- a/src/domain/list.ts
++++ b/src/domain/list.ts
+@@ -2,6 +2,7 @@ import { err, ok } from './result.ts';
+ import type { Result } from './result.ts';
+ import { addTag, compareTasks, completeTask, createTask, removeTag, renameTask, reopenTask } from './task.ts';
+ import type { NewTask, Priority, Status, Task } from './task.ts';
++import { validateNewTask, validateTag, validateTitle } from './validate.ts';
+ 
+ /** Which tasks to show: by status, priority or tag; every task when nothing is given. */
+ export interface TaskFilter {
+@@ -69,6 +70,8 @@ export function createTaskList(now: Clock): TaskList {
+ 
+   return {
+     add(input) {
++      const valid = validateNewTask(input);
++      if (!valid.ok) return valid;
+       const task = createTask(`task-${nextId}`, input, stamp());
+       if (titled(task.title) !== undefined) return err('duplicate', `there is already a task "${task.title}"`);
+       nextId += 1;
+@@ -79,7 +82,9 @@ export function createTaskList(now: Clock): TaskList {
+     complete: (titleOrId) => change(titleOrId, (task) => completeTask(task, stamp())),
+     reopen: (titleOrId) => change(titleOrId, (task) => reopenTask(task, stamp())),
+     rename(titleOrId, newTitle) {
+-      const target = newTitle.trim();
++      const checked = validateTitle(newTitle);
++      if (!checked.ok) return checked;
++      const target = checked.value;
+       return change(titleOrId, (task) => {
+         const other = titled(target);
+         if (other !== undefined && other.id !== task.id) {
+@@ -88,7 +93,11 @@ export function createTaskList(now: Clock): TaskList {
+         return ok(renameTask(task, target, stamp()));
+       });
+     },
+-    tag: (titleOrId, tag) => change(titleOrId, (task) => ok(addTag(task, tag, stamp()))),
++    tag(titleOrId, tag) {
++      const checked = validateTag(tag);
++      if (!checked.ok) return checked;
++      return change(titleOrId, (task) => ok(addTag(task, tag, stamp())));
++    },
+     untag: (titleOrId, tag) => change(titleOrId, (task) => ok(removeTag(task, tag, stamp()))),
+     remove(titleOrId) {
+       const found = find(titleOrId);
+diff --git a/src/domain/result.ts b/src/domain/result.ts
+index c6ed17a1b929cb19e127e0be01e84aac17b45407..eb56c3bd8c7f9f48ad8ff034d7bdbe0ce00f383c 100644
+--- a/src/domain/result.ts
++++ b/src/domain/result.ts
+@@ -5,7 +5,7 @@ export interface TodoError {
+ }
+ 
+ /** The kinds of failure the task list reports. */
+-export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state';
++export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state' | 'invalid';
+ 
+ /** The outcome of an operation that can fail: its value, or the reason it failed. */
+ export type Result<T, E = TodoError> =
+diff --git a/src/domain/validate.ts b/src/domain/validate.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..9d2f99901544e5272ea4186d951357356acd6996
+--- /dev/null
++++ b/src/domain/validate.ts
+@@ -0,0 +1,63 @@
++import { err, ok } from './result.ts';
++import type { Result } from './result.ts';
++import { PRIORITIES } from './task.ts';
++import type { NewTask } from './task.ts';
++
++/** The longest title a task may have, once trimmed. */
++export const MAX_TITLE_LENGTH = 120;
++
++/**
++ * Checks a title: it must not be empty or only spaces, nor longer than 120 characters once trimmed.
++ *
++ * @param title - the title as typed
++ */
++export function validateTitle(title: unknown): Result<string> {
++  if (typeof title !== 'string') return err('invalid', 'the title must be text');
++  const trimmed = title.trim();
++  if (trimmed === '') return err('invalid', 'the title is empty: give the task a title');
++  if (trimmed.length > MAX_TITLE_LENGTH) {
++    return err('invalid', `the title is ${trimmed.length} characters long; the limit is ${MAX_TITLE_LENGTH}`);
++  }
++  return ok(trimmed);
++}
++
++/**
++ * Checks a priority: it must be `low`, `normal` or `high`.
++ *
++ * @param priority - the priority as given
++ */
++export function validatePriority(priority: unknown): Result<string> {
++  if (typeof priority === 'string' && (PRIORITIES as readonly string[]).includes(priority)) return ok(priority);
++  return err('invalid', `the priority "${String(priority)}" is not one of ${PRIORITIES.join(', ')}`);
++}
++
++/**
++ * Checks a tag: it must not be empty or contain a space.
++ *
++ * @param tag - the tag as given
++ */
++export function validateTag(tag: unknown): Result<string> {
++  if (typeof tag !== 'string') return err('invalid', 'the tag must be text');
++  if (tag === '') return err('invalid', 'the tag is empty: give it a name');
++  if (/\s/.test(tag)) return err('invalid', `the tag "${tag}" contains a space; tags are a single word`);
++  return ok(tag);
++}
++
++/**
++ * Checks everything of a new task: its title, its priority when given, and each of its tags.
++ *
++ * @param input - the new task as typed
++ */
++export function validateNewTask(input: NewTask): Result<NewTask> {
++  const title = validateTitle(input.title);
++  if (!title.ok) return title;
++  if (input.priority !== undefined) {
++    const priority = validatePriority(input.priority);
++    if (!priority.ok) return priority;
++  }
++  for (const tag of input.tags ?? []) {
++    const checked = validateTag(tag);
++    if (!checked.ok) return checked;
++  }
++  return ok(input);
++}
+diff --git a/test/list.test.ts b/test/list.test.ts
+index 0f08609c4420158d8688dc0419e4ea02afb8ebcf..ae0cfe1f92cb09ccf0ba504e5cbcb93b236daddd 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -162,3 +162,46 @@ describe('task list', () => {
+     });
+   });
+ });
++
++describe('input validation', () => {
++  const rejected = (result: { ok: boolean; error?: { code: string; message: string } }): void => {
++    assert.equal(result.ok, false);
++    assert.equal(result.error?.code, 'invalid');
++    assert.notEqual(result.error?.message, '');
++  };
++
++  it('rejects an empty, blank or too long title when adding, and leaves the list alone', () => {
++    const list = createTodoList();
++    rejected(list.add({ title: '' }));
++    rejected(list.add({ title: '   ' }));
++    rejected(list.add({ title: 'x'.repeat(121) }));
++    assert.equal(list.list().length, 0);
++    assert.equal(list.add({ title: 'x'.repeat(120) }).ok, true);
++  });
++
++  it('rejects an unknown priority and a bad tag when adding', () => {
++    const list = createTodoList();
++    rejected(list.add({ title: 'A', priority: 'urgent' as 'high' }));
++    rejected(list.add({ title: 'A', tags: ['ok', ''] }));
++    rejected(list.add({ title: 'A', tags: ['two words'] }));
++    assert.equal(list.list().length, 0);
++    assert.equal(valueOf(list.add({ title: 'A', priority: 'low', tags: ['home'] })).id, 'task-1');
++  });
++
++  it('rejects a bad new title when renaming, and keeps the task as it was', () => {
++    const list = createTodoList();
++    list.add({ title: 'Old' });
++    rejected(list.rename('Old', ' '));
++    rejected(list.rename('Old', 'y'.repeat(121)));
++    assert.equal(valueOf(list.find('Old')).title, 'Old');
++  });
++
++  it('rejects a bad tag when tagging, and keeps the task as it was', () => {
++    const list = createTodoList();
++    list.add({ title: 'Task' });
++    rejected(list.tag('Task', ''));
++    rejected(list.tag('Task', 'a b'));
++    assert.deepEqual(valueOf(list.find('Task')).tags, []);
++    assert.deepEqual(valueOf(list.tag('Task', 'home')).tags, ['home']);
++  });
++});

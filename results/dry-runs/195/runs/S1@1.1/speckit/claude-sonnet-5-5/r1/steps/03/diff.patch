@@ -1,0 +1,67 @@
+diff --git a/specs/002-json-patch/spec.md b/specs/002-json-patch/spec.md
+index c44d8429795114e9ec5025985eade7ea97c0f733..98e15e4d9fdfe7d295dc06f9f7585305326df000 100644
+--- a/specs/002-json-patch/spec.md
++++ b/specs/002-json-patch/spec.md
+@@ -44,3 +44,6 @@ A service developer passes a JSON document and a patch (array of operations) and
+ ## Success Criteria
+ - All RFC 6902 appendix A examples (A.1–A.16) give the specified outcome (success result or error).
+ - Every invalid or failing case above throws, and inputs are unchanged afterward.
++
++## Amendment: non-JSON values
++- A `value` (add/replace/test) that is not a JSON value (undefined, function, NaN/Infinity, BigInt, non-plain object, sparse array, or containing such) makes the patch invalid and throws.
+diff --git a/src/index.ts b/src/index.ts
+index e2b2007a14886fdc64a1900541c350fe32a4dafb..b469df55b91853cb4e9206b976ce8402a252ed4b 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -60,6 +60,25 @@ function clone(value: Json): Json {
+   return value;
+ }
+ 
++/** Throws unless `value` is a JSON value (RFC 8259): no undefined, functions, NaN/Infinity, etc. */
++function assertJson(value: Json, op: string): void {
++  const ok = (v: Json): boolean => {
++    if (v === null || typeof v === "string" || typeof v === "boolean") return true;
++    if (typeof v === "number") return Number.isFinite(v);
++    if (Array.isArray(v)) {
++      for (let i = 0; i < v.length; i++) if (!(i in v) || !ok(v[i])) return false;
++      return true;
++    }
++    if (typeof v === "object") {
++      const proto = Object.getPrototypeOf(v);
++      return (proto === Object.prototype || proto === null) &&
++        Object.keys(v).every((k) => ok((v as Record<string, Json>)[k]));
++    }
++    return false;
++  };
++  if (!ok(value)) throw new TypeError(`JSON Patch "${op}" needs a JSON "value"`);
++}
++
+ function jsonEqual(a: Json, b: Json): boolean {
+   if (Array.isArray(a)) {
+     return Array.isArray(b) && a.length === b.length && a.every((v, i) => jsonEqual(v, b[i]));
+@@ -156,9 +175,7 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+     if (needsValue && !hasOwn(operation, "value")) {
+       throw new TypeError(`JSON Patch "${op}" needs a "value"`);
+     }
+-    if (needsValue && operation.value === undefined) {
+-      throw new TypeError(`JSON Patch "${op}" needs a JSON "value"`);
+-    }
++    if (needsValue) assertJson(operation.value, op);
+     if (needsFrom && typeof from !== "string") {
+       throw new TypeError(`JSON Patch "${op}" needs a string "from"`);
+     }
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 101a6779ec56743671d97a6d6f0472e9c7c2b010..adeac299ff875da130d7171f574d0b4cb5f7c574 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -136,3 +136,10 @@ test("prototype-ish names are ordinary members", () => {
+   assert.deepEqual(out2.q, { p: 1 });
+   assert.equal(Object.getPrototypeOf(out2), Object.prototype);
+ });
++
++test("non-JSON values are rejected", () => {
++  for (const value of [undefined, NaN, Infinity, () => 1, { x: undefined }, [undefined], new Date(), [, 1]]) {
++    bad({ a: 1 }, [{ op: "add", path: "/b", value }]);
++    bad({ a: 1 }, [{ op: "test", path: "/a", value }]);
++  }
++});

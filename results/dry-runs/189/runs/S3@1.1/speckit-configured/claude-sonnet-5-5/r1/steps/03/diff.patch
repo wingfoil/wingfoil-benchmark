@@ -1,0 +1,136 @@
+diff --git a/README.md b/README.md
+index 40d5181e5b61f17690d0c1b6586ba363fcfba930..295bbc29241c1821f5b0be7d54d0912254d402ac 100644
+--- a/README.md
++++ b/README.md
+@@ -8,6 +8,7 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ 
+ `createRentalService()` (exported from `src/index.ts`) returns an in-memory service with
+ `addEquipment({ id, kind, dailyPrice })`, `quote({ itemId, start, end })` and `book({ itemId, start, end })`, plus `availability({ start, end, kind? })`, which returns the sorted ids of the equipment (of that kind, or of any kind) free for the whole period.
++A rental of 3 days or more costs 10% less than full price (rounded to the cent), in quotes and bookings.
+ Money is integer euro cents, times are ISO-8601 UTC strings at midnight (`2027-06-01T00:00:00Z`), and `end` is
+ the start of the day after the last rental day. The same item cannot be booked for overlapping periods.
+ Cancellation is not implemented yet. Run the tests with `npm test` (Node 22.18 or later runs the TypeScript tests directly).
+diff --git a/specs/003-long-rental-discount/plan.md b/specs/003-long-rental-discount/plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..182dc123f34d139840bb91172c620dd291964f36
+--- /dev/null
++++ b/specs/003-long-rental-discount/plan.md
+@@ -0,0 +1,3 @@
++# Plan: Long-Rental Discount
++Constitution check: no dependencies, strict TS, tests with node:test, rule named once in `src/rental.ts` (`rentalTotal`), minimal change.
++Design: add constants and a pure `rentalTotal(days, dailyPrice)` used by `price()`, which feeds both `quote` and `book`. Update README line.
+diff --git a/specs/003-long-rental-discount/spec.md b/specs/003-long-rental-discount/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6988fe9d689c052686a3380d5fc8cd85a70f4e59
+--- /dev/null
++++ b/specs/003-long-rental-discount/spec.md
+@@ -0,0 +1,21 @@
++# Feature Specification: Long-Rental Discount
++
++**Feature Branch**: `003-long-rental-discount`
++**Created**: 2026-11-11
++**Input**: "A rental of 3 days or more now costs 10% less than its full price. Quotes and bookings both show the reduced total."
++
++## Requirements
++
++- **FR-001**: A period of 3 or more days costs 90% of days x dailyPrice; shorter periods cost the full price.
++- **FR-002**: `quote` and `book` both return the reduced total (one shared pricing rule).
++- **FR-003**: Totals stay integer euro cents.
++
++## Assumptions (open question settled by default; no one to ask in this session)
++
++- Rounding: the 10%-off total is rounded to the nearest cent, halves up (`Math.round(full * 9 / 10)`).
++- The discount applies to the whole rental, not only the days beyond the third.
++- The threshold counts rental days (end - start), as for the full price.
++
++## Success Criteria
++
++- 2 days: full price; 3 days: 90%; 7 days: 90%; quote total equals booking total.
+diff --git a/specs/003-long-rental-discount/tasks.md b/specs/003-long-rental-discount/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..37ffb4cd31de36cf316e12abfc01029d2148ead6
+--- /dev/null
++++ b/specs/003-long-rental-discount/tasks.md
+@@ -0,0 +1,4 @@
++# Tasks
++- [x] T001 Add `rentalTotal` rule in src/rental.ts and use it in `price()`
++- [x] T002 Tests in test/rental.test.ts (2 vs 3 days, rounding, quote == book)
++- [x] T003 README mention
+diff --git a/src/rental.ts b/src/rental.ts
+index 57f3c17fae294b1a40d31417884cdd87e94325d6..e5fad4886daf99d64d4990f56e850e3610eabb15 100644
+--- a/src/rental.ts
++++ b/src/rental.ts
+@@ -69,6 +69,14 @@ function overlaps(a: { start: number; end: number }, b: { start: number; end: nu
+   return a.start < b.end && b.start < a.end;
+ }
+ 
++const LONG_RENTAL_DAYS = 3;
++
++/** Rule 5: a rental of 3 days or more costs 10% less than full price, rounded to the nearest cent. */
++function rentalTotal(days: number, dailyPrice: number): number {
++  const full = days * dailyPrice;
++  return days >= LONG_RENTAL_DAYS ? Math.round((full * 9) / 10) : full;
++}
++
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+   const bookings: Array<Booking & { startMs: number; endMs: number }> = [];
+@@ -79,7 +87,7 @@ export function createRentalService(): RentalService {
+       throw new Error(`Unknown item: ${String(request.itemId)}`);
+     }
+     const period = parsePeriod(request);
+-    return { period, total: period.days * item.dailyPrice };
++    return { period, total: rentalTotal(period.days, item.dailyPrice) };
+   }
+ 
+   return {
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 095ae7dfbe18dca6121e7335823a1914b09af2a7..bb7da5a0fb48213179d96279de4bc209037dc0ba 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -20,10 +20,10 @@ test('addEquipment refuses invalid items', () => {
+   assert.throws(() => s.addEquipment({ id: 'x', kind: 'board', dailyPrice: -1 }));
+ });
+ 
+-test('quote is days times daily price, in cents', () => {
++test('quote is days times daily price, in cents, 10% off from 3 days', () => {
+   const s = desk();
+   assert.deepEqual(s.quote({ itemId: 'b1', start: D(1), end: D(4) }), {
+-    itemId: 'b1', start: D(1), end: D(4), total: 7500,
++    itemId: 'b1', start: D(1), end: D(4), total: 6750,
+   });
+   assert.equal(s.quote({ itemId: 'b1', start: D(1), end: D(2) }).total, 2500);
+ });
+@@ -56,8 +56,8 @@ test('book returns a booking with a unique id and the total', () => {
+   const s = desk();
+   const a = s.book({ itemId: 'b1', start: D(1), end: D(4) });
+   const b = s.book({ itemId: 's1', start: D(1), end: D(4) });
+-  assert.equal(a.total, 7500);
+-  assert.deepEqual({ ...a, id: '' }, { id: '', itemId: 'b1', start: D(1), end: D(4), total: 7500 });
++  assert.equal(a.total, 6750);
++  assert.deepEqual({ ...a, id: '' }, { id: '', itemId: 'b1', start: D(1), end: D(4), total: 6750 });
+   assert.notEqual(a.id, b.id);
+ });
+ 
+@@ -75,7 +75,7 @@ test('back-to-back bookings and other items are fine; quote ignores bookings', (
+   s.book({ itemId: 'b1', start: D(8), end: D(9) });
+   s.book({ itemId: 'b1', start: D(3), end: D(5) });
+   s.book({ itemId: 's1', start: D(5), end: D(8) });
+-  assert.equal(s.quote({ itemId: 'b1', start: D(5), end: D(8) }).total, 7500);
++  assert.equal(s.quote({ itemId: 'b1', start: D(5), end: D(8) }).total, 6750);
+ });
+ 
+ test('services are independent', () => {
+@@ -120,3 +120,12 @@ test('availability is empty without matching equipment, and refuses bad queries'
+   assert.deepEqual(s.availability({ start: D(1), end: D(2), kind: 'board' }), []);
+   assert.equal(s.availability({ start: D(1), end: D(2) }) === s.availability({ start: D(1), end: D(2) }), false);
+ });
++
++test('long-rental discount: 10% off from 3 days, rounded to the cent, same for quote and book', () => {
++  const s = createRentalService();
++  s.addEquipment({ id: 'x', kind: 'board', dailyPrice: 1001 });
++  assert.equal(s.quote({ itemId: 'x', start: D(1), end: D(3) }).total, 2002);
++  assert.equal(s.quote({ itemId: 'x', start: D(1), end: D(4) }).total, 2703); // 3003 * 0.9 = 2702.7
++  assert.equal(s.quote({ itemId: 'x', start: D(1), end: D(8) }).total, 6306); // 7007 * 0.9 = 6306.3
++  assert.equal(s.book({ itemId: 'x', start: D(1), end: D(4) }).total, 2703);
++});
