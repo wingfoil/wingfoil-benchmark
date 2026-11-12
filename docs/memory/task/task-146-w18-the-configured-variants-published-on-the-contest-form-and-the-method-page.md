@@ -146,3 +146,16 @@ and tests only; nothing spent.
   Nits: no agent header when no configuration was found; the profile's effort shown; the form's later fields cover
   a configuration; "leak-scanned" without "as the seed is"; "The 1.1 versions hold configurations"; S8's rules
   sentence per tool.
+- **Round 2** (a second independent agent, on round 1's fixes): nothing blocking. Addressed:
+  1. The unrendered files were computed over the configuration alone, while the docs control renders it over the
+     setup's workspace: a configuration editing a directive the scenario's roles load, or rebinding roles, was listed.
+     Now rendered over the scenario's own configuration for the harness arm (what the setup copies, limited to the
+     generator's places), a removed file falling back to the base's; what the tool's init writes is not known to the
+     site, and the method page says so. The twelve 1.1 configurations: still none unrendered, the block built from
+     the compiled code by a scratchpad script (`unrendered-146b.mjs`, twelve configurations, twelve patch pages).
+  2–4. The method page: Spec Kit's boundaries on S1 to S3 only; the patch against the project as the setup leaves it;
+     `bench scenario configure` scans what the session wrote.
+  5. Tests pinning the docs control's options (every-role, from the tree and as the runs recorded it), the base's
+     roles, and a generator that cannot render a configuration (now a refusal naming it, not an exception), each
+     checked by mutation. `methodPages` passing the setup pages' arms to the block stays pinned only by the code.
+  Nits: no docs control is said as such; the leak scan's summary narrowed.

@@ -73,22 +73,24 @@ A configuration is written once per scenario version and harness by a configurin
 the same model and the same prompt for every harness. It works in the project as the harness arm's setup leaves it (the
 seed, the installed tool, the scenario's rules), without the arm's operating manual or MCP server, and never sees a
 step's prompt, the oracle's hidden tests or the hold-out. It may change only the tool's configuration places, which each
-harness arm declares with the documentation they come from; a session that touches anything else is refused, and the
-session that wrote a configuration checks it for leaks. The configuration is then scenario content: pinned by the
-version's hash, leak-scanned (no expected value, no hidden test's name, no line of a step's prompt), and never rewritten
-once the version has run; a correction is a new scenario version. Its sessions' cost counts once in the configured arm's
-setup cost (M-K3). {#configuring-agent}
+harness arm declares with the documentation they come from; a session that touches anything else is refused, and `bench
+scenario configure` scans what the session wrote for leaks. The configuration is then scenario content: pinned by the
+version's hash, leak-scanned (no expected value or hidden test's name in its files, no line of its documents in a step's
+prompt), and never rewritten once the version has run; a correction is a new scenario version. Its sessions' cost counts
+once in the configured arm's setup cost (M-K3). {#configuring-agent}
 
 What the 1.1 configurations change from each tool's defaults, in short. WingFoil's init leaves a project description
 with nothing of the project in it: every session filled it (language, runtime, structure, how it is built and tested),
-wrote one or two directives from the README's rules and conventions, and assigned them to roles. Spec Kit's init
-leaves a constitution of placeholders: every session wrote one for the project, the README's rules as principles, with
-the test command and the boundaries to test. OpenSpec's init leaves a project configuration with commented examples:
-every session wrote its context (the project, its rules, its commands) and rules per artifact. On S8, whose rules
-every arm already gets (WingFoil's as the scenario's configuration, Spec Kit's and OpenSpec's written by the setup),
-every configuration keeps them verbatim. Each configuration's files, and its session's patch
-against the project as the tool's init left it, are listed below for the versions this execution ran.
-{#configured-defaults}
+wrote one or two directives from the README's rules and conventions, and assigned them to roles. Spec Kit's init leaves
+a constitution of placeholders: every session wrote one for the project, the README's rules as principles, with the test
+command and, on S1 to S3, the edge cases or boundaries to test. OpenSpec's init leaves a project configuration with
+commented examples: every session wrote its context (the project, its rules, its commands) and rules per artifact. On
+S8, whose rules every arm already gets (WingFoil's as the scenario's configuration, Spec Kit's and OpenSpec's written by
+the setup), every configuration keeps them verbatim. Each configuration's files, and its session's patch against the
+project as the harness arm's setup leaves it, are listed below for the versions this execution ran. The files a docs
+control does not render are found by rendering it with and without each file, over the scenario's own configuration for
+the harness; what the tool's init writes is not part of that rendering, so a file that acts only together with an init
+default may be misjudged. {#configured-defaults}
 
 Two properties come with a configured arm; they are part of what it measures, not leaks. It carries what its
 configuring agent knows of the domain beyond the seed: S1's three configurations name JSON standards by number that

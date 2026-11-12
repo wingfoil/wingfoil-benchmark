@@ -1,14 +1,14 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { parse } from 'yaml';
 
-import { fail, ok } from '../core/index.js';
+import { fail, ok, reasonOf } from '../core/index.js';
 import type { Arm, HistoryPort, Issue, Result } from '../core/index.js';
 
 import { docsGeneratorOf, loadArm } from '../arms/index.js';
 import type { RenderOptions } from '../arms/index.js';
-import { CONFIGURING_PROFILE, CONFIGURING_PROMPT, loadScenario } from '../scenario/index.js';
+import { CONFIGURING_PROFILE, CONFIGURING_PROMPT, loadScenario, relativeFiles } from '../scenario/index.js';
 
 import { recordedFile } from './recorded.js';
 import { escapeHtml, materialPage } from './render.js';
@@ -46,20 +46,42 @@ function optionsOf(control: Arm): RenderOptions {
 
 /**
  * The configuration's files its docs control does not render (REQ-RUN-11 as amended in 1.50): those whose removal
- * leaves the generator's output unchanged, the configuration rendered alone with the control's options. A file under a
- * place the generator keeps but never reads (an OpenSpec schema, a directive no role loads) is one.
+ * leaves the generator's output unchanged. The output is rendered as the docs control's step composes it, over what the
+ * scenario's own configuration for the harness arm puts in the generator's places (`base`), with the control's options;
+ * removing a file leaves the base's version of it. A file under a place the generator keeps but never reads (an
+ * OpenSpec schema, a directive no role loads) is one. What the tool's init writes is not known here: a file that acts
+ * only together with an init default can be misjudged, which the page says.
  */
 function notRendered(
   dir: string,
   files: readonly { readonly path: string }[],
+  base: ReadonlyMap<string, string>,
   render: (files: ReadonlyMap<string, string>, options?: RenderOptions) => string,
   options: RenderOptions,
 ): string[] {
-  const all = new Map(files.map((file) => [file.path, readFileSync(join(dir, file.path), 'utf8')]));
-  const whole = render(all, options);
+  const own = new Map(files.map((file) => [file.path, readFileSync(join(dir, file.path), 'utf8')]));
+  const whole = render(new Map([...base, ...own]), options);
   return files
     .map((file) => file.path)
-    .filter((path) => render(new Map([...all].filter(([other]) => other !== path)), options) === whole);
+    .filter((path) => {
+      const without = new Map([...base, ...[...own].filter(([other]) => other !== path)]);
+      return render(without, options) === whole;
+    });
+}
+
+/** The scenario's own configuration for harness arm `arm` under the generator's `kept` places, by workspace path. */
+function baseFiles(
+  armDirs: Readonly<Record<string, string>>,
+  arm: string,
+  kept: readonly string[],
+): Map<string, string> {
+  const dir = armDirs[arm];
+  if (dir === undefined || !existsSync(dir)) return new Map();
+  return new Map(
+    relativeFiles(dir)
+      .filter((path) => kept.some((place) => path === place || path.startsWith(`${place}/`)))
+      .map((path) => [path, readFileSync(join(dir, path), 'utf8')]),
+  );
 }
 
 /** The configured arm whose configuration `arm` reads: itself, or the one a configured docs control is generated from. */
@@ -176,9 +198,19 @@ export async function configuringSection(
     const docs = docsGeneratorOf(harness.value.requires);
     const files = record.files ?? [];
     const control = docsControlOf(configured);
-    if (!control.ok) return control;
-    const unrendered =
-      docs === undefined ? undefined : notRendered(configuration.dir, files, docs.render, control.value);
+    let unrendered: string[] | undefined;
+    if (docs !== undefined && control !== undefined) {
+      try {
+        const base = baseFiles(scenario.value.armDirs, harness.value.configuredOf ?? configured, docs.kept);
+        unrendered = notRendered(configuration.dir, files, base, docs.render, control);
+      } catch (error) {
+        issues.push({
+          path: `scenarios/${id}/${version}/arms/${configured}`,
+          message: `its docs control's generator cannot render it: ${reasonOf(error)}`,
+        });
+        continue;
+      }
+    }
     const cost = records.reduce((sum, entry) => sum + entry.cost_eur, 0);
     const page = `configuration-${ref}-${configured}.html`;
     const patch = readFileSync(configuration.patchPath, 'utf8');
@@ -207,9 +239,13 @@ export async function configuringSection(
         ) +
         row(
           'Not rendered by its docs control',
-          unrendered === undefined
+          docs === undefined
             ? 'its harness has no docs generator'
-            : unrendered.map((path) => `<code>${e(path)}</code>`).join(', ') || 'none',
+            : control === undefined
+              ? 'no docs control of it in the repository'
+              : unrendered === undefined
+                ? 'not computed'
+                : unrendered.map((path) => `<code>${e(path)}</code>`).join(', ') || 'none',
         ) +
         row(
           'Configuration places',
@@ -246,13 +282,13 @@ export async function configuringSection(
   return ok({ html: head + configurations.join('\n'), material });
 
   /** The docs control generated from `configured` (its `docs_of`), as it ran when it did: its render options. */
-  function docsControlOf(configured: string): Result<RenderOptions> {
+  function docsControlOf(configured: string): RenderOptions | undefined {
     const ranControl = [...asRan.values()].find((arm) => arm.docsOf === configured);
-    if (ranControl !== undefined) return ok(optionsOf(ranControl));
+    if (ranControl !== undefined) return optionsOf(ranControl);
     for (const name of readdirSync(join(root, 'arms')).sort()) {
       const arm = loadArm(join(root, 'arms'), name);
-      if (arm.ok && arm.value.docsOf === configured) return ok(optionsOf(arm.value));
+      if (arm.ok && arm.value.docsOf === configured) return optionsOf(arm.value);
     }
-    return ok({});
+    return undefined;
   }
 }

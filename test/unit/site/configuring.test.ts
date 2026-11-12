@@ -98,7 +98,7 @@ describe("the method page's configuring block (task-146, REQ-RES-02 as amended i
 
   it('refuses a prompt its records name that no commit holds', async () => {
     const { root } = configuredRepo(
-      ['speckit-configured'],
+      ['speckit-configured', 'speckit-docs-configured'],
       ['S1@1.1'],
       [
         {
@@ -146,7 +146,7 @@ describe("the configuring block's details (task-146, review round 1)", () => {
 
   it("states the profile's model, effort and caps, and escapes the prompt", async () => {
     const { root } = configuredRepo(
-      ['speckit-configured'],
+      ['speckit-configured', 'speckit-docs-configured'],
       ['S1@1.1'],
       [
         {
@@ -236,7 +236,7 @@ describe("the configuring block's details (task-146, review round 1)", () => {
 
   it('lists a constitution speckit-docs cannot read as not rendered: one with no principle heading', async () => {
     const { root } = configuredRepo(
-      ['speckit-configured'],
+      ['speckit-configured', 'speckit-docs-configured'],
       ['S1@1.1'],
       [
         {
@@ -258,7 +258,7 @@ describe("the configuring block's details (task-146, review round 1)", () => {
   it('lists a file under a place the docs generator keeps but never reads as not rendered', async () => {
     const schema = 'openspec/schemas/orders/schema.yaml';
     const { root } = configuredRepo(
-      ['openspec-configured'],
+      ['openspec-configured', 'openspec-docs-configured'],
       ['S1@1.1'],
       [
         {
@@ -294,5 +294,71 @@ describe("the configuring block's details (task-146, review round 1)", () => {
     expect(section.value.html).not.toContain('The configuring agent');
     expect(section.value.html).toContain('S1@1.1 holds no configuration of speckit-configured.');
     expect(FIXTURE_PROFILE).toContain('claude-code');
+  });
+});
+
+describe("the configuring block's unrendered files, as the docs control composes them (task-146, review round 2)", () => {
+  const RULE = '.wingfoil/directives/custom/r9.md';
+  const ROLES = '.wingfoil/roles.yaml';
+  const wingfoil = (files: Readonly<Record<string, string>>) =>
+    configuredRepo(
+      ['wingfoil-configured', 'baseline-docs-configured'],
+      ['S1@1.1'],
+      [{ scenario: 'S1@1.1', arm: 'wingfoil-configured', files }],
+    ).root;
+  const ran = [{ scenario: 'S1', version: '1.1', arm: 'wingfoil-configured' }];
+  const unrendered = (html: string) =>
+    /Not rendered by its docs control<\/th><td>(.*?)<\/td>/.exec(html)?.[1];
+
+  it("renders a configuration over the scenario's own configuration: an edited directive the base's roles load", async () => {
+    // The fixture's base configuration assigns r1 to developer; the configuration edits r1 only
+    const root = wingfoil({
+      '.wingfoil/directives/custom/r1.md': '# Rule r1\n\nKeep functions under ten lines.\n',
+    });
+
+    const section = await configuringSection(root, ran, history);
+
+    if (!section.ok) throw new Error(JSON.stringify(section.issues));
+    expect(unrendered(section.value.html)).toBe('none');
+  });
+
+  it("renders with the docs control's options: every role's directives for baseline-docs-configured", async () => {
+    const files = {
+      [RULE]: '# Rule r9\n\nReview every public name.\n',
+      [ROLES]: 'assignments:\n  developer:\n    - r1\n  reviewer:\n    - r9\n',
+    };
+    const root = wingfoil(files);
+
+    // The repository's baseline-docs-configured renders every role's: r9 is rendered
+    const tree = await configuringSection(root, ran, history);
+    if (!tree.ok) throw new Error(JSON.stringify(tree.issues));
+    expect(unrendered(tree.value.html)).toBe('none');
+
+    // As its runs recorded it, a control rendering the developer's only: r9 is not, and neither is the roles file, whose
+    // developer assignment is the base's
+    const control = loadArm(join(root, 'arms'), 'baseline-docs-configured');
+    if (!control.ok) throw new Error(JSON.stringify(control.issues));
+    const { docsDirectives: _everyRole, ...developerOnly } = control.value;
+    const asRan = await configuringSection(
+      root,
+      ran,
+      history,
+      new Map([['baseline-docs-configured', developerOnly]]),
+    );
+    if (!asRan.ok) throw new Error(JSON.stringify(asRan.issues));
+    expect(unrendered(asRan.value.html)).toBe(`<code>${RULE}</code>, <code>${ROLES}</code>`);
+  });
+
+  it("refuses a configuration its docs control's generator cannot render, naming it", async () => {
+    const root = wingfoil({ '.wingfoil/dna.yaml': 'project: [unclosed\n' });
+
+    const section = await configuringSection(root, ran, history);
+
+    expect(section.ok ? [] : section.issues).toEqual([
+      {
+        path: 'scenarios/S1/1.1/arms/wingfoil-configured',
+        message: expect.stringMatching(/^its docs control's generator cannot render it: /),
+      },
+    ]);
   });
 });
