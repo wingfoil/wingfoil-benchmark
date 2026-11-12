@@ -149,10 +149,12 @@ end. The 1.1 versions' steps are those of 1.0 with a corrected oracle, so the st
 6. **The ledger** (criterion 4): `scripts/ledger-lines.mjs`, with its unit test, generated task-143's twelve
    configuring lines and the 53 dry-run lines, every cell from the stored records: a dry run's date is its first
    step's first transcript timestamp (UTC), and a dry run a later one replaced says so. Every secret scan clean.
-   The review (round 1) found the first version dated by file times, which a clone does not keep, and `160`'s note
-   added by hand: both fixed, the lines regenerated.
-7. **The results** are committed on this branch, as task-119's; the main checkout's untracked copies and its copy of
-   the profile go at the merge, after a byte comparison.
+   The review (round 1) found the first version dated by file times and `160`'s note added by hand: both fixed, the
+   lines regenerated. No committed file of a dry run holds its date, and transcripts are git-ignored (round 2): the
+   dates come from the main checkout's transcripts, which the release's transcript pack carries; a clone without
+   them prints "unknown date".
+7. **The results** are committed on this branch, as task-119's; at the merge, the main checkout's untracked copies of
+   the committed files and of the profile go, after a byte comparison, and its git-ignored transcripts stay.
 8. **No other defect** (criterion 5): every configured harness arm's setup holds each file its configuring agent wrote
    and every configured docs control's `PROJECT_RULES.md` renders its configuration; the interventions outside wingfoil
    are questions and approvals that policy v5 answers.

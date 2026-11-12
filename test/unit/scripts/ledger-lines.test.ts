@@ -94,6 +94,27 @@ describe('scripts/ledger-lines.mjs (task-144)', () => {
     );
   });
 
+  it('says "unknown date" for a dry run whose transcript is not there, as in a clone', () => {
+    const root = tempDir('bench-ledger-lines-');
+    const dir = join(
+      root,
+      'results',
+      'dry-runs',
+      '5',
+      'runs',
+      'S1@1.1',
+      'baseline',
+      'claude-sonnet-5-5',
+      'r1',
+    );
+    mkdirSync(dir, { recursive: true });
+    const body = { agent: AGENT, model: 'claude-sonnet-5-5', effort: 'medium', outcome: 'completed' };
+    writeFileSync(join(dir, 'run.json'), JSON.stringify({ ...body, steps: [], interventions: [] }));
+    const result = run(['dry-runs', root, ...COMMON]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/^\| unknown date \| E \| dry run of S1@1\.1, baseline arm /);
+  });
+
   it('refuses a call without its kind, root, element, consent or ceiling', () => {
     expect(run(['dry-runs']).status).toBe(2);
     expect(run(['dry-runs', '.', '--element', 'E', '--consent', 'C']).status).toBe(2);

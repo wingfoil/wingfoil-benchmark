@@ -110,6 +110,18 @@ describe('scripts/dry-run-reading.mjs (task-144)', () => {
     );
   });
 
+  it('reads the model --model names instead of the profile default', () => {
+    const root = tempDir('bench-dry-run-reading-');
+    writeFileSync(join(root, 'profile.yaml'), PROFILE);
+    dryRun(root, 1, 'S2@1.1', 'baseline');
+    dryRun(root, 2, 'S2@1.1', 'baseline', { model: 'claude-haiku-5-5' }, 'claude-haiku-5-5');
+    const result = run([root, '--profile', 'profile.yaml', '--ceiling', '10', '--model', 'claude-haiku-5-5']);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('| S2@1.1 | baseline | `2` | completed |');
+    expect(result.stdout).not.toContain('`1`');
+    expect(result.stdout).toContain('Dry runs: 1, 1 measured');
+  });
+
   it('refuses a call without its root, profile or ceiling', () => {
     expect(run([]).status).toBe(2);
     expect(run(['.', '--profile', 'p.yaml']).status).toBe(2);

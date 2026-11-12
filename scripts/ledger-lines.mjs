@@ -9,8 +9,9 @@
 //   --after       dry runs only: the dry runs numbered above <n> (default 0)
 //   --token-file  the credential file the secret scan looks for (`grep -rlF`, the value never read here); without it,
 //                 each line says the scan was not run
-// A dry run's date is the first timestamp of its first step's transcript (UTC); a dry run that a later one of the same
-// version, arm and model replaced says so.
+// A dry run's date is the first timestamp of its first step's transcript (UTC): transcripts are git-ignored, kept in
+// the checkout that ran the dry runs and packed with the release (`bench transcripts pack`), so a clone without them
+// prints "unknown date". A dry run that a later one of the same version, arm and model replaced says so.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -115,13 +116,14 @@ if (kind === 'configuring') {
           const usd = run.steps.reduce((sum, step) => sum + (step.usage?.costUsd ?? 0), 0);
           const eur = run.steps.reduce((sum, step) => sum + (step.usage?.costEur ?? 0), 0);
           const interventions = Array.isArray(run.interventions) ? run.interventions.length : 0;
-          const date = firstTimestamp(join(root, dir, 'steps', '01', 'transcript.jsonl')) ?? 'unknown date';
+          const timestamp = firstTimestamp(join(root, dir, 'steps', '01', 'transcript.jsonl'));
+          const date = timestamp ?? 'unknown date';
           rows.push({
             date,
             n: Number(n),
             key: `${scenario} ${arm} ${model}`,
             cells: [
-              date.slice(0, 10),
+              timestamp === undefined ? date : timestamp.slice(0, 10),
               options.element,
               `dry run of ${scenario}, ${arm} arm (\`dry-runs/${n}\`, ${count(run.steps.length, 'step')}, ` +
                 `${count(interventions, 'intervention')}; ${run.outcome}`,
