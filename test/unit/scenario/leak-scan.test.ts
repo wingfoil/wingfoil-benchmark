@@ -8,6 +8,7 @@ import {
   loadLeakScanDeclarations,
   loadScenario,
   oracleLiterals,
+  scanConfiguration,
   scanScenario,
 } from '../../../src/scenario/index.js';
 import { writeConfiguration } from '../../support/configured-fixture.js';
@@ -344,5 +345,63 @@ describe('scanScenario: configurations (REQ-FMT-08 as amended in 1.50, task-140)
     });
 
     expect(scanScenario(scenario, DECLARATIONS)).toEqual([]);
+  });
+});
+
+describe("scanConfiguration: the configured arm's findings only (bug-049, task-145)", () => {
+  const RULE = '.wingfoil/directives/custom/r9.md';
+  const LEAK = '# Rule\n\nA test checks it: marks a pending order as cancelled.\n';
+
+  it('names the configuration file holding an oracle literal, as scanScenario does', () => {
+    expect(scanConfiguration(t3Configured({ [RULE]: LEAK }), DECLARATIONS, 'wingfoil-configured')).toEqual([
+      {
+        path: 'arms.wingfoil-configured',
+        message: `${RULE} holds a literal of oracle/public/cancel.test.ts`,
+      },
+    ]);
+  });
+
+  it('names the hold-out file whose literal the configuration holds, when a hold-out is set', () => {
+    const holdout = tempDir('bench-holdout-');
+    writeFileSync(join(holdout, 'extra.test.ts'), "it('a hidden expectation here', () => {});\n");
+
+    const issues = scanConfiguration(
+      t3Configured({ [RULE]: '# Rule\n\nMind a hidden expectation here.\n' }),
+      DECLARATIONS,
+      'wingfoil-configured',
+      { dir: holdout, files: ['extra.test.ts'] },
+    );
+
+    expect(issues).toEqual([
+      {
+        path: 'arms.wingfoil-configured',
+        message: `${RULE} holds a literal of the hold-out file extra.test.ts`,
+      },
+    ]);
+  });
+
+  it('names the step whose prompt repeats a line of the configuration', () => {
+    const scenario = t3Configured(
+      { [RULE]: '# Rule\n\nEvery shipped order keeps its tracking code.\n' },
+      (dir) => writeFileSync(join(dir, 'prompts', '02.md'), 'Every shipped order keeps its tracking code.\n'),
+    );
+
+    expect(scanConfiguration(scenario, DECLARATIONS, 'wingfoil-configured')).toEqual([
+      { path: 'steps[1].prompt_file', message: `repeats a line of arms/wingfoil-configured/${RULE}` },
+    ]);
+  });
+
+  it("leaves out another configuration's findings and the version's own", () => {
+    const scenario = t3Configured({ [RULE]: '# Rule\n\nKeep every order state named.\n' }, (dir) => {
+      writeConfiguration(dir, 'speckit-configured', { '.specify/memory/constitution.md': LEAK });
+      writeFileSync(join(dir, 'prompts', '02.md'), 'Ask WingFoil for the next step.\n');
+    });
+    // scanScenario finds both: the other configuration's literal and the prompt's harness name
+    expect(scanScenario(scenario, DECLARATIONS).map((issue) => issue.path)).toEqual([
+      'steps[1].prompt_file',
+      'arms.speckit-configured',
+    ]);
+
+    expect(scanConfiguration(scenario, DECLARATIONS, 'wingfoil-configured')).toEqual([]);
   });
 });
