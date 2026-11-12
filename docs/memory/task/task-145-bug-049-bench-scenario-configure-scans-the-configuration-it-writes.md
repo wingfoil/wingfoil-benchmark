@@ -67,4 +67,17 @@ Code, tests and the requirement only: no real-agent session (the tests run `conf
 
 ## Execution notes
 
+- 2026-11-12: backlog → in-progress on main (`5da48de2`); worktree `../WingFoil2-Benchmark-wt/t145`.
+- **Red first** (`7cf70ec0`): four unit tests of `scanConfiguration` in `test/unit/scenario/leak-scan.test.ts` (red:
+  the function did not exist) and two acceptance tests in `test/acceptance/scenarios.test.ts`, through the CLI with
+  the fake agent, S2@1.1's oracle literal and a temporary hold-out (red: `configure` exited 0); the two scenarios
+  added to `scenarios.feature`.
+- **The fix** (`25d720c5`): `scanConfiguration` in `src/scenario/leak-scan.ts`, a filter of `scanScenario`'s
+  findings by the configured arm's place; `CheckedConfigure` carries the declarations and the hold-out's additions it
+  already loaded; `store` scans after the reload, on `written` only; `src/cli/configure.ts` reports the findings and
+  exits 1 after printing the outcome, the files, the record and the transcript. Requirements 1.57 (REQ-CLI-14).
+- Targeted tests green: `test/acceptance/scenarios.test.ts`, `test/unit/scenario/`, `test/unit/cli/configure.test.ts`
+  (379 passed, 10 skipped); tsc and eslint clean. The criterion 4 characterization is the existing configure tests,
+  unchanged and green. Nothing spent; the twelve 1.1 configurations unchanged.
+
 ## Review
