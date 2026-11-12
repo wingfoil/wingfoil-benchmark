@@ -2,7 +2,7 @@
 id: bug-048-the-openspec-docs-generator-drops-a-configured-context-that-has-no-level-two-heading-so-openspec-docs-configured-runs-with-no-rules
 type: bug
 title: "The openspec-docs generator drops a configured context that has no level-two heading, so openspec-docs-configured runs with no rules"
-status: approved
+status: fixed
 fixed_by: task-144-w18-every-arm-s-dry-run-on-s1-s2-s3-and-s8-at-1.1-the-configured-arms-included
 tags: ["v0.3","configured","docs-control"]
 ---
