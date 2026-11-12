@@ -2,7 +2,7 @@
 id: task-146-w18-the-configured-variants-published-on-the-contest-form-and-the-method-page
 type: task
 title: "W18: the configured variants published, on the contest form and the method page"
-status: draft
+status: pending
 release: v0.3
 wave: W18
 features: [F5.5, F7.2, F7.5]
