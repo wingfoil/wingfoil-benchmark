@@ -9,6 +9,8 @@
 //   --after       dry runs only: the dry runs numbered above <n> (default 0)
 //   --token-file  the credential file the secret scan looks for (`grep -rlF`, the value never read here); without it,
 //                 each line says the scan was not run
+// A dry run's date is the first timestamp of its first step's transcript (UTC); a dry run that a later one of the same
+// version, arm and model replaced says so.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -21,7 +23,8 @@ if (
   !['configuring', 'dry-runs'].includes(kind) ||
   root === undefined ||
   !options.element ||
-  !options.consent
+  !options.consent ||
+  !options.ceiling
 ) {
   console.error(
     'usage: ledger-lines.mjs configuring|dry-runs <root> --element <md> --consent <text> --ceiling <text>',
@@ -59,6 +62,12 @@ function secretScan(paths) {
 const directories = (path) =>
   existsSync(path) ? readdirSync(path).filter((name) => statSync(join(path, name)).isDirectory()) : [];
 
+/** The first timestamp a transcript records, or undefined. */
+function firstTimestamp(file) {
+  if (!existsSync(file)) return undefined;
+  return readFileSync(file, 'utf8').match(/"timestamp":"([^"]+)"/)?.[1];
+}
+
 const rows = [];
 if (kind === 'configuring') {
   for (const id of directories(join(root, 'scenarios'))) {
@@ -77,8 +86,8 @@ if (kind === 'configuring') {
           cells: [
             record.date.slice(0, 10),
             options.element,
-            `configuring session of ${id}@${version}, ${arm} arm (${record.outcome}, ` +
-              `${count(record.files?.length ?? 0, 'file')} written, ${count(record.usage?.turns ?? 0, 'turn')})`,
+            `configuring session of ${id}@${version}, ${arm} arm (${record.outcome}: ` +
+              `${count(record.files?.length ?? 0, 'file')}, ${count(record.usage?.turns ?? 0, 'turn')})`,
             options.consent,
             modelCell(record.model, 'medium', record.agent),
             options.ceiling,
@@ -106,14 +115,16 @@ if (kind === 'configuring') {
           const usd = run.steps.reduce((sum, step) => sum + (step.usage?.costUsd ?? 0), 0);
           const eur = run.steps.reduce((sum, step) => sum + (step.usage?.costEur ?? 0), 0);
           const interventions = Array.isArray(run.interventions) ? run.interventions.length : 0;
+          const date = firstTimestamp(join(root, dir, 'steps', '01', 'transcript.jsonl')) ?? 'unknown date';
           rows.push({
-            date: String(statSync(runFile).mtime.toISOString()),
+            date,
             n: Number(n),
+            key: `${scenario} ${arm} ${model}`,
             cells: [
-              statSync(runFile).mtime.toISOString().slice(0, 10),
+              date.slice(0, 10),
               options.element,
               `dry run of ${scenario}, ${arm} arm (\`dry-runs/${n}\`, ${count(run.steps.length, 'step')}, ` +
-                `${count(interventions, 'intervention')}; ${run.outcome})`,
+                `${count(interventions, 'intervention')}; ${run.outcome}`,
               options.consent,
               modelCell(run.model, run.effort, run.agent),
               options.ceiling,
@@ -128,4 +139,10 @@ if (kind === 'configuring') {
 }
 
 rows.sort((a, b) => (a.n ?? 0) - (b.n ?? 0) || a.date.localeCompare(b.date));
+// A dry run's kind cell closes here, saying which later dry run of the same version, arm and model replaced it.
+for (const [index, row] of rows.entries()) {
+  if (row.key === undefined) continue;
+  const later = rows.slice(index + 1).find((other) => other.key === row.key);
+  row.cells[2] += later === undefined ? ')' : `; superseded by \`dry-runs/${later.n}\`)`;
+}
 for (const row of rows) console.log(`| ${row.cells.join(' | ')} |`);

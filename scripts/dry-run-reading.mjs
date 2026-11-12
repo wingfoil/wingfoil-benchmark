@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 // The dry runs read from their records (task-144): per scenario version, each base arm and, beside it, its configured
 // arm, from the newest dry run of each (`results/dry-runs/<n>/runs/<id>@<version>/<arm>/<model>/r1/run.json`); the
-// dry runs an older one superseded; every run's pins checked against the profile; and the sum against the ceiling.
+// older dry runs a newer one superseded; every run's pins checked against the profile, the harness commits each tool
+// ran at; and the sum against the ceiling.
 // It runs no agent, spends nothing and writes nothing; it prints Markdown for docs/calibration/v0.3.md.
 //
 // Usage: node scripts/dry-run-reading.mjs <root> --profile <yaml> --ceiling <eur> [--version <v>] [--after <n>]
+//          [--through <n>] [--model <id>]
 //   --version  the scenario version read (default 1.1)
 //   --after    the dry runs numbered above <n> (default 0)
+//   --through  the dry runs numbered up to <n> (default: every one)
+//   --model    the model whose dry runs are read (default: the profile's default model)
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -24,23 +28,23 @@ if (root === undefined || !options.profile || !options.ceiling) {
 }
 const version = options.version ?? '1.1';
 const after = Number(options.after ?? 0);
+const through = options.through === undefined ? Infinity : Number(options.through);
 const ceiling = Number(options.ceiling);
 const profile = parse(readFileSync(join(root, options.profile), 'utf8'));
+const model = options.model ?? profile.models.default;
 
 const directories = (path) =>
   existsSync(path) ? readdirSync(path).filter((name) => statSync(join(path, name)).isDirectory()) : [];
 
-/** Every dry run above --after on the version: its number, scenario, arm, the run record. */
+/** Every dry run of the model and version from --after to --through: its number, scenario, arm, the run record. */
 const runs = [];
 const base = join(root, 'results', 'dry-runs');
-for (const n of directories(base).filter((name) => Number(name) > after)) {
+for (const n of directories(base).filter((name) => Number(name) > after && Number(name) <= through)) {
   for (const scenario of directories(join(base, n, 'runs')).filter((name) => name.endsWith(`@${version}`))) {
     for (const arm of directories(join(base, n, 'runs', scenario))) {
-      for (const model of directories(join(base, n, 'runs', scenario, arm))) {
-        const file = join(base, n, 'runs', scenario, arm, model, 'r1', 'run.json');
-        if (existsSync(file))
-          runs.push({ n: Number(n), scenario, arm, run: JSON.parse(readFileSync(file, 'utf8')) });
-      }
+      const file = join(base, n, 'runs', scenario, arm, model, 'r1', 'run.json');
+      if (existsSync(file))
+        runs.push({ n: Number(n), scenario, arm, run: JSON.parse(readFileSync(file, 'utf8')) });
     }
   }
 }
@@ -64,6 +68,9 @@ function brokenPins({ arm, run }) {
   const digest = profile.arm_digests?.[arm];
   if (digest === undefined || !String(run.arm_digest).startsWith(digest))
     broken.push(`arm_digest ${String(run.arm_digest).slice(0, 12)}`);
+  // A harness arm, configured or not, runs its harness: a record without one breaks the pin.
+  const harnessOf = profile.harnesses?.[arm.replace(/-configured$/, '')];
+  if (harnessOf !== undefined && run.harness === undefined) broken.push('harness missing');
   if (run.harness !== undefined) {
     const pinned = Object.values(profile.harnesses).find((harness) => harness.tool === run.harness.tool);
     expect(`harness ${run.harness.tool}`, run.harness.version, pinned?.version);
@@ -107,6 +114,8 @@ console.log(
 console.log('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
 let baseSum = 0;
 let configuredSum = 0;
+let dearer = 0;
+let pairs = 0;
 for (const scenario of scenarios) {
   for (const arm of baseArms) {
     const own = newest.get(`${scenario} ${arm}`);
@@ -114,7 +123,11 @@ for (const scenario of scenarios) {
     if (own === undefined && configured === undefined) continue;
     if (configured !== undefined) {
       configuredSum += cost(configured.run);
-      if (own !== undefined) baseSum += cost(own.run);
+      if (own !== undefined) {
+        baseSum += cost(own.run);
+        pairs += 1;
+        if (cost(configured.run) > cost(own.run)) dearer += 1;
+      }
     }
     console.log(`| ${scenario} | ${arm} | ${[...cells(own), ...cells(configured)].join(' | ')} |`);
   }
@@ -138,7 +151,8 @@ console.log(
 );
 console.log(
   `The configured arms: ${configuredSum.toFixed(4)} EUR; their base arms on the same versions: ` +
-    `${baseSum.toFixed(4)} EUR.`,
+    `${baseSum.toFixed(4)} EUR; the configured arm dearer in ${dearer} of the ${pairs} pairs, ` +
+    `cheaper or equal in ${pairs - dearer}.`,
 );
 for (const { old, by } of superseded)
   console.log(`Superseded: \`${old.n}\` (${old.scenario}, ${old.arm}) by \`${by.n}\`.`);
@@ -147,3 +161,12 @@ const broken = runs
   .filter(({ pins }) => pins.length > 0);
 if (broken.length === 0) console.log(`Pins: every dry run matches \`${options.profile}\`.`);
 for (const { entry, pins } of broken) console.log(`Pins broken by \`${entry.n}\`: ${pins.join(', ')}.`);
+const commits = {};
+for (const { run } of runs)
+  if (run.harness !== undefined)
+    (commits[run.harness.tool] ??= new Set()).add(run.harness.commit.slice(0, 12));
+const tools = Object.keys(commits).sort();
+if (tools.length > 0)
+  console.log(
+    `Harness commits: ${tools.map((tool) => `${tool} ${[...commits[tool]].sort().join(' and ')}`).join(', ')}.`,
+  );

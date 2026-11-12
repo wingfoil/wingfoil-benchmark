@@ -87,7 +87,9 @@ function entriesOf(value: unknown): [string, unknown][] {
  * wrote (REQ-RUN-11 as amended in 1.56, bug-048) may hold a context with no `## ` line, rendered whole, and the
  * per-artifact `rules:` and the `operations:` guidance, each rendered as a section of lists after it; without them the
  * bytes are as before. A configuration that declares none of the three declares no rule, and the file says so; one
- * that is not YAML is refused, rather than read as having no rules.
+ * that is not YAML is refused, rather than read as having no rules. Two limits, as speckit-docs' (the rules
+ * generator's own preamble is not a rule): in a context with `## ` lines the text before the first is left out; and
+ * a list item that is not a string (`- Note: x` parses as a map) is left out.
  */
 export function renderOpenSpecDocs(files: ReadonlyMap<string, string>): string {
   let parsed: unknown;

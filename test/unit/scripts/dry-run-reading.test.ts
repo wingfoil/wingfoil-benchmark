@@ -20,9 +20,18 @@ const PROFILE = [
   '',
 ].join('\n');
 
-/** A dry run's record under `root`: `steps` steps of 0.25 EUR and 10 s each. */
-function dryRun(root: string, n: number, scenario: string, arm: string, extra: object = {}): void {
-  const dir = join(root, 'results', 'dry-runs', String(n), 'runs', scenario, arm, 'claude-sonnet-5-5', 'r1');
+const HARNESS = { tool: 'wingfoil', version: 'v0.3.1', commit: '870bd4406f3b9bba' };
+
+/** A dry run's record under `root`: two steps of 0.25 EUR and 10 s each; a wingfoil arm runs its harness. */
+function dryRun(
+  root: string,
+  n: number,
+  scenario: string,
+  arm: string,
+  extra: object = {},
+  model = 'claude-sonnet-5-5',
+): void {
+  const dir = join(root, 'results', 'dry-runs', String(n), 'runs', scenario, arm, model, 'r1');
   mkdirSync(dir, { recursive: true });
   const step = { usage: { costEur: 0.25, durationMs: 10000 } };
   const run = {
@@ -35,6 +44,7 @@ function dryRun(root: string, n: number, scenario: string, arm: string, extra: o
     outcome: 'completed',
     steps: [step, step],
     interventions: [{ kind: 'approval' }],
+    ...(arm.startsWith('wingfoil') ? { harness: HARNESS } : {}),
     ...extra,
   };
   writeFileSync(join(dir, 'run.json'), JSON.stringify(run));
@@ -50,8 +60,20 @@ describe('scripts/dry-run-reading.mjs (task-144)', () => {
     dryRun(root, 2, 'S2@1.1', 'wingfoil');
     dryRun(root, 3, 'S2@1.1', 'wingfoil-configured', { outcome: 'failed' });
     dryRun(root, 4, 'S2@1.1', 'baseline');
-    dryRun(root, 5, 'S2@1.1', 'wingfoil-configured', { harness: { tool: 'wingfoil', version: 'v0.3.1' } });
-    const result = run([root, '--profile', 'profile.yaml', '--ceiling', '10', '--after', '1']);
+    dryRun(root, 5, 'S2@1.1', 'wingfoil-configured');
+    dryRun(root, 6, 'S2@1.1', 'baseline', {}, 'claude-haiku-5-5');
+    dryRun(root, 9, 'S2@1.1', 'baseline', { outcome: 'failed' });
+    const result = run([
+      root,
+      '--profile',
+      'profile.yaml',
+      '--ceiling',
+      '10',
+      '--after',
+      '1',
+      '--through',
+      '8',
+    ]);
     expect(result.status).toBe(0);
     expect(result.stdout.split('\n')).toEqual([
       '| Version | Arm | Dry run | Outcome | Cost (EUR) | Steps | Interventions | Time (s) | ' +
@@ -62,9 +84,11 @@ describe('scripts/dry-run-reading.mjs (task-144)', () => {
       '',
       'Dry runs: 4, 3 measured (3 completed), 1 superseded; their cost: 2.0000 EUR against the 10.00 EUR ' +
         'ceiling (20.0%).',
-      'The configured arms: 0.5000 EUR; their base arms on the same versions: 0.5000 EUR.',
+      'The configured arms: 0.5000 EUR; their base arms on the same versions: 0.5000 EUR; the configured arm ' +
+        'dearer in 0 of the 1 pairs, cheaper or equal in 1.',
       'Superseded: `3` (S2@1.1, wingfoil-configured) by `5`.',
       'Pins: every dry run matches `profile.yaml`.',
+      'Harness commits: wingfoil 870bd4406f3b.',
       '',
     ]);
   });
@@ -75,12 +99,14 @@ describe('scripts/dry-run-reading.mjs (task-144)', () => {
     dryRun(root, 7, 'S1@1.1', 'wingfoil', {
       effort: 'high',
       arm_digest: 'ffff9',
-      harness: { tool: 'wingfoil', version: 'v0.3.0' },
+      harness: { ...HARNESS, version: 'v0.3.0' },
     });
+    dryRun(root, 8, 'S1@1.1', 'wingfoil-configured', { harness: undefined });
     const result = run([root, '--profile', 'profile.yaml', '--ceiling', '10']);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      'Pins broken by `7`: effort high, arm_digest ffff9, harness wingfoil v0.3.0.\n',
+      'Pins broken by `7`: effort high, arm_digest ffff9, harness wingfoil v0.3.0.\n' +
+        'Pins broken by `8`: harness missing.\n',
     );
   });
 

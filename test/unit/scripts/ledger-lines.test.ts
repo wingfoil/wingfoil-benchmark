@@ -34,7 +34,7 @@ describe('scripts/ledger-lines.mjs (task-144)', () => {
     const cells = [
       '2026-11-08',
       'E',
-      'configuring session of S1@1.1, speckit-configured arm (written, 1 file written, 1 turn)',
+      'configuring session of S1@1.1, speckit-configured arm (written: 1 file, 1 turn)',
       'C',
       'Sonnet 5.5, effort medium (Claude Code 2.1.300)',
       'X',
@@ -45,10 +45,10 @@ describe('scripts/ledger-lines.mjs (task-144)', () => {
     expect(result.stdout.split('\n')).toEqual([`| ${cells.join(' | ')} |`, '']);
   });
 
-  it('prints one line per dry run above --after, steps and interventions counted, and its secret scan', () => {
+  it("prints a line per dry run above --after: its transcript's date, its replacement, its secret scan", () => {
     const root = tempDir('bench-ledger-lines-');
     const step = { usage: { costUsd: 1, costEur: 0.5 } };
-    for (const n of ['3', '4']) {
+    for (const n of ['2', '3', '4']) {
       const dir = join(
         root,
         'results',
@@ -66,24 +66,36 @@ describe('scripts/ledger-lines.mjs (task-144)', () => {
         join(dir, 'run.json'),
         JSON.stringify({ ...body, steps: [step, step], interventions: [{}] }),
       );
+      mkdirSync(join(dir, 'steps', '01'), { recursive: true });
+      const first = `{"type":"user","timestamp":"2026-11-0${n}T23:00:00.000Z"}`;
+      const transcript = `${first}\n{"timestamp":"2026-12-01T00:00:00Z"}\n`;
+      writeFileSync(join(dir, 'steps', '01', 'transcript.jsonl'), transcript);
     }
     writeFileSync(join(root, 'results', 'dry-runs', '4', 'leak.txt'), 'xx not-a-secret-value xx');
     const token = join(root, 'token');
     writeFileSync(join(root, 'token'), 'not-a-secret-value');
-    const result = run(['dry-runs', root, ...COMMON, '--after', '3', '--token-file', token]);
+    const result = run(['dry-runs', root, ...COMMON, '--after', '2', '--token-file', token]);
     expect(result.status).toBe(0);
     const lines = result.stdout.trim().split('\n');
-    expect(lines).toHaveLength(1);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatch(/^\| 2026-11-03 \| E \| /);
     expect(lines[0]).toContain(
+      'dry run of S2@1.1, wingfoil arm (`dry-runs/3`, 2 steps, 1 intervention; completed; ' +
+        'superseded by `dry-runs/4`) |',
+    );
+    expect(lines[1]).toMatch(/^\| 2026-11-04 \| /);
+    expect(lines[1]).toContain(
       '| dry run of S2@1.1, wingfoil arm (`dry-runs/4`, 2 steps, 1 intervention; completed) |',
     );
-    expect(lines[0]).toContain('| 2.0000 USD (1.0000 €) API-equivalent; nothing billed per token |');
-    expect(lines[0]).toMatch(
+    expect(lines[1]).toContain('| 2.0000 USD (1.0000 €) API-equivalent; nothing billed per token |');
+    expect(lines[0]).toMatch(/secret scan clean \|$/);
+    expect(lines[1]).toMatch(
       /`results\/dry-runs\/4\/runs\/S2@1\.1\/wingfoil\/claude-sonnet-5-5\/r1\/`; secret scan: 1 file\(s\) to check \|$/,
     );
   });
 
-  it('refuses a call without its kind, root, element or consent', () => {
+  it('refuses a call without its kind, root, element, consent or ceiling', () => {
     expect(run(['dry-runs']).status).toBe(2);
+    expect(run(['dry-runs', '.', '--element', 'E', '--consent', 'C']).status).toBe(2);
   });
 });
