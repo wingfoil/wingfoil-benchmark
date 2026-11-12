@@ -6,7 +6,15 @@ import { agentProfile, scrub } from '../agents/index.js';
 import type { SessionUsage } from '../agents/index.js';
 import { armDigest, loadArm, RULES_SOURCE_ARM, seedClashes } from '../arms/index.js';
 import { canonicalJson, configuredRecordSchema, fail, harnessCoverage, ok, reasonOf } from '../core/index.js';
-import type { Arm, ConfiguredRecord, ConfiguringProfile, Issue, Result, Scenario } from '../core/index.js';
+import type {
+  Arm,
+  ConfiguredRecord,
+  ConfiguringProfile,
+  Issue,
+  LeakScanDeclarations,
+  Result,
+  Scenario,
+} from '../core/index.js';
 import { runsOfVersion } from '../results/index.js';
 import {
   CONFIGURED_DIR,
@@ -18,6 +26,7 @@ import {
   loadScenario,
   prepareWorkspace,
   relativeFiles,
+  scanConfiguration,
   scanConfiguringPrompt,
 } from '../scenario/index.js';
 import type { HoldoutAdditions } from '../scenario/index.js';
@@ -58,6 +67,9 @@ export interface CheckedConfigure {
   readonly promptPath: string;
   readonly promptSha256: string;
   readonly scenario: Scenario;
+  /** The leak scan's declarations and the hold-out's additions, for the scan of what the session writes (1.57). */
+  readonly declarations: LeakScanDeclarations;
+  readonly holdout?: HoldoutAdditions;
   readonly arm: Arm;
   /** The harness arm's digest, as a campaign pins it: 12 hex. */
   readonly baseArmDigest: string;
@@ -220,6 +232,8 @@ export function checkConfigure(
     promptPath,
     promptSha256: sha256(prompt),
     scenario: scenario.value,
+    declarations: declarations.value,
+    ...(holdout === undefined ? {} : { holdout }),
     arm,
     baseArmDigest,
     model: profile.value.models.default,
@@ -240,6 +254,11 @@ export interface ConfigureSummary {
   readonly transcript: string;
   /** What loading the version found once the configuration was written: nothing, unless something is wrong. */
   readonly loadIssues: readonly Issue[];
+  /**
+   * What the leak scan found in the configuration written (REQ-CLI-14 as amended in 1.57, bug-049): its files holding
+   * an oracle or hold-out literal, the step prompts repeating one of its lines. Empty when nothing was written.
+   */
+  readonly leakIssues: readonly Issue[];
 }
 
 /** A session's usage before any is reported. */
@@ -577,6 +596,10 @@ function store(
     configurationDir,
     transcript,
     loadIssues: reloaded.ok ? [] : reloaded.issues,
+    leakIssues:
+      reloaded.ok && record.outcome === 'written'
+        ? scanConfiguration(reloaded.value, checked.declarations, configured, checked.holdout)
+        : [],
   };
 }
 

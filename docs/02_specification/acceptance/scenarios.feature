@@ -250,3 +250,17 @@ Feature: Scenario format, hygiene and the v0.1 scenario content
     Given S1 1.1 holds a configuration for "wingfoil-configured"
     When a "--replace" session for it is refused
     Then S1 1.1 still holds the earlier configuration, and both records are kept
+
+  # task-145, bug-049 (requirements 1.57): configure scans the configuration it writes
+  @F7.5
+  Scenario: A configuration that leaks is reported by the configure that wrote it
+    Given a configuring session for S2 1.1 writes a rule holding an oracle literal of S2 1.1
+    When bench scenario configure ends
+    Then it exits 1, naming the file and the oracle file, not the literal
+    And the configuration and its record stay written
+
+  @F7.5
+  Scenario: A configuration holding a literal of the hold-out is reported the same way
+    Given a hold-out is set, and a configuring session writes a literal of its S2 1.1 addition
+    When bench scenario configure ends
+    Then it exits 1, naming only the hold-out file

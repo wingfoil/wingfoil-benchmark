@@ -1264,3 +1264,77 @@ describe('bench scenario configure and the configuring session (task-141, F7.5)'
     ).toBe('written');
   });
 });
+
+describe('a configuration that leaks, reported by the configure that wrote it (task-145, bug-049, F7.5)', () => {
+  beforeEach(() => {
+    vi.stubEnv('BENCH_WINGFOIL_REPO', '/clones/wingfoil');
+    vi.stubEnv('BENCH_HOLDOUT_PATH', '');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const RULE = '.wingfoil/directives/custom/r9.md';
+  /** S2 1.1 in a configuring repository, and a literal its first suite quotes that the scan looks for (bug-047). */
+  function s2() {
+    const root = configureRepo(['S2@1.1'], ['wingfoil']);
+    const loaded = loadScenario(join(root, 'scenarios'), 'S2', '1.1');
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
+    const suite = loaded.value.oracle.suites[0];
+    const suiteDir = suite?.dir ?? '';
+    const suiteFile = readdirSync(suiteDir).find((file) => /\.test\.m?ts$/.test(file)) ?? '';
+    const literal =
+      oracleLiterals(readFileSync(join(suiteDir, suiteFile), 'utf8'), 8).find((l) => !/^\p{L}+$/u.test(l)) ??
+      '';
+    expect(literal).not.toBe('');
+    return { root, dir: join(root, 'scenarios', 'S2', '1.1'), literal, suiteId: suite?.id ?? '' };
+  }
+
+  it('@F7.5 A configuration that leaks is reported by the configure that wrote it', async () => {
+    const { root, dir, literal } = s2();
+    // Given a configuring session writes a rule holding an oracle literal of S2 1.1
+    const ports = configurePorts('wingfoil', {
+      session: (workspace) => writeFiles(workspace, { [RULE]: `# Rule\n\nRemember: ${literal}\n` }),
+    });
+
+    const result = await benchConfigure(root, ['S2@1.1', '--arm', 'wingfoil', '--allow-spending'], ports);
+
+    // Then configure exits 1, naming the file and the oracle file, never the literal
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(
+      new RegExp(`arms\\.wingfoil-configured: ${RULE.replace(/\./g, '\\.')} holds a literal of oracle/`),
+    );
+    expect(result.stdout + result.stderr).not.toContain(literal);
+    // And the configuration and its record stay written, for the approver's choice
+    expect(readFileSync(join(dir, 'arms', 'wingfoil-configured', RULE), 'utf8')).toContain('Remember');
+    expect(storedRecords(dir, 'wingfoil').map((record) => record.outcome)).toEqual(['written']);
+  });
+
+  it('@F7.5 A configuration holding a literal of the hold-out is reported the same way', async () => {
+    const { root, dir, suiteId } = s2();
+    // Given a hold-out whose S2 1.1 addition quotes a hidden expectation
+    const holdout = tempDir('bench-holdout-');
+    mkdirSync(join(holdout, 'scenarios', 'S2', '1.1', suiteId), { recursive: true });
+    writeFileSync(
+      join(holdout, 'scenarios', 'S2', '1.1', suiteId, 'extra.test.ts'),
+      "it('a hidden expectation here', () => {});\n",
+    );
+    vi.stubEnv('BENCH_HOLDOUT_PATH', holdout);
+    const ports = configurePorts('wingfoil', {
+      session: (workspace) =>
+        writeFiles(workspace, { [RULE]: '# Rule\n\nMind a hidden expectation here.\n' }),
+    });
+
+    const result = await benchConfigure(root, ['S2@1.1', '--arm', 'wingfoil', '--allow-spending'], ports);
+
+    // Then configure exits 1, naming only the hold-out file
+    expect(result.code).toBe(1);
+    expect(result.stderr.split('\n').filter((line) => line.includes('holds a literal of'))).toEqual([
+      `arms.wingfoil-configured: ${RULE} holds a literal of the hold-out file ${suiteId}/extra.test.ts`,
+    ]);
+    expect(result.stdout + result.stderr).not.toContain('hidden expectation');
+    // And the configuration and its record stay written
+    expect(readFileSync(join(dir, 'arms', 'wingfoil-configured', RULE), 'utf8')).toContain('Mind');
+    expect(storedRecords(dir, 'wingfoil').map((record) => record.outcome)).toEqual(['written']);
+  });
+});

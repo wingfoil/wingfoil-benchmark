@@ -2,12 +2,13 @@
 id: task-145-bug-049-bench-scenario-configure-scans-the-configuration-it-writes
 type: task
 title: "bug-049: bench scenario configure scans the configuration it writes"
-status: in-progress
+status: approved
 release: v0.3
 wave: W18
 features: [F7.5]
 acceptance:
   - "scenarios.feature#A configuration that leaks is reported by the configure that wrote it"
+  - "scenarios.feature#A configuration holding a literal of the hold-out is reported the same way"
 requirements: [REQ-CLI-14, REQ-FMT-08]
 fixes: [bug-049-bench-scenario-configure-writes-a-configuration-without-scanning-it-for-leaks-so-a-leaking-one-is-found-only-by-a-later-validate-or-dry-run]
 tags: ["v0.3","configured","leak-scan"]
@@ -66,4 +67,23 @@ Code, tests and the requirement only: no real-agent session (the tests run `conf
 
 ## Execution notes
 
+- 2026-11-12: backlog → in-progress on main (`5da48de2`); worktree `../WingFoil2-Benchmark-wt/t145`.
+- **Red first** (`7cf70ec0`): four unit tests of `scanConfiguration` in `test/unit/scenario/leak-scan.test.ts` (red:
+  the function did not exist) and two acceptance tests in `test/acceptance/scenarios.test.ts`, through the CLI with
+  the fake agent, S2@1.1's oracle literal and a temporary hold-out (red: `configure` exited 0); the two scenarios
+  added to `scenarios.feature`.
+- **The fix** (`25d720c5`): `scanConfiguration` in `src/scenario/leak-scan.ts`, a filter of `scanScenario`'s
+  findings by the configured arm's place; `CheckedConfigure` carries the declarations and the hold-out's additions it
+  already loaded; `store` scans after the reload, on `written` only; `src/cli/configure.ts` reports the findings and
+  exits 1 after printing the outcome, the files, the record and the transcript. Requirements 1.57 (REQ-CLI-14).
+- Targeted tests green: `test/acceptance/scenarios.test.ts`, `test/unit/scenario/`, `test/unit/cli/configure.test.ts`
+  (379 passed, 10 skipped); tsc and eslint clean. The criterion 4 characterization is the existing configure tests,
+  unchanged and green. Nothing spent; the twelve 1.1 configurations unchanged.
+
 ## Review
+
+- **Round 1** (an independent read-only agent, in a clone under `mktemp`, 2026-11-12): nothing blocking; tsc,
+  prettier and the targeted tests green; the acceptance tests red against the pre-fix code (`expected +0 to be 1`).
+  Three test nits, all fixed: the "leaves out" unit test now pins a prompt repeating a line of another configuration
+  (checked by mutation: dropping the label from the filter turns it red); the hold-out acceptance test asserts the
+  hold-out line is the only finding, and that the configuration stays on disk.
