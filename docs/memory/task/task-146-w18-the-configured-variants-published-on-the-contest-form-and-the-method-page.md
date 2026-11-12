@@ -164,3 +164,5 @@ and tests only; nothing spent.
   DOCKER 0. The one failure, task-073's characterization `@F7.2 A setup can be contested from its page`, pinned the
   form's fields to four; the targeted runs had not included `test/acceptance/competitors.test.ts`. Sent back to
   in-progress by the approver; the test and its `competitors.feature` scenario now include the subject field.
+- **Full suites, second run** (2026-11-13, `72230b8e`): LINT 0, TEST 0, BUILD 0, BIN 0, DOCKER 0; pre-review green.
+  Log: the main checkout's `.cache/full-suites/2026-11-12/task_task-146-…-72230b8e-001103.txt`.
