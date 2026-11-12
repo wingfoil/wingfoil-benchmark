@@ -70,14 +70,14 @@ measures a harness as its init leaves it; a configured arm measures it once it i
 would. The 1.1 versions hold configurations, so there are thirteen arms on them. {#configured-arms}
 
 A configuration is written once per scenario version and harness by a configuring agent: a session of the same agent,
-the same model and the same prompt for every harness. It works in the project as the harness arm's setup leaves it
-(the seed, the installed tool, the scenario's rules), without the arm's operating manual or MCP server, and never sees
-a step's prompt, the oracle's hidden tests or the hold-out. It may change only the tool's configuration places, which each harness arm
-declares with the documentation they come from; a session that touches anything else is refused, and the session that
-wrote a configuration checks it for leaks. The configuration is then scenario content: pinned by the version's hash,
-leak-scanned (no expected value, no hidden test's name, no line of a step's prompt), and never
-rewritten once the version has run; a correction is a new scenario version. Its sessions' cost counts once in the
-configured arm's setup cost (M-K3). {#configuring-agent}
+the same model and the same prompt for every harness. It works in the project as the harness arm's setup leaves it (the
+seed, the installed tool, the scenario's rules), without the arm's operating manual or MCP server, and never sees a
+step's prompt, the oracle's hidden tests or the hold-out. It may change only the tool's configuration places, which each
+harness arm declares with the documentation they come from; a session that touches anything else is refused, and the
+session that wrote a configuration checks it for leaks. The configuration is then scenario content: pinned by the
+version's hash, leak-scanned (no expected value, no hidden test's name, no line of a step's prompt), and never rewritten
+once the version has run; a correction is a new scenario version. Its sessions' cost counts once in the configured arm's
+setup cost (M-K3). {#configuring-agent}
 
 What the 1.1 configurations change from each tool's defaults, in short. WingFoil's init leaves a project description
 with nothing of the project in it: every session filled it (language, runtime, structure, how it is built and tested),

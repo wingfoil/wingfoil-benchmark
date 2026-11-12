@@ -73,9 +73,10 @@ configuration equal to a line of its version's step prompts or oracle that the s
   ordinary word an oracle file quotes as a test group's name (`duplicate`, `identifiers`), used as prose. Fixed in
   task-143 (requirements 1.55): a configuration is not searched for an oracle literal of one prose word; camelCase
   names and upper-case codes still are. The configurations are as the sessions wrote them.
-- **The boundaries named.** S2's configurations list boundaries to test: all three exactly €50.00, half a cent and
-  day 14 against day 15; Spec Kit's and OpenSpec's also a coupon's first and last day. They follow from the README's thresholds, and they are also where
-  S2's reported defects lie: what the configured arms gain from their configuring agent, which the method page states.
+- **The boundaries named.** S2's configurations list boundaries to test: all three exactly €50.00, half a cent and day
+  14 against day 15; Spec Kit's and OpenSpec's also a coupon's first and last day. They follow from the README's
+  thresholds, and they are also where S2's reported defects lie: what the configured arms gain from their configuring
+  agent, which the method page states.
 - **The cost** is small: each session cost less than its harness arm's dearest Sonnet 5.5 step in the stored
   campaigns (task-143's estimate), so M-K3's one-off part (REQ-SCO-08 as amended in 1.49) is a few cents per
   configured arm and version. The estimate, two to four times that step, was too high.
