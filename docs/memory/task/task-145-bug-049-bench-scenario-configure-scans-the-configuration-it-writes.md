@@ -2,7 +2,7 @@
 id: task-145-bug-049-bench-scenario-configure-scans-the-configuration-it-writes
 type: task
 title: "bug-049: bench scenario configure scans the configuration it writes"
-status: in-progress
+status: in-review
 release: v0.3
 wave: W18
 features: [F7.5]
