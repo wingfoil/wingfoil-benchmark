@@ -160,3 +160,7 @@ and tests only; nothing spent.
      roles, and a generator that cannot render a configuration (now a refusal naming it, not an exception), each
      checked by mutation. `methodPages` passing the setup pages' arms to the block stays pinned only by the code.
   Nits: no docs control is said as such; the leak scan's summary narrowed.
+- **Full suites, first run** (2026-11-12, `e086b1e1`, behind the load gate): LINT 0, TEST 1, BUILD 0, BIN 0,
+  DOCKER 0. The one failure, task-073's characterization `@F7.2 A setup can be contested from its page`, pinned the
+  form's fields to four; the targeted runs had not included `test/acceptance/competitors.test.ts`. Sent back to
+  in-progress by the approver; the test and its `competitors.feature` scenario now include the subject field.

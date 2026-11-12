@@ -90,7 +90,7 @@ Feature: Competitor arms admitted by published criteria and set up under the sam
   Scenario: A setup can be contested from its page
     Given a published setup page
     When a reader follows its contest link
-    Then an issue form asks for the arm, the setup step, what the tool's documentation says and the proposed correction
+    Then an issue form asks for the arm, the setup or the configuration contested, the setup step, what the tool's documentation says and the proposed correction
 
   @F7.2
   Scenario: A corrected setup runs as a new campaign and the old one stays published

@@ -586,12 +586,19 @@ describe('competitors.feature, contesting a setup (F7.2, REQ-RES-10, task-073)',
     // When a reader follows its contest link
     const link = /href="([^"]*issues\/new\?template=contest-setup\.yml)"/.exec(page)?.[1];
     expect(link).toBe('https://github.com/wingfoil/wingfoil-benchmark/issues/new?template=contest-setup.yml');
-    // Then an issue form asks for the arm, the setup step, what the tool's documentation says and the proposed correction
+    // Then an issue form asks for the arm, whether the setup or the configuration is contested (task-146), the setup
+    // step, what the tool's documentation says and the proposed correction
     const form = parse(readFileSync(repoPath('.github/ISSUE_TEMPLATE/contest-setup.yml'), 'utf8')) as {
       body: { id?: string; type: string; validations?: { required?: boolean } }[];
     };
     const fields = form.body.filter((field) => field.id !== undefined);
-    expect(fields.map((field) => field.id)).toEqual(['arm', 'step', 'documentation', 'correction']);
+    expect(fields.map((field) => field.id)).toEqual([
+      'arm',
+      'subject',
+      'step',
+      'documentation',
+      'correction',
+    ]);
     expect(fields.every((field) => field.validations?.required === true)).toBe(true);
   });
 
