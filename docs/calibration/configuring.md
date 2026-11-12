@@ -1,9 +1,9 @@
 # The configuring sessions of S1, S2, S3 and S8 at 1.1
 
-**Version:** 1.0
-**Date:** 2026-11-08
+**Version:** 1.1
+**Date:** 2026-11-12
 **Status:** Draft
-**Traces to:** [task-143](../memory/task/task-143-w18-the-twelve-configurations-of-s1-s2-s3-and-s8-at-1.1.md); [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md); [requirements](../02_specification/requirements.md) REQ-RUN-20, REQ-CLI-14
+**Traces to:** [task-143](../memory/task/task-143-w18-the-twelve-configurations-of-s1-s2-s3-and-s8-at-1.1.md); [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md); [requirements](../02_specification/requirements.md) REQ-RUN-20, REQ-CLI-14; 1.1: [task-146](../memory/task/task-146-w18-the-configured-variants-published-on-the-contest-form-and-the-method-page.md)
 
 ---
 
@@ -57,9 +57,10 @@ Sessions: 12; their cost: 0.7237 EUR.
 
 No session touched a project file, recorded work in the tool, changed the team's members or roles, or wrote outside
 the harness's configuration places: each result passed the command's checks (places, offences, symbolic links; the
-command's leak scan covers its prompt only). The configurations' own leak scan is `bench scenario validate`'s, which
-passes on the four versions since bug-047's fix (§4). A scratchpad check found no line of a configuration equal to a
-line of its version's step prompts or oracle that the seed does not also hold.
+command's leak scan covered its prompt only when they ran). The configurations' own leak scan is `bench scenario
+validate`'s, which passes on the four versions since bug-047's fix (§4); since task-145 (requirements 1.57),
+`configure` also runs it on the configuration it has just written. A scratchpad check found no line of a
+configuration equal to a line of its version's step prompts or oracle that the seed does not also hold.
 
 ## 4. Notes
 

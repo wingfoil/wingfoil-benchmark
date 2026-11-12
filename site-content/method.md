@@ -20,7 +20,7 @@ The agent may also call a smaller model for its own work, beside the run's model
 
 The agent's effort, how much it thinks before it acts, changes cost and quality. From v0.2 it is pinned per model in the campaign file, the same in every arm, passed on every session and recorded with each run. The table of this execution's pins below shows it; v0.1 pinned none, so the agent's default applied. v0.2 pins `medium` for Sonnet 5.5, Opus 5.5 and Haiku 5.5, so a comparison with v0.1 changes the effort together with the model and Claude Code. {#agent-effort}
 
-There are seven arms: {#arms}
+There are seven arms, and from v0.3 a configured variant of each harness arm and of its docs control ([below](#configured-variants)): {#arms}
 
 - **baseline**: the agent, the starting project (the *seed*) and a short operating manual. It is the plain agent and the reference for every comparison.
 - **baseline-docs**: the same as baseline, plus the same information the wingfoil arm gets, written as plain Markdown in one file, `PROJECT_RULES.md`.
@@ -58,6 +58,44 @@ The wingfoil manual sets the process the agent follows with WingFoil. WingFoil i
 From v0.3 the wingfoil arm has a second manual, the step-A manual (dl-021's step A), on WingFoil 0.3.1. Its agent drives WingFoil's workflow engine itself, with no driver written by the benchmark: at each request it runs `workflow status` and `workflow next`, acts in the role of the step `next` names, with that role's rules, records the step's outcome with WingFoil's verbs and `workflow finalize`, and stops at the workflow's gate. The engine records and routes the workflow's steps and carries out none: the agent does, inside its session, so the process's commands and their outputs stay in the agent's own context, as with the v0.2 manual (a limit, not a measured result, which the benchmark has reported to WingFoil in its feedback note F-047). The setup opens an instance of the workflow for the first request, and each later request opens its own instance, since on this release's Kanban workflow an instance's delivery runs once; every request gets its own task, even when an earlier request's task would meet the step's evidence, so that its review has a document to approve. At a gate the agent finishes the request's work first, the code written, its tests passing and its documents submitted, before it asks for the approval, with "Please approve <id>." for each document `workflow next` lists, a sentence the [approver's classifier](#approver-classifier) reads as an approval request; any reply but "Approved. Proceed." is no approval, except in a scenario with an approver of its own (S10), whose verdict is recorded for the agent. One of the corrections made after campaign-008 also has the agent commit every change before it asks. Because each step is acted in its own role, baseline-docs gets every role's rules from the step-A arm on, each labelled with its roles (the table above). campaign-002 and campaign-003 ran the v0.2 manual, on 0.3.0 and on 0.2.2; campaign-007 and campaign-008 ran the step-A manual, whose later corrections each change the arm's digest: the wingfoil setup page shows the manual as each execution ran it. {#wingfoil-step-a}
 
 Every step's request (its *prompt*) is the same text in every arm, and names no harness. A scan checks each scenario for this before it runs: a prompt that names a harness or tool, or a seed or prompt that contains an expected value or a hidden test's name, is refused. {#identical-prompts}
+
+### Configured variants {#configured-variants}
+
+From v0.3 each harness arm also runs configured. `wingfoil-configured`, `speckit-configured` and `openspec-configured`
+are the wingfoil, speckit and openspec arms, set up the same way, with the scenario version's configuration for that
+tool copied over the project after the setup. Their docs controls, `baseline-docs-configured`,
+`speckit-docs-configured` and `openspec-docs-configured`, get the configured arm's information, generated as for the
+plain controls; a configuration file the generator does not read is not rendered, and is listed below. A plain arm
+measures a harness as its init leaves it; a configured arm measures it once it is set up for the project, as a team
+would. Only versions 1.1 hold configurations, so there are thirteen arms on them. {#configured-arms}
+
+A configuration is written once per scenario version and harness by a configuring agent: a session of the same agent,
+the same model and the same prompt for every harness, which sees the seed and the installed harness only, never a
+step's prompt, a test or the hold-out. It may change only the tool's configuration places, which each harness arm
+declares with the documentation they come from; a session that touches anything else is refused, and the session that
+wrote a configuration checks it for leaks. The configuration is then scenario content: pinned by the version's hash,
+leak-scanned as the seed is (no expected value, no hidden test's name, no line of a step's prompt), and never
+rewritten once the version has run; a correction is a new scenario version. Its sessions' cost counts once in the
+configured arm's setup cost (M-K3). {#configuring-agent}
+
+What the 1.1 configurations change from each tool's defaults, in short. WingFoil's init leaves a project description
+with nothing of the project in it: every session filled it (language, runtime, structure, how it is built and tested),
+wrote one or two directives from the README's rules and conventions, and assigned them to roles. Spec Kit's init
+leaves a constitution of placeholders: every session wrote one for the project, the README's rules as principles, with
+the test command and the boundaries to test. OpenSpec's init leaves a project configuration with commented examples:
+every session wrote its context (the project, its rules, its commands) and rules per artifact. On S8, whose rules the
+setup already writes, every configuration keeps them verbatim. Each configuration's files, and its session's patch
+against the project as the tool's init left it, are listed below for the versions this execution ran.
+{#configured-defaults}
+
+Two properties come with a configured arm; they are part of what it measures, not leaks. It carries what its
+configuring agent knows of the domain beyond the seed: S1's wingfoil configuration names JSON standards by number that
+the seed does not, from the README's "follow the published standards it implements" and the project's name. And it may
+spell out what the README implies: S2's configurations list the boundaries to test (exactly €50.00, half a cent, day
+14 against day 15, a coupon's first and last day), which follow from the README's thresholds and are also where S2's
+reported defects lie. {#configured-properties}
+
+<!-- configuring -->
 
 ## How a run goes {#how-a-run-goes}
 
@@ -371,7 +409,7 @@ These threats were listed before any run, each with what is done about it.
 - **T9, the approver policy favours some tools**, for example tools that ask more questions. Mitigation: one versioned policy for every arm; interventions reported per arm. {#threat-t9}
 - **T10, gaps in the harness.** At design time, the WingFoil under development (v0.2 pre-release, commit `3df305e`) had no workflow engine; its workflows were followed by hand. Mitigation: expected failures, published as losses; the public campaign runs on the latest released WingFoil. v0.1's ran v0.2.2, which has no workflow engine either; v0.2's reference campaign runs v0.3.0, whose workflow engine records and routes a workflow's steps but carries none out, and its bridge keeps v0.2.2 to link the two. v0.3's step-A executions (campaign-007, campaign-008) run v0.3.1, whose engine still carries out no step: the agent drives it, as its manual has it ([the step-A arm](#wingfoil-step-a)). {#threat-t10}
 - **T11, the tests capture the specification only partly.** Mitigation: several metrics per goal; a rubric judge from v0.3. {#threat-t11}
-- **T12, unequal setup effort across tools.** Mitigation: setup from official documentation only, scripted and published, with deviations published. {#threat-t12}
+- **T12, unequal setup effort across tools.** Mitigation: setup from official documentation only, scripted and published, with deviations published. From v0.3 a configured arm's configuration is written by a configuring agent with the same agent, model and prompt for every harness; the agent and the prompt are published, with each configuration's difference from the tool's defaults ([configured variants](#configured-variants)). {#threat-t12}
 - **T13, looking up answers.** With internet access, an agent may fetch public material that overlaps the tests, for example S1's official conformance suite. Mitigation: web requests recorded and reported per arm (shell network use is not seen); hold-out tests added to public ones; fictional domains (a later scenario, S4) where lookup cannot help. Access is the same for every arm. {#threat-t13}
 - **T14, the harness's effect may depend on the model.** Mitigation: a comparison slice on a second model (Opus 5), shown as a separate comparison, never mixed with same-model results. In v0.1 it covers the wingfoil arm only, because a slice in every arm would have cost too much for v0.1's budget, so v0.1 does not yet test whether the harness's effect depends on the model. {#threat-t14}
 

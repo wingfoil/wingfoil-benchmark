@@ -66,7 +66,10 @@ describe("the method page's configuring block (task-146, REQ-RES-02 as amended i
     // The docs control renders the constitution, not the command
     expect(html).toMatch(new RegExp(`Not rendered by its docs control</th><td><code>${COMMAND}</code>`));
     // The speckit arm's configuration places, with their sources
-    expect(html).toContain('<code>.specify/memory/constitution.md</code>');
+    expect(html).toMatch(
+      /Configuration places<\/th><td><code>\.specify\/memory\/constitution\.md<\/code>: the speckit-constitution skill/,
+    );
+    expect(html).toContain('<code>.specify/presets/**</code>');
     // The patch is a material page of its own, linked
     const page = 'configuration-S1@1.1-speckit-configured.html';
     expect(html).toContain(`href="material/${page}"`);

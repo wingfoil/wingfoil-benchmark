@@ -76,7 +76,19 @@ export async function recordedManual(
   sha256: string,
   history: HistoryPort,
 ): Promise<string | undefined> {
-  const path = posix.join('arms', arm, 'manual.md');
+  return recordedFile(root, posix.join('arms', arm, 'manual.md'), sha256, history);
+}
+
+/**
+ * The repository file `path` with the sha256 a record names: the working tree's, or the newest commit's that has it
+ * (a manual, task-073; the configuring prompt and profile, task-146).
+ */
+export async function recordedFile(
+  root: string,
+  path: string,
+  sha256: string,
+  history: HistoryPort,
+): Promise<string | undefined> {
   const hash = (text: string) => createHash('sha256').update(text).digest('hex');
   if (existsSync(join(root, path))) {
     const text = readFileSync(join(root, path), 'utf8');

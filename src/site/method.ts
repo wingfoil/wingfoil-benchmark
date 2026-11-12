@@ -12,6 +12,7 @@ import type { DocsGenerator } from '../arms/index.js';
 import type { Group } from '../results/index.js';
 import { CONFIGURED_SUFFIX } from '../scenario/index.js';
 
+import { configuringSection } from './configuring.js';
 import { renderMarkdown } from './markdown.js';
 import { recordedArm, recordedManual } from './recorded.js';
 import type { RecordedArm } from './recorded.js';
@@ -126,6 +127,10 @@ export async function methodPages(
     material.set(name, page);
   }
 
+  const configuring = await configuringSection(root, model.records, history);
+  if (!configuring.ok) return configuring;
+  for (const [name, page] of configuring.value.material) material.set(name, page);
+
   const executionHtml = executionSection(executionDir, model, parsed.value, manuals);
   const links = [...material.keys()]
     .sort()
@@ -135,7 +140,11 @@ export async function methodPages(
   // is named, not linked (task-046's review).
   const text = readFileSync(prose, 'utf8');
   const rendered = renderMarkdown(text, {
-    blocks: { execution: executionHtml, material: `<ul>\n${links}</ul>` },
+    blocks: {
+      execution: executionHtml,
+      material: `<ul>\n${links}</ul>`,
+      configuring: configuring.value.html || '<p>No configured arm ran in this execution.</p>',
+    },
     resolve: (target) => {
       const page = /^(?:\.\/)?material\/([^#]*)/.exec(target)?.[1];
       return page !== undefined && !material.has(page) ? null : undefined;
@@ -151,6 +160,7 @@ function materialTitle(name: string): string {
   if (base.startsWith('manual-')) return `Operating manual of the ${base.slice('manual-'.length)} arm`;
   if (base.startsWith('directives-'))
     return `The directives of ${base.slice('directives-'.length).toUpperCase()}`;
+  if (base.startsWith('configuration-')) return `The configuration ${base.slice('configuration-'.length)}`;
   if (base.startsWith('notice-'))
     return `Third-party material of ${base.slice('notice-'.length).toUpperCase()}`;
   return `Licence: ${base.slice('licence-'.length)}`;

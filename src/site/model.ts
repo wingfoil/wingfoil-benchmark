@@ -33,6 +33,9 @@ export interface ScenarioInfo {
 export interface RunRecord {
   readonly run: string;
   readonly arm: string;
+  /** The scenario version the run ran (task-146: the configurations the method page states). */
+  readonly scenario: string;
+  readonly version: string;
   readonly manual?: { readonly sha256: string; readonly tokens: number };
   readonly harness?: RecordedHarness;
   /** What the arm declared of its harness (REQ-FMT-10), as the run recorded it. */
@@ -344,6 +347,8 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
         records.set(run, {
           run,
           arm: group.arm,
+          scenario: group.scenario,
+          version: group.version,
           ...(record.value.manual === undefined ? {} : { manual: record.value.manual }),
           ...(record.value.harness === undefined ? {} : { harness: record.value.harness }),
           ...(record.value.provides === undefined ? {} : { provides: record.value.provides }),
