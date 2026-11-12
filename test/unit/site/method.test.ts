@@ -441,6 +441,44 @@ describe('the setup as it ran, when the working tree no longer has the arm (task
   });
 });
 
+describe('the contest form and the configured variants (REQ-RES-10 as amended in 1.50, task-146)', () => {
+  const form = parse(readFileSync(repoPath('.github/ISSUE_TEMPLATE/contest-setup.yml'), 'utf8')) as {
+    body: {
+      type: string;
+      id?: string;
+      attributes: { value?: string; options?: string[] };
+      validations?: object;
+    }[];
+  };
+
+  it('asks whether the setup or the configuration is contested', () => {
+    const subject = form.body.find((field) => field.id === 'subject');
+    expect(subject).toMatchObject({
+      type: 'dropdown',
+      attributes: { options: ['the setup', 'the configuration'] },
+      validations: { required: true },
+    });
+    expect(form.body.findIndex((field) => field.id === 'subject')).toBe(
+      form.body.findIndex((field) => field.id === 'arm') + 1,
+    );
+  });
+
+  it('says a corrected configuration is a new scenario version, run as a new campaign', () => {
+    const text = (form.body[0]?.attributes.value ?? '').replace(/\s+/g, ' ');
+    expect(text).toContain('new scenario version');
+    expect(text).toContain('configuring prompt');
+  });
+
+  it('gives an execution with no configured arm a sentence in the configured variants section', async () => {
+    const { root } = await siteExecution();
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+    const method = readFileSync(join(root, PAGE, 'method.html'), 'utf8');
+    expect(method).toContain('id="configured-variants"');
+    expect(method).toContain('No configured arm ran in this execution.');
+  }, 120_000);
+});
+
 describe("the method page's rule for a preliminary comparison (REQ-RES-03 as amended in 1.26, task-082)", () => {
   const text = readFileSync(repoPath('site-content/method.md'), 'utf8');
   // A paragraph whole, its lines joined: a paragraph may wrap (task-129).
