@@ -3,29 +3,67 @@ id: task-145-bug-049-bench-scenario-configure-scans-the-configuration-it-writes
 type: task
 title: "bug-049: bench scenario configure scans the configuration it writes"
 status: draft
-release: ""           # e.g. v0.1
-wave: ""              # e.g. W1
-features: []          # e.g. [F1.1, F3.1]
-acceptance: []        # e.g. [campaign.feature, scenarios.feature]
-requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
-fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
+release: v0.3
+wave: W18
+features: [F7.5]
+acceptance:
+  - "scenarios.feature#A configuration that leaks is reported by the configure that wrote it"
+requirements: [REQ-CLI-14, REQ-FMT-08]
+fixes: [bug-049-bench-scenario-configure-writes-a-configuration-without-scanning-it-for-leaks-so-a-leaking-one-is-found-only-by-a-later-validate-or-dry-run]
 tags: ["v0.3","configured","leak-scan"]
 ---
 
 ## Context
 
-<!-- Why this task, which wave it belongs to, and what "done" means for the wave's "Ends with". -->
+[bug-049](../bug/bug-049-bench-scenario-configure-writes-a-configuration-without-scanning-it-for-leaks-so-a-leaking-one-is-found-only-by-a-later-validate-or-dry-run.md),
+approved by the approver on 2026-11-12, fix 1, to be done now, before W18's publishing task.
+`bench scenario configure` (REQ-CLI-14) scans the configuring prompt before any session and checks the session's
+changes for offences (the secrets among them) before writing, but the configuration it writes is leak-scanned only
+by a later `bench scenario validate` or dry run. In task-143 that is how bug-047 surfaced: two configurations
+`configure` had reported as written were refused by the suites after pre-review.
+
+State read on 2026-11-12 (main `1bcec4a4`): the twelve 1.1 configurations validate; nothing in them changes here.
+
+Code, tests and the requirement only: no real-agent session (the tests run `configure` with the fake agent of
+`test/support/configure-fixture.ts`), nothing spent.
 
 ## Acceptance criteria
 
-<!-- One line per criterion (Gherkin scenario or requirement), each classified as red-first
-     (new behaviour: a failing test precedes the code) or characterization (existing behaviour). -->
+<!-- Each red first: a failing test before the code; `acceptance` lists the scenarios as they are written. -->
+
+1. **A leaking configuration is reported by the configure that wrote it** (red first, `scenarios.feature`): a
+   session whose configuration holds an oracle literal of the version (more than one prose word, as bug-047 left the
+   rule) ends with the configuration and its record written, the record's outcome `written`; `configure` prints the
+   scan's findings (by file and source, never the literal) and exits 1. Today it exits 0.
+2. **The same with the hold-out** (red first, acceptance or unit): when `BENCH_HOLDOUT_PATH` is set, a literal of a
+   hold-out file is found the same way, named only by the hold-out file, as `scanConfiguringPrompt` does.
+3. **Only the configured arm's findings** (red first, unit): a finding of another configuration of the version, or
+   of the version's prompts or seed, does not fail this `configure`; a step prompt repeating a line of the
+   configuration just written does (the check `scanScenario` already makes, REQ-FMT-08 as amended in 1.50).
+4. **Characterization:** a clean configuration still exits 0 with today's output; a refused, killed, failed or
+   interrupted session is not scanned (no configuration written), its exit code unchanged; task-141's and
+   task-143's configure tests stay green unchanged.
+5. `requirements.md` 1.57: REQ-CLI-14 amended (the scan after writing, exit 1 on a finding, files and record kept,
+   `--replace` or a fix of the scan then the approver's choice). Checks green (prettier, tsc, eslint,
+   `scripts/pre-review.sh main`); an independent review (dl-020); the full suites on the approver's go.
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+- `src/scenario/leak-scan.ts`: `scanScenario`'s findings already name their place (`arms.<configured>` for a
+  configuration's file, `steps[i].prompt_file` with the configuration file's label for a repeated line). A small
+  exported `scanConfiguration(scenario, declarations, configured, holdout?)` keeps the findings of that arm only, so
+  the filter lives beside the scan, not in the runner.
+- `src/runner/configure.ts`: after the reload it does already (`loadScenario`), when the outcome is `written` and the
+  version loads, it runs `scanConfiguration` with the declarations and hold-out it loaded before the session; the
+  findings go into the result (a `leakIssues` beside `loadIssues`). Nothing is removed: the configuration is the
+  evidence, and REQ-FMT-04's freeze (first dry run) has not happened yet, so `--replace` remains possible.
+- `src/cli/configure.ts`: prints the findings after the outcome and exits 1 when there are any, as it does for
+  `loadIssues`.
+- Rejected, fix 2 (scan before writing, outcome `refused`): it needs the configuration check split to run on files
+  not on disk, and it would discard the evidence of a paid session.
+- Tests: the fixture's fake agent writes a file with an S2 1.1 multi-word literal; the hold-out case uses a temporary
+  hold-out directory (not the real one), with `BENCH_HOLDOUT_PATH` set only inside that test.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+## Review
