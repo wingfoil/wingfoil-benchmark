@@ -3,7 +3,7 @@ id: bug-048-the-openspec-docs-generator-drops-a-configured-context-that-has-no-l
 type: bug
 title: "The openspec-docs generator drops a configured context that has no level-two heading, so openspec-docs-configured runs with no rules"
 status: approved
-# fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
+fixed_by: task-144-w18-every-arm-s-dry-run-on-s1-s2-s3-and-s8-at-1.1-the-configured-arms-included
 tags: ["v0.3","configured","docs-control"]
 ---
 
@@ -42,3 +42,12 @@ control of `openspec-configured`. The configurations themselves are right, and `
 2. Or a task of its own after task-144, which runs the other 48 dry runs now and these four later.
 
 No configuration changes either way (REQ-FMT-04): the defect is the generator's.
+
+## Resolution
+
+Fixed inside [task-144](../task/task-144-w18-every-arm-s-dry-run-on-s1-s2-s3-and-s8-at-1.1-the-configured-arms-included.md), option 1, widened at the approver's choice. `1c3fc8d5` renders a context
+with no `## ` line whole under `## Rules`, after a red test with S2's configuration; `ffc9a132` also renders a
+configuration's per-artifact `rules:` and `operations:` guidance (requirements 1.56). A context with a `## ` line
+keeps its rendering, so the non-configured openspec-docs control and its pinned digest are unchanged.
+`openspec-docs-configured`'s four dry runs ran after the fix (`dry-runs/204` to `207`, all completed);
+`dry-runs/160` stays as recorded, superseded by `204` in `docs/calibration/v0.3.md` §5.
