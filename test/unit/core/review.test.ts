@@ -66,8 +66,7 @@ describe('the review_loop entry (task-148, REQ-FMT-01 and REQ-CLI-05 as amended 
 
   it('refuses an unknown key, a missing field and a value out of range, naming its path', () => {
     expect(issues({ ...REVIEW_LOOP, rounds: 3 }).join()).toMatch(/review_loop/);
-    const { fixer_prompt: _dropped, ...noFixer } = REVIEW_LOOP;
-    expect(issues(noFixer)).toContain('review_loop.fixer_prompt');
+    expect(issues({ ...REVIEW_LOOP, fixer_prompt: undefined })).toContain('review_loop.fixer_prompt');
     expect(issues({ ...REVIEW_LOOP, max_rounds: 0 })).toContain('review_loop.max_rounds');
     expect(issues({ ...REVIEW_LOOP, max_rounds: 11 })).toContain('review_loop.max_rounds');
     expect(issues({ ...REVIEW_LOOP, effort: 'enormous' })).toContain('review_loop.effort');
