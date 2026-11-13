@@ -82,7 +82,7 @@ scheduled), G-A, G-B (v0.4 from sequencer 1.2) and G-G (v1.0) have no v0.1 scena
 | F7.1 competitor arms (v0.2) | J6.1 | competitors.feature | REQ-FMT-01, 05, 06, 12, 13, 14; REQ-RUN-01, 11, 12, 14, 18; REQ-SCO-14; REQ-RES-09; REQ-CLI-11 | W12 (Spec Kit), W13 (OpenSpec) |
 | F7.2 setup contest process (v0.2) | J6.3 | competitors.feature | REQ-FMT-01, 06, 13; REQ-RES-10 | W13 |
 | F7.5 configured variants (v0.3) | J6.1 | campaign.feature, competitors.feature, scenarios.feature, runner.feature, scoring.feature, results.feature (W18's tasks) | REQ-ARC-03; REQ-FMT-01, 04, 05, 08, 13; REQ-RUN-03, 11, 20; REQ-SCO-08; REQ-RES-02, 10; REQ-CLI-11, 14 | W18 |
-| F4.9 review loop per arm (v0.3) | J2.5 | campaign.feature, runner.feature, scoring.feature, results.feature (W19's tasks) | REQ-FMT-01, 06, 08; REQ-RUN-01, 02, 08, 09, 13, 19, 21; REQ-SCO-14, 16; REQ-RES-02, 06; REQ-CLI-02, 03, 05, 11; REQ-NFR-01 | W19 |
+| F4.9 review loop per arm (v0.3) | J2.5 | campaign.feature, runner.feature, scoring.feature, results.feature (W19's tasks) | REQ-FMT-01, 06, 08; REQ-RUN-01, 02, 08, 09, 13, 19, 21; REQ-SCO-14, 16; REQ-RES-02, 06; REQ-CLI-02, 03, 05, 11 | W19 |
 
 **Coverage:**
 

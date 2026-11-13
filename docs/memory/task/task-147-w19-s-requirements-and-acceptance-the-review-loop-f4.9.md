@@ -7,7 +7,7 @@ release: v0.3
 wave: W19
 features: []
 acceptance: []
-requirements: [REQ-FMT-01, REQ-FMT-06, REQ-FMT-08, REQ-RUN-01, REQ-RUN-02, REQ-RUN-08, REQ-RUN-09, REQ-RUN-13, REQ-RUN-19, REQ-RUN-21, REQ-SCO-14, REQ-SCO-16, REQ-RES-02, REQ-RES-06, REQ-CLI-02, REQ-CLI-03, REQ-CLI-05, REQ-CLI-11, REQ-NFR-01]
+requirements: [REQ-FMT-01, REQ-FMT-06, REQ-FMT-08, REQ-RUN-01, REQ-RUN-02, REQ-RUN-08, REQ-RUN-09, REQ-RUN-13, REQ-RUN-19, REQ-RUN-21, REQ-SCO-14, REQ-SCO-16, REQ-RES-02, REQ-RES-06, REQ-CLI-02, REQ-CLI-03, REQ-CLI-05, REQ-CLI-11]
 fixes: []
 tags: ["v0.3","specification","w19"]
 ---
@@ -41,6 +41,12 @@ After the independent review's round 1 (in chat, 2026-11-13, each the recommende
 6. **A later round sees the whole copy,** with the previous fix applied, pointed at the fix's diff, so that M-V2 can
    find defects outside the fix (a review of the fix's diff alone, as dl-020's, would make it near 1 by construction).
 
+After review round 4 (in chat, 2026-11-13, the recommended option):
+
+7. **The fixer works in the run's own container,** before it is removed, in the run's workspace once its patches are
+   stored, so it has the harness the setup installed there; no image is made and no credential reaches disk. A loop
+   is never resumed: an interrupted one stays recorded as such, the run kept.
+
 State read on 2026-11-13 (main `775667d9`): no review loop exists; the runner ends a run after its last step's commit
 and patch (REQ-RUN-05), and scoring runs later, in its own container, from the stored patches (REQ-SCO-01); F4.6's blind
 judge, whose "harness files stripped" §4.7 borrows, is not built, so this task defines the stripping. No spending in
@@ -54,17 +60,17 @@ this task.
    and effort, the prompts `review/prompt.md` and `review/fixer-prompt.md` by their SHA-256, the round cap (5), and the
    loop's caps (time, tokens and cost per session, as a step's, and the fixer's interventions); absent, no run has a
    loop, so every earlier campaign stays valid and unchanged. A dry-run profile may carry the same entry (REQ-CLI-05).
-2. **The loop (a new REQ-RUN):** on every completed run, once the last step's commit and patch are stored, the runner
-   builds the reviewer's copy, a fresh repository of the seed and the final tree both stripped of every path the setup
-   added and of the reserved names (choice 5), and keeps the run's container as a temporary image for the fixer (scoring
-   reads the stored patches, never the loop); the **reviewer**, in its own container, reads round 1's diff between the
-   two commits and, in later rounds, the whole copy with every fix so far, pointed at the last fix's diff (choice 6),
-   reads only, and returns its findings as JSON (severity `blocker`/`should-fix`/`nit`, file, line, title, why); the
-   **fixer** is the run's agent and model, in a container of the run's temporary image with its harness, manual and MCP
-   server as in a step, given the blockers and should-fixes and `review/fixer-prompt.md`, under the approver policy; the
-   loop closes by choice 3. A failed or unparseable reviewer, a fixer that changes nothing, an interrupt and a quota
-   rejection each end the loop with that outcome, recorded; a run that did not complete records `no loop`; `--resume`
-   also reruns the loops left unfinished by an interrupt, quota or an infrastructure failure.
+2. **The loop (a new REQ-RUN):** on every completed run, once the last step's commit and patch are stored and before the
+   run's container is removed, the runner builds the reviewer's copy, a fresh repository of the seed and the final tree
+   both stripped of every path the setup added and of the reserved names (choice 5); scoring reads the stored patches,
+   never the loop. The **reviewer**, in its own container, reads round 1's diff between the two commits and, in later
+   rounds, the whole copy with every fix so far, pointed at the last fix's diff (choice 6), reads only, and returns its
+   findings as JSON (severity `blocker`/`should-fix`/`nit`, file, line, title, why); the **fixer** is the run's agent
+   and model in the run's own container and workspace (choice 7), with its harness, manual and MCP server as in a step,
+   given the blockers and should-fixes and `review/fixer-prompt.md`, under the approver policy; the loop closes by
+   choice 3. A failed or unparseable reviewer, a fixer that changes nothing, an interrupt and a quota rejection each end
+   the loop with that outcome and its reason, recorded; a run that did not complete records `no loop`; a loop is never
+   resumed.
 3. **The records (REQ-FMT-06):** each run's `review/` holds, per round, the findings, the fix's patch, both sessions'
    usage and transcripts (git-ignored as a step's), and the loop's outcome (`clean`, `not clean at 5`, `failed`, `no
    fix`, `interrupted`, `quota exhausted`, `no loop`), with the reviewer's pins and the prompt's SHA-256.
@@ -176,22 +182,8 @@ this task.
   Scenario: The fixer works with the arm's harness as in a step
     Given a completed run of "wingfoil" whose loop's round 1 reports a blocker
     When the fixer session starts
-    Then it runs from the run's temporary image, with the wingfoil MCP server and the verdict hook of the last step
-    And the image is removed when the loop ends
-
-  @F4.9
-  Scenario: The temporary image holds no credential
-    Given a completed run whose container was given the subscription token
-    When the runner commits it for the review loop
-    Then the image's configuration and history hold no secret value the runner passed, and no agent session file
-    And a fixer container of it is given the token at its creation
-
-  @F4.9
-  Scenario: An unfinished loop keeps its image for a resume
-    Given a loop that ended "failed" because its container could not start
-    When the campaign is resumed
-    Then the loop runs again from the kept image, its copies rebuilt from the run's kept workspace
-    And a loop whose image is gone is recorded "failed", naming it
+    Then it runs in the run's own container, with the wingfoil MCP server and the verdict hook of the last step
+    And the run's stored patches and "commits.json" are unchanged, and no image is made
 
   @F4.9
   Scenario: A quota rejection in a loop stops the campaign
@@ -206,11 +198,11 @@ this task.
     Then its session ends and the loop is "failed"
 
   @F4.9
-  Scenario: An interrupted loop is resumed alone
+  Scenario: An interrupted loop is not resumed
     Given a campaign interrupted during a run's review loop
     When it is resumed
-    Then that loop runs again from round 1, from the run's temporary image and kept workspace, and none of the steps
-    And the earlier loop's records move to "review/attempts/1/"
+    Then that run's loop stays recorded as "interrupted" with its rounds so far, the run "completed"
+    And no loop session and none of the run's steps run again
 
   @F4.9
   Scenario: A round with a blocker or a should-fix is fixed and its fix re-reviewed
@@ -347,3 +339,12 @@ this task.
     campaign run keeps the images unfinished loops need and reports the others, and `--final` scoring removes them;
     scenarios for the kept image and a resume whose image is gone.
   - **Nit:** a failed commit ends the loop `failed` for an infrastructure reason.
+- **Round 4** (a fourth independent agent, on `6c0c61f5`; it also ran a local Docker experiment with a fake secret,
+  nothing pulled, cleaned up): one blocking finding. `docker commit --change 'ENV X='` empties the visible variable,
+  but the source container's environment stays in the image's stored configuration (`docker save` shows the value),
+  and files in the container layer keep whatever the agent wrote; the specified check could not see either. **The
+  approver's choice 7** replaces the temporary image: the fixer works in the run's own container before its removal,
+  and loops are never resumed. REQ-RUN-02, REQ-RUN-08, REQ-RUN-19 and REQ-RUN-21 rewritten; REQ-NFR-01's amendment,
+  the image retention, the leftover rule for images and the resume of loops withdrawn; every outcome but `clean`
+  records its reason (finding 4); the scenarios follow.
+
