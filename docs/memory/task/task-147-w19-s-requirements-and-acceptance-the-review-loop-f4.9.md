@@ -2,7 +2,7 @@
 id: task-147-w19-s-requirements-and-acceptance-the-review-loop-f4.9
 type: task
 title: "W19's requirements and acceptance: the review loop (F4.9)"
-status: approved
+status: done
 release: v0.3
 wave: W19
 features: []
