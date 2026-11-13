@@ -38,6 +38,31 @@ describe("the reviewer's findings (task-148, REQ-RUN-21)", () => {
     expect(refused(JSON.stringify({ findings: [{ ...FINDING, line: 0 }] }))).toMatch(/line/);
     expect(refused(JSON.stringify({ findings: [{ ...FINDING, extra: 1 }] }))).toMatch(/extra|unrecognized/i);
     expect(refused('```json\n{"findings": []}\n```\n```json\n{"findings": []}\n```')).toMatch(/one/);
+    expect(refused(JSON.stringify({ findings: [{ ...FINDING, file: '.git/config' }] }))).toMatch(/git/);
+    expect(refused(JSON.stringify({ findings: [{ ...FINDING, file: '\\share\\a.ts' }] }))).toMatch(
+      /relative/,
+    );
+    expect(refused(JSON.stringify({ findings: [{ ...FINDING, file: '' }] }))).toMatch(/file/);
+    expect(refused(JSON.stringify({ findings: [{ ...FINDING, title: '   ' }] }))).toMatch(/title/);
+    expect(refused(JSON.stringify({ findings: [], summary: 'fine' }))).not.toBe('accepted');
+    expect(refused('```jsonc\n{"findings": []}\n```')).toMatch(/no findings/);
+  });
+
+  it('reads one spelling per file, the project as ".", and a fence labelled in any case (review round 1)', () => {
+    const parsed = parseFindings(
+      '```JSON\n' +
+        JSON.stringify({
+          findings: [
+            { ...FINDING, file: './src/cart.ts' },
+            { ...FINDING, file: '.', line: null },
+          ],
+        }) +
+        '\n```',
+    );
+    expect(parsed.ok ? parsed.value.map((finding) => finding.file) : parsed.issues).toEqual([
+      'src/cart.ts',
+      '.',
+    ]);
   });
 });
 

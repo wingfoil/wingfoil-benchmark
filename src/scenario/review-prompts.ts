@@ -26,8 +26,9 @@ export function reviewPromptIssues(root: string, loop: ReviewLoop, scenarios: re
       issues.push({ path: `review_loop.${key}`, message: `${pin.file}: not found` });
       continue;
     }
-    const text = readFileSync(file, 'utf8');
-    const sha256 = createHash('sha256').update(text).digest('hex');
+    const bytes = readFileSync(file);
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const text = bytes.toString('utf8');
     if (sha256 !== pin.sha256) {
       issues.push({
         path: `review_loop.${key}`,

@@ -13,16 +13,20 @@ import { parseWith } from './yaml-file.js';
 /** A path inside the copy: relative, with no `..` segment. */
 const copyPath = z
   .string()
+  .trim()
   .min(1)
-  .refine((path) => !path.startsWith('/') && !/^[A-Za-z]:/.test(path), 'must be a path relative to the copy')
-  .refine((path) => !path.split(/[\\/]/).includes('..'), 'must not leave the copy');
+  .refine((path) => !/^[\\/]/.test(path) && !/^[A-Za-z]:/.test(path), 'must be a path relative to the copy')
+  .refine((path) => !path.split(/[\\/]/).includes('..'), 'must not leave the copy')
+  .refine((path) => !/^(?:\.\/)*\.git(?:\/|$)/.test(path), "must not name the copy's git directory")
+  // One spelling per file, so that rounds compare: `./src/a.ts` is `src/a.ts`; `.` stays the project.
+  .transform((path) => (path === '.' ? path : path.replace(/^(?:\.\/)+/, '')));
 
 export const findingSchema = z.strictObject({
   severity: z.enum(['blocker', 'should-fix', 'nit']),
   file: copyPath,
   line: z.number().int().min(1).nullable(),
-  title: z.string().min(1),
-  why: z.string().min(1),
+  title: z.string().trim().min(1),
+  why: z.string().trim().min(1),
 });
 
 /** One finding of a review round. */
@@ -30,7 +34,7 @@ export type Finding = z.infer<typeof findingSchema>;
 
 export const findingsSchema = z.strictObject({ findings: z.array(findingSchema) });
 
-const FENCE = /```json[^\n]*\n([\s\S]*?)\n```/g;
+const FENCE = /```json[ \t]*\r?\n([\s\S]*?)\r?\n```/gi;
 
 /**
  * The findings a reviewer's final message holds: the message itself as JSON, or the one fenced `json` block in it.

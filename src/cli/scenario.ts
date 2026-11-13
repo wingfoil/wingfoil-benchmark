@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { SCENARIO_ID, SCENARIO_VERSION } from '../core/index.js';
@@ -9,6 +10,7 @@ import {
   loadHoldoutAdditions,
   loadLeakScanDeclarations,
   loadScenario,
+  scanPrompt,
   scanScenario,
 } from '../scenario/index.js';
 import type { HoldoutAdditions } from '../scenario/index.js';
@@ -70,6 +72,9 @@ export function parseScenarioArguments(args: readonly string[]): ScenarioArgumen
  * (REQ-CLI-10) — and every addition under a declared suite's id (dl-001). Then the leak scan (REQ-FMT-08) with the declarations of `scenarios/leak-scan.yaml`,
  * the hold-out's additions included; its findings name files and steps, never content.
  */
+/** The review loop's prompts, where every campaign keeps them (REQ-FMT-01 as amended in 1.58). */
+const REVIEW_PROMPTS = ['review/prompt.md', 'review/fixer-prompt.md'] as const;
+
 export function validateScenario(args: ScenarioArguments, root: string): ScenarioValidation {
   const name = `${args.id}@${args.version}`;
   const scenario = loadScenario(join(root, 'scenarios'), args.id, args.version);
@@ -80,6 +85,17 @@ export function validateScenario(args: ScenarioArguments, root: string): Scenari
   if (!declarations.ok) return { ok: false, issues: declarations.issues };
   const scan = (additions?: HoldoutAdditions): ScenarioValidation | undefined => {
     const leaks = scanScenario(scenario.value, declarations.value, additions);
+    // With a hold-out, the review loop's prompts are scanned against its additions too (REQ-FMT-08 as amended in 1.58,
+    // task-148): a campaign's check scans them against the oracle, and never reads a hold-out.
+    if (additions !== undefined) {
+      for (const prompt of REVIEW_PROMPTS) {
+        const file = join(root, prompt);
+        if (existsSync(file))
+          leaks.push(
+            ...scanPrompt(prompt, readFileSync(file, 'utf8'), scenario.value, declarations.value, additions),
+          );
+      }
+    }
     return leaks.length > 0 ? { ok: false, issues: leaks } : undefined;
   };
 

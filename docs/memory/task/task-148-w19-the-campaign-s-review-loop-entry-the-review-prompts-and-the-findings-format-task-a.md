@@ -95,9 +95,25 @@ State read on 2026-11-13 (main `9254bbaa`): no `review_loop` key exists in `camp
   - `checkCampaign` and `checkDryRun` call it when the entry is present.
   - `review/prompt.md` and `review/fixer-prompt.md`, scanned by `reviewPromptIssues` against the repository's nine
     loadable scenario versions: no finding.
-- **Deviation from criterion 3:** no hold-out in the scan, since neither `campaign validate` nor the dry run's check
-  reads one (REQ-CLI-10); the configuring prompt's scan keeps its hold-out.
+- **Criterion 3's hold-out:** neither `campaign validate` nor the dry run's check reads a hold-out (REQ-CLI-10), so
+  their scan is against the oracle; `bench scenario validate` with a hold-out (the option or `BENCH_HOLDOUT_PATH`)
+  now also scans `review/prompt.md` and `review/fixer-prompt.md` against its additions (review round 1, finding 3:
+  the first draft had no path at all to the hold-out).
 - A dry-run test (`test/unit/runner/campaign.test.ts`) written after the code, as verification of criterion 2 for
   profiles.
 
 ## Review
+
+- **Round 1** (an independent read-only agent, in a clone under `mktemp`, 2026-11-13): nothing blocking; tsc,
+  prettier, eslint and the targeted suites green; red-first confirmed at `00d61f05`; the thirteen campaigns' ids and
+  validity identical on the branch and its merge base. Addressed:
+  1. The reviewer's prompt says what `file` holds for a missing file or the design as a whole (`.` for the project)
+     and asks for the key `findings` and no other, which the strict schema requires.
+  2. The fixer's prompt no longer asks for "your usual way of recording your work": it pushed harness arms to record
+     more than a step's request does, and a fixer writing records only could escape `no fix`.
+  3. The review prompts reach a hold-out through `bench scenario validate` (Execution notes).
+  Nits: the fence's label exact and in any case; paths normalized (`./` dropped, `.` the project), a leading `\` and
+  `.git/` refused; titles and reasons not blank; the prompts' SHA-256 over their bytes; tests for an oracle literal in
+  a review prompt and for a missing prompt in a dry run; the reviewer's prompt neutral on the two commits. Its note
+  for the gate: the reviewer's blocker covers "a requirement the project states", so the records harness arms keep in
+  the copy (choice 5 of task-147) become documentation the code is judged against; to read with the loop's results.
