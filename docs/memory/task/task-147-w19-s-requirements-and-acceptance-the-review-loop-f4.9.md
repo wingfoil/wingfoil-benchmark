@@ -95,4 +95,106 @@ stripping. No spending in this task.
 
 ## Execution notes
 
+- 2026-11-13: backlog → in-progress on main; worktree `../WingFoil2-Benchmark-wt/t147`.
+- **The documents:** `requirements.md` 1.58 (REQ-RUN-21 and REQ-SCO-16 new; REQ-FMT-01, REQ-FMT-06, REQ-FMT-08,
+  REQ-RUN-08, REQ-RUN-09, REQ-SCO-14, REQ-RES-02, REQ-CLI-02, REQ-CLI-03 and REQ-CLI-05 amended); `traceability.md`
+  1.8 (F4.9 in §2; T16 and T17 in §3); `09_experiment-design.md` 1.13 (§4.7 with the four choices, the quick check
+  settled; T16, T17).
+- **The scenarios drafted** for W19's implementing tasks, each to be added with its test red first:
+
+  ```gherkin
+  # campaign.feature (task A)
+  @F4.9
+  Scenario: A campaign without a review loop is unchanged
+    Given a campaign file with no "review_loop" entry
+    When it is validated and run
+    Then it is valid as before, and no run holds "review/"
+
+  @F4.9
+  Scenario: A campaign pins its review loop
+    Given a campaign whose "review_loop" pins the reviewer, the prompt's SHA-256 and 5 rounds
+    When it is validated
+    Then it is valid, and a prompt whose SHA-256 differs from "review/prompt.md" is refused, naming the file
+
+  # runner.feature (task B)
+  @F4.9
+  Scenario: The review loop runs on a copy after the last step
+    Given a run of a campaign that pins a review loop
+    When its last step ends
+    Then the loop runs on a copy of the final workspace, after the scoring's snapshot
+    And the run's workspace, snapshot and scores are those it would have without the loop
+
+  @F4.9
+  Scenario: The reviewer sees the code without the harness's files
+    Given a run of "speckit" whose workspace holds ".specify/memory/constitution.md", "CLAUDE.md" and ".mcp.json"
+    When the reviewer session starts
+    Then its copy holds none of them, nor any path under the arm's configuration or state places
+    And it holds the run's diff from the seed, and no step prompt, oracle file or hold-out file
+
+  @F4.9
+  Scenario: A round with a blocker or a should-fix is fixed and its fix re-reviewed
+    Given the reviewer's round 1 reports a should-fix
+    When the loop goes on
+    Then the arm's own agent fixes it in the copy, its diff recorded as round 1's "fix.patch"
+    And round 2 reviews that diff
+
+  @F4.9
+  Scenario: A round with nits only closes the loop
+    Given the reviewer's round 2 reports two nits and nothing else
+    When the loop goes on
+    Then it closes as "clean" at round 2, and no fixer session runs for the nits
+
+  @F4.9
+  Scenario: A loop that does not close by the cap is not clean
+    Given a reviewer that reports a blocker in every round
+    When five rounds have run
+    Then the loop ends as "not clean at 5", and no sixth round runs
+
+  @F4.9
+  Scenario: A reviewer that changes the copy ends the loop as failed
+    Given a reviewer session that edits a file of its copy
+    When the round ends
+    Then the loop ends as "failed", naming the file, and the run's results are kept
+
+  @F4.9
+  Scenario: A loop session killed at its cap keeps the run's results
+    Given a fixer session that exceeds "review_loop.caps.session_time_s"
+    When it is killed
+    Then the loop ends as "failed", and the run's steps, scores and M-K1 are unchanged
+
+  # scoring.feature (task C)
+  @F4.9
+  Scenario: Rounds to clean are read from the loop
+    Given runs whose loops closed as "clean" at rounds 1, 2 and 3, and one "not clean at 5"
+    When the execution is aggregated
+    Then M-V1 summarizes 1, 2 and 3, and names the loop not clean at 5 apart
+
+  @F4.9
+  Scenario: A finding on a line the previous fix changed is fix-induced
+    Given round 1's fix changed lines 10 to 14 of "src/cart.ts"
+    And round 2 reports findings on "src/cart.ts" line 12, "src/cart.ts" line 40 and one with no line
+    When M-V2 is read
+    Then one of the three findings is fix-induced, a share of 1/3
+
+  @F4.9
+  Scenario: The loop's cost is apart from the run's
+    Given a run whose steps cost 0.50 EUR and whose loop cost 0.20 EUR
+    When the execution is aggregated
+    Then M-K1 is 0.50 EUR, and M-V3 is 0.20 EUR, the reviewer's and the fixer's apart
+
+  # results.feature (task C)
+  @F4.9
+  Scenario: The method page states the review loop
+    When the site is built for an execution whose campaign pins a review loop
+    Then the method page names the reviewer, its model and effort, quotes its prompt with its SHA-256
+    And states the closing rule, the round cap and what the reviewer's copy lacks
+
+  @F4.9
+  Scenario: A run's page shows its rounds
+    When the site is built for a run whose loop closed at round 2
+    Then the run's page lists both rounds, each finding's severity, file, line and title, and the outcome "clean"
+  ```
+
+- Checks: prettier on the three documents; `scripts/pre-review.sh main`.
+
 ## Review
