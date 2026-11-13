@@ -139,7 +139,7 @@ this task.
 
   # runner.feature (task B)
   @F4.9
-  Scenario: The review loop runs on a copy after the last step
+  Scenario: The review loop runs after the last step, never changing what is scored
     Given a completed run of a campaign that pins a review loop
     When its last step's commit and patch are stored
     Then the reviewer reads a stripped copy and the fixer works in the run's workspace
@@ -355,4 +355,7 @@ this task.
   container named under the campaign's prefix, removed whatever happens and reported by the leftover check; REQ-RUN-19
   no longer refers to itself; choice 7's credential claim narrowed; `ceiling_eur` checked before round 1 too. Its hint
   for task B: the loop sits outside the run's interrupt path, so the run keeps `completed`.
+- **Round 6** (a sixth independent agent, on `0cd7a147`): nothing blocking or should-fix; round 5's items done. Its
+  three nits applied: a scenario's title, the round's `verdicts.json` only for a scenario with an approver, the
+  ceiling's stop named in REQ-RUN-21.
 
