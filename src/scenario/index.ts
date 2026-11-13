@@ -17,5 +17,7 @@ export {
   CONFIGURING_PROMPT,
   loadConfiguringProfile,
   scanConfiguringPrompt,
+  scanPrompt,
 } from './configuring.js';
 export { CONFIGURED_DIR, CONFIGURED_SUFFIX, loadConfigurations, relativeFiles } from './configurations.js';
+export { reviewPromptIssues } from './review-prompts.js';

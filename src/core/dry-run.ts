@@ -17,6 +17,8 @@ export const dryRunProfileSchema = campaignSchema
     caps: true,
     currency: true,
     arm_digests: true,
+    // REQ-CLI-05 as amended in 1.58: a dry run measures the review loop as a campaign would run it.
+    review_loop: true,
   })
   .extend({ models: z.strictObject({ default: modelId }) });
 

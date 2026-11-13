@@ -10,6 +10,7 @@ import {
   loadDryRunProfile,
   loadLeakScanDeclarations,
   loadScenario,
+  reviewPromptIssues,
   scanScenario,
 } from '../scenario/index.js';
 
@@ -78,6 +79,11 @@ export function checkDryRun(request: DryRunRequest, root: string): Result<Checke
   if (!declarations.ok) return declarations;
   const leaks = scanScenario(scenario.value, declarations.value);
   if (leaks.length > 0) return fail(leaks);
+  // The profile's review loop, as a campaign's (REQ-CLI-05 and REQ-FMT-08 as amended in 1.58, task-148).
+  if (profile.value.review_loop !== undefined) {
+    const prompts = reviewPromptIssues(root, profile.value.review_loop, [scenario.value]);
+    if (prompts.length > 0) return fail(prompts);
+  }
 
   // A docs control is generated from the arm its `docs_of` names, which the dry run loads too (REQ-RUN-11). Each arm
   // as the profile pins it, if it does (REQ-FMT-13 as amended in 1.33, task-095).

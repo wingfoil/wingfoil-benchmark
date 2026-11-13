@@ -48,10 +48,12 @@ export {
 } from './campaign.js';
 export { dryRunProfileSchema } from './dry-run.js';
 export type { DryRunProfile } from './dry-run.js';
-export type { ArmRequirement, CampaignFile } from './campaign.js';
+export type { ArmRequirement, CampaignFile, ReviewLoop } from './campaign.js';
 export { canonicalJson } from './canonical-json.js';
 export { approximateTokens, TOKEN_METHOD } from './tokens.js';
 export { parseWith, readYamlFile } from './yaml-file.js';
+export { findingSchema, findingsSchema, parseFindings } from './review.js';
+export type { Finding } from './review.js';
 export { dockerCli, WORKSPACE } from './ports/docker.js';
 export type {
   BuildRequest,

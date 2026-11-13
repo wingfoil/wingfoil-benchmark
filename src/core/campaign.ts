@@ -125,6 +125,49 @@ const slice = z.strictObject({
 /** The suffix of a configured arm's name, after its base arm's (experiment design 1.7 §2). */
 const CONFIGURED_ARM_SUFFIX = '-configured';
 
+/** A review prompt pinned by its file under `review/` and its SHA-256 (REQ-FMT-01 as amended in 1.58). */
+const reviewPrompt = z.strictObject({
+  file: z.string().regex(/^review\/[a-z0-9][a-z0-9-]*\.md$/, 'must be a Markdown file under review/'),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/, 'must be a SHA-256, 64 hex characters'),
+});
+
+/**
+ * REQ-FMT-01 as amended in 1.58 (F4.9, REQ-RUN-21): the review loop a campaign or a dry-run profile pins: the
+ * reviewer's agent, model and effort, the two prompts, the round cap and each loop session's caps. Optional: without
+ * it, no run has a loop.
+ */
+export const reviewLoopSchema = z
+  .strictObject({
+    agent: z.strictObject({
+      name: z.enum(AGENT_NAMES),
+      version: z.string().regex(RELEASE, 'must be a released version such as 2.1.221'),
+    }),
+    model: modelId,
+    effort: z.string(),
+    prompt: reviewPrompt,
+    fixer_prompt: reviewPrompt,
+    max_rounds: z.number().int().min(1).max(10),
+    caps: z.strictObject({
+      session_time_s: positive,
+      session_tokens: positive.int(),
+      session_cost_eur: positive,
+      fixer_interventions: positive.int(),
+    }),
+  })
+  .superRefine((loop, ctx) => {
+    const levels = effortLevelsOf(loop.agent.name);
+    if (!levels.includes(loop.effort)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['effort'],
+        message: `'${loop.effort}' is not an effort ${loop.agent.name} takes: ${levels.join(', ')}`,
+      });
+    }
+  });
+
+/** A campaign's review loop as parsed. */
+export type ReviewLoop = z.infer<typeof reviewLoopSchema>;
+
 /** REQ-FMT-01: the campaign file `campaigns/<name>.yaml`. Unknown keys are rejected. */
 export const campaignSchema = z.strictObject({
   harnesses: z.record(z.string(), harness),
@@ -188,6 +231,8 @@ export const campaignSchema = z.strictObject({
   // REQ-FMT-01 as amended (REQ-RUN-19): stop starting runs once `same_error` runs failed at the same step with the same
   // error. Optional: without it, a failed run never stops the campaign (REQ-NFR-03).
   fail_fast: z.strictObject({ same_error: z.number().int().min(1) }).optional(),
+  // REQ-FMT-01 as amended in 1.58 (F4.9): the review loop every completed run ends with; absent, none.
+  review_loop: reviewLoopSchema.optional(),
 });
 
 /** A campaign file as parsed. */

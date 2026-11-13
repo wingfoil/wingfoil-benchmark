@@ -78,4 +78,26 @@ State read on 2026-11-13 (main `9254bbaa`): no `review_loop` key exists in `camp
 
 ## Execution notes
 
+- 2026-11-13: backlog → in-progress on main; worktree `../WingFoil2-Benchmark-wt/t148`.
+- **Red first** (`00d61f05`): `test/unit/core/review.test.ts` (the findings' parser and the entry's schema, red: no
+  `parseFindings`, `review_loop` refused as an unknown key) and the three scenarios in `campaign.feature` with their
+  tests in `test/acceptance/campaign.test.ts` (red but the characterization, which the first draft wrongly ran on the
+  dry-run profiles too: now each kind is loaded by its own loader).
+- **The work:**
+  - `src/core/review.ts` (new): `findingSchema`, `findingsSchema`, `parseFindings` (the message as JSON, or its one
+    fenced `json` block; any other shape an issue at `findings`).
+  - `src/core/campaign.ts`: `reviewLoopSchema` (the prompts under `review/` by SHA-256, `max_rounds` 1 to 10, the
+    caps, the effort checked against the reviewer agent's levels); `campaignSchema.review_loop` optional, and
+    `dryRunProfileSchema` picks it.
+  - `src/scenario/configuring.ts`: `scanPrompt(path, …)`, `scanConfiguringPrompt` now its caller (messages unchanged);
+    `src/scenario/review-prompts.ts` (new): `reviewPromptIssues`, the files and their SHA-256, then the scan against
+    every scenario version run, a literal named with its version, each distinct finding once.
+  - `checkCampaign` and `checkDryRun` call it when the entry is present.
+  - `review/prompt.md` and `review/fixer-prompt.md`, scanned by `reviewPromptIssues` against the repository's nine
+    loadable scenario versions: no finding.
+- **Deviation from criterion 3:** no hold-out in the scan, since neither `campaign validate` nor the dry run's check
+  reads one (REQ-CLI-10); the configuring prompt's scan keeps its hold-out.
+- A dry-run test (`test/unit/runner/campaign.test.ts`) written after the code, as verification of criterion 2 for
+  profiles.
+
 ## Review

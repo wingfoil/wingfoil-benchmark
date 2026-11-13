@@ -1,4 +1,5 @@
-import { copyFileSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
@@ -271,4 +272,47 @@ describe('scripted verdicts need policy v3 (task-117, dl-029)', () => {
         ]);
     },
   );
+});
+
+describe("a dry-run profile's review loop (task-148, REQ-CLI-05 as amended in 1.58)", () => {
+  const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+  it('checks its prompts as a campaign does: present, as pinned and scanned', () => {
+    const { root } = writeRepo({ ...completeCampaignYaml(), arms: ['baseline'] }, ['S1@1.0']);
+    copyFileSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
+    mkdirSync(join(root, 'review'));
+    const prompt = '# Review\n\nReview the code.\n';
+    const fixer = '# Fix\n\nFix it as Spec Kit would.\n';
+    writeFileSync(join(root, 'review', 'prompt.md'), prompt);
+    writeFileSync(join(root, 'review', 'fixer-prompt.md'), fixer);
+    const loop = {
+      agent: { name: 'claude-code', version: '2.1.300' },
+      model: 'claude-sonnet-5-5',
+      effort: 'medium',
+      prompt: { file: 'review/prompt.md', sha256: sha(prompt) },
+      fixer_prompt: { file: 'review/fixer-prompt.md', sha256: sha(fixer) },
+      max_rounds: 5,
+      caps: {
+        session_time_s: 1800,
+        session_tokens: 10_000_000,
+        session_cost_eur: 2,
+        fixer_interventions: 20,
+      },
+    };
+    const check = (reviewLoop: unknown) => {
+      writeFileSync(
+        join(root, 'scenarios', 'dry-run.yaml'),
+        stringify({ ...dryRunProfileYaml(), harnesses: {}, review_loop: reviewLoop }),
+      );
+      const checked = checkDryRun({ id: 'S1', version: '1.0', arm: 'baseline' }, root);
+      return checked.ok ? [] : checked.issues;
+    };
+
+    expect(check(loop)).toEqual([
+      { path: 'review/fixer-prompt.md', message: "names the harness 'Spec Kit'" },
+    ]);
+    expect(check({ ...loop, prompt: { ...loop.prompt, sha256: 'd'.repeat(64) } })).toEqual([
+      { path: 'review_loop.prompt', message: expect.stringContaining('review/prompt.md: its SHA-256 is ') },
+      { path: 'review/fixer-prompt.md', message: "names the harness 'Spec Kit'" },
+    ]);
+  });
 });
