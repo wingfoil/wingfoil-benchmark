@@ -43,9 +43,10 @@ After the independent review's round 1 (in chat, 2026-11-13, each the recommende
 
 After review round 4 (in chat, 2026-11-13, the recommended option):
 
-7. **The fixer works in the run's own container,** before it is removed, in the run's workspace once its patches are
-   stored, so it has the harness the setup installed there; no image is made and no credential reaches disk. A loop
-   is never resumed: an interrupted one stays recorded as such, the run kept.
+7. **The fixer works in the run's own container** (superseding choice 1's copy for the fixer), before it is removed,
+   in the run's workspace once its patches are stored, so it has the harness the setup installed there; no image is
+   made, so no credential is copied into one. A loop is never resumed: an interrupted one stays recorded as such, the
+   run kept.
 
 State read on 2026-11-13 (main `775667d9`): no review loop exists; the runner ends a run after its last step's commit
 and patch (REQ-RUN-05), and scoring runs later, in its own container, from the stored patches (REQ-SCO-01); F4.6's blind
@@ -141,7 +142,7 @@ this task.
   Scenario: The review loop runs on a copy after the last step
     Given a completed run of a campaign that pins a review loop
     When its last step's commit and patch are stored
-    Then the loop runs on copies of the final workspace
+    Then the reviewer reads a stripped copy and the fixer works in the run's workspace
     And the run's patches, and its scores, are those it would have without the loop
 
   @F4.9
@@ -208,7 +209,7 @@ this task.
   Scenario: A round with a blocker or a should-fix is fixed and its fix re-reviewed
     Given the reviewer's round 1 reports a should-fix
     When the loop goes on
-    Then the arm's own agent fixes it in the copy, its diff recorded as round 1's "fix.patch"
+    Then the arm's own agent fixes it in the run's workspace, its diff recorded as round 1's "fix.patch"
     And round 2 reviews that diff
 
   @F4.9
@@ -347,4 +348,11 @@ this task.
   and loops are never resumed. REQ-RUN-02, REQ-RUN-08, REQ-RUN-19 and REQ-RUN-21 rewritten; REQ-NFR-01's amendment,
   the image retention, the leftover rule for images and the resume of loops withdrawn; every outcome but `clean`
   records its reason (finding 4); the scenarios follow.
+- **Round 5** (a fifth independent agent, on `c1af7d61`, reading only): nothing blocking; the leak closed, the design
+  feasible (nothing after a run reads its workspace or its git; resume never re-runs a completed run). Addressed: the
+  fixer's `fix.patch` taken from the workspace as a step's, its verdict ledger the round's `verdicts.json`; "on a
+  copy" for the fixer replaced in §4.7, amendment 1.13, the 1.58 intro, choice 7 and two scenarios; the reviewer's
+  container named under the campaign's prefix, removed whatever happens and reported by the leftover check; REQ-RUN-19
+  no longer refers to itself; choice 7's credential claim narrowed; `ceiling_eur` checked before round 1 too. Its hint
+  for task B: the loop sits outside the run's interrupt path, so the run keeps `completed`.
 

@@ -294,9 +294,10 @@ campaign produces the reference values, and a threshold is proposed only after t
 The code each arm produced goes through the same review loop in every arm: one independent reviewer, the same
 severities (blocker, should-fix, nit) and the same closing rule (a re-review of the fix's diff after a blocker or a
 should-fix; a nit-only round closes the review), as the benchmark's own delivery uses (dl-020). From 1.13 (the
-approver's choices, 2026-11-13): the loop runs once per run, after its last step, on a copy of the final workspace,
-and its fixes are discarded, so that no step's metric changes; at most 5 rounds, after which the loop is "not clean
-at 5"; nits are never fixed inside the loop.
+approver's choices, 2026-11-13): the loop runs once per completed run, after its last step: the reviewer reads a
+stripped copy, and the fixer works in the run's own workspace after the last step's snapshot is stored, so its fixes
+never reach a stored patch, a score or any step's metric; at most 5 rounds, after which the loop is "not clean at 5";
+nits are never fixed inside the loop.
 
 - **M-V1 rounds to clean:** the rounds until a nit-only round or a round with no finding.
 - **M-V2 fix-induced share:** of the findings after round 1, the share introduced by an earlier round's fix: from
@@ -515,8 +516,9 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
     [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md)
     (requirements 1.50, REQ-RUN-20).
 18. **Amendment 1.13 (v0.3, W19, 2026-11-13).** §4.7: the approver's choices in chat: the loop after the run's last
-    step, on a copy whose fixes are discarded; Claude Code on `claude-sonnet-5-5` at `medium` as the reviewer; at most 5
-    rounds, nits never fixed (the quick check settled); M-V2 by the lines of the previous fix's diff; after the review,
-    the reviewer's copy keeps the agent's records and a later round sees the whole copy. §5: T16 and T17. Source:
-    [task-147](../memory/task/task-147-w19-s-requirements-and-acceptance-the-review-loop-f4.9.md) (requirements 1.58,
-    REQ-RUN-21, REQ-SCO-16).
+    step, the reviewer on a stripped copy and the fixer in the run's own workspace, its fixes never scored; Claude Code
+    on `claude-sonnet-5-5` at `medium` as the reviewer; at most 5 rounds, nits never fixed (the quick check settled);
+    M-V2 by the lines of the previous fix's diff; after the review, the reviewer's copy keeps the agent's records and a
+    later round sees the whole copy. §5: T16 and T17. Source:
+    [task-147](../memory/task/task-147-w19-s-requirements-and-acceptance-the-review-loop-f4.9.md)
+    (requirements 1.58, REQ-RUN-21, REQ-SCO-16).
