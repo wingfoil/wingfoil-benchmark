@@ -7,7 +7,7 @@ release: v0.3
 wave: W19
 features: []
 acceptance: []
-requirements: [REQ-FMT-01, REQ-FMT-06, REQ-FMT-08, REQ-RUN-01, REQ-RUN-02, REQ-RUN-08, REQ-RUN-09, REQ-RUN-13, REQ-RUN-19, REQ-RUN-21, REQ-SCO-14, REQ-SCO-16, REQ-RES-02, REQ-RES-06, REQ-CLI-02, REQ-CLI-03, REQ-CLI-05, REQ-CLI-11]
+requirements: [REQ-FMT-01, REQ-FMT-06, REQ-FMT-08, REQ-RUN-01, REQ-RUN-02, REQ-RUN-08, REQ-RUN-09, REQ-RUN-13, REQ-RUN-19, REQ-RUN-21, REQ-SCO-14, REQ-SCO-16, REQ-RES-02, REQ-RES-06, REQ-CLI-02, REQ-CLI-03, REQ-CLI-05, REQ-CLI-11, REQ-NFR-01]
 fixes: []
 tags: ["v0.3","specification","w19"]
 ---
@@ -180,6 +180,20 @@ this task.
     And the image is removed when the loop ends
 
   @F4.9
+  Scenario: The temporary image holds no credential
+    Given a completed run whose container was given the subscription token
+    When the runner commits it for the review loop
+    Then the image's configuration and history hold no secret value the runner passed, and no agent session file
+    And a fixer container of it is given the token at its creation
+
+  @F4.9
+  Scenario: An unfinished loop keeps its image for a resume
+    Given a loop that ended "failed" because its container could not start
+    When the campaign is resumed
+    Then the loop runs again from the kept image, its copies rebuilt from the run's kept workspace
+    And a loop whose image is gone is recorded "failed", naming it
+
+  @F4.9
   Scenario: A quota rejection in a loop stops the campaign
     Given a fixer session rejected for the subscription's quota
     When the round ends
@@ -195,7 +209,7 @@ this task.
   Scenario: An interrupted loop is resumed alone
     Given a campaign interrupted during a run's review loop
     When it is resumed
-    Then that loop runs again from round 1, from the run's temporary image, and none of the run's steps
+    Then that loop runs again from round 1, from the run's temporary image and kept workspace, and none of the steps
     And the earlier loop's records move to "review/attempts/1/"
 
   @F4.9
@@ -320,3 +334,16 @@ this task.
   - **Nits:** the estimate key in its own `review/` namespace, `<model>` the run's; T16's marking in REQ-RES-02;
     this file's criteria, documents list and scenarios (the fixer's harness, quota, the intervention cap); the stops'
     wording.
+- **Round 3** (a third independent agent, on `8d31b194`): round 2's blocker closed and feasible (the setup's files
+  live in the container's own layer, the workspace is a bind mount the commit does not capture). One blocking
+  finding, from the fix:
+  - **Blocking, the credential in the image:** `docker commit` copies the container's environment, so the token
+    passed as `ANTHROPIC_AUTH_TOKEN` would sit in every temporary image, and the agent's raw session files with it.
+    Now REQ-RUN-02 empties every credential variable at the commit, clears the agent's session files first, checks
+    the image for every secret value passed (a match refuses the loop), keeps the image local, and gives the fixer
+    the credential at its container's creation; REQ-NFR-01 amended; a scenario added.
+  - **Should-fix, addressed:** a resumed loop's copies come from the run's kept workspace, not the image (which holds
+    none); the image is kept for a loop `failed` for an infrastructure reason too; the leftover check of every
+    campaign run keeps the images unfinished loops need and reports the others, and `--final` scoring removes them;
+    scenarios for the kept image and a resume whose image is gone.
+  - **Nit:** a failed commit ends the loop `failed` for an infrastructure reason.
