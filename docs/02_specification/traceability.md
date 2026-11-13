@@ -82,7 +82,7 @@ scheduled), G-A, G-B (v0.4 from sequencer 1.2) and G-G (v1.0) have no v0.1 scena
 | F7.1 competitor arms (v0.2) | J6.1 | competitors.feature | REQ-FMT-01, 05, 06, 12, 13, 14; REQ-RUN-01, 11, 12, 14, 18; REQ-SCO-14; REQ-RES-09; REQ-CLI-11 | W12 (Spec Kit), W13 (OpenSpec) |
 | F7.2 setup contest process (v0.2) | J6.3 | competitors.feature | REQ-FMT-01, 06, 13; REQ-RES-10 | W13 |
 | F7.5 configured variants (v0.3) | J6.1 | campaign.feature, competitors.feature, scenarios.feature, runner.feature, scoring.feature, results.feature (W18's tasks) | REQ-ARC-03; REQ-FMT-01, 04, 05, 08, 13; REQ-RUN-03, 11, 20; REQ-SCO-08; REQ-RES-02, 10; REQ-CLI-11, 14 | W18 |
-| F4.9 review loop per arm (v0.3) | J2.5 | campaign.feature, runner.feature, scoring.feature, results.feature (W19's tasks) | REQ-FMT-01, 06, 08; REQ-RUN-08, 09, 21; REQ-SCO-14, 16; REQ-RES-02; REQ-CLI-02, 03, 05 | W19 |
+| F4.9 review loop per arm (v0.3) | J2.5 | campaign.feature, runner.feature, scoring.feature, results.feature (W19's tasks) | REQ-FMT-01, 06, 08; REQ-RUN-01, 02, 08, 09, 13, 19, 21; REQ-SCO-14, 16; REQ-RES-02, 06; REQ-CLI-02, 03, 05, 11 | W19 |
 
 **Coverage:**
 
@@ -109,8 +109,8 @@ scheduled), G-A, G-B (v0.4 from sequencer 1.2) and G-G (v1.0) have no v0.1 scena
 | T13 answer lookup | web requests logged; hold-out additions | REQ-RUN-10 (**partial**: shell network use is not detected); REQ-SCO-09 |
 | T14 model sensitivity | model slices as a separate comparison; v0.2: a model ladder (dl-007, dl-008), cross-model comparisons marked | REQ-FMT-01 (`models` slices); v0.2: REQ-SCO-13 |
 | T15 tool drift (v0.2) | every harness pinned, assessed at that version and its artifact published; the version beside every value; across campaigns only deltas | REQ-FMT-03, 11, 12; REQ-RES-03 (as amended in 1.26); REQ-SCO-13 |
-| T16 reviewer kinship (v0.3) | one reviewer, model and prompt for every arm, stated with the results | REQ-RUN-21; REQ-RES-02 |
-| T17 stripping limits (v0.3) | the harness's declared places, manual, rules file and MCP configuration stripped from the reviewer's copy | REQ-RUN-21 |
+| T16 reviewer kinship (v0.3) | one reviewer, model and prompt for every arm; M-V values marked across models | REQ-RUN-21; REQ-RES-02 |
+| T17 stripping limits (v0.3) | every path the setup added or changed, the reserved names and the run's history stripped from the reviewer's copy | REQ-RUN-21 |
 
 ## 4. Findings
 
