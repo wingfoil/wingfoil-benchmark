@@ -1,9 +1,9 @@
 # Experiment Design (GQM) — WingFoil Benchmark
 
-**Version:** 1.12
-**Date:** 2026-11-06
+**Version:** 1.13
+**Date:** 2026-11-13
 **Status:** Approved
-**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2); [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) (1.3); [task-094](../memory/task/task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike.md) (1.4); [task-095](../memory/task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md) (1.5); [dl-018](../memory/decision-log/dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md), [task-096](../memory/task/task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget.md) (1.6); [task-103](../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md) (1.7); [task-116](../memory/task/task-116-s10-gates-and-roles-scenario-dl-029.md) (1.8); [task-117](../memory/task/task-117-approver-policy-v3-scripted-verdicts-per-gate-on-classifier-v2-dl-029.md) (1.9); [task-118](../memory/task/task-118-a-separate-approver-identity-the-agent-never-the-approver-verdicts-executed-by-the-runner-dl-029.md) (1.10); [task-126](../memory/task/task-126-w16-s-requirements-and-acceptance-the-method-corrected-bug-025-bug-026-bug-028-to-bug-032.md) (1.11), [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md) (1.12)
+**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2); [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) (1.3); [task-094](../memory/task/task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike.md) (1.4); [task-095](../memory/task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md) (1.5); [dl-018](../memory/decision-log/dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md), [task-096](../memory/task/task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget.md) (1.6); [task-103](../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md) (1.7); [task-116](../memory/task/task-116-s10-gates-and-roles-scenario-dl-029.md) (1.8); [task-117](../memory/task/task-117-approver-policy-v3-scripted-verdicts-per-gate-on-classifier-v2-dl-029.md) (1.9); [task-118](../memory/task/task-118-a-separate-approver-identity-the-agent-never-the-approver-verdicts-executed-by-the-runner-dl-029.md) (1.10); [task-126](../memory/task/task-126-w16-s-requirements-and-acceptance-the-method-corrected-bug-025-bug-026-bug-028-to-bug-032.md) (1.11), [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md) (1.12), [task-147](../memory/task/task-147-w19-s-requirements-and-acceptance-the-review-loop-f4.9.md) (1.13)
 
 ---
 
@@ -291,17 +291,23 @@ campaign produces the reference values, and a threshold is proposed only after t
 
 ### 4.7 Review loop (F4.9, 1.7)
 
-The code each arm produced, at a step's end, goes through the same review loop in every arm: one independent
-reviewer, the same severities (blocker, should-fix, nit) and the same closing rule (a re-review of the fix's diff
-after a blocker or a should-fix; a nit-only round closes the review), as the benchmark's own delivery uses (dl-020).
+The code each arm produced goes through the same review loop in every arm: one independent reviewer, the same
+severities (blocker, should-fix, nit) and the same closing rule (a re-review of the fix's diff after a blocker or a
+should-fix; a nit-only round closes the review), as the benchmark's own delivery uses (dl-020). From 1.13 (the
+approver's choices, 2026-11-13): the loop runs once per completed run, after its last step: the reviewer reads a
+stripped copy, and the fixer works in the run's own workspace after the last step's snapshot is stored, so its fixes
+never reach a stored patch, a score or any step's metric; at most 5 rounds, after which the loop is "not clean at 5";
+nits are never fixed inside the loop.
 
 - **M-V1 rounds to clean:** the rounds until a nit-only round or a round with no finding.
-- **M-V2 fix-induced share:** of the findings after round 1, the share introduced by an earlier round's fix.
+- **M-V2 fix-induced share:** of the findings after round 1, the share introduced by an earlier round's fix: from
+  1.13, a finding on a line the previous round's fix added or changed, read from the fix's diff.
 - **M-V3 review cost:** the reviewer's and the fixer's M-K1 and M-K2 over the loop; the fixer is the arm's own agent.
-  Whether dl-020's quick check for a nit fix applies inside the loop is W19's task to settle.
+  dl-020's quick check for a nit fix does not apply inside the loop (1.13): nits are not fixed.
 
 Read per arm against the baseline and its docs control, as every metric; the reviewer is a fixed agent, model and
-prompt, pinned by the campaign, reviewing the code with the harness's own files stripped, as F4.6's judge does.
+prompt, pinned by the campaign (in v0.3 Claude Code on `claude-sonnet-5-5` at `medium`, 1.13), reviewing the code
+with the harness's own files stripped, as F4.6's judge would (T16, T17).
 
 ---
 
@@ -324,6 +330,8 @@ prompt, pinned by the campaign, reviewing the code with the harness's own files 
 | T13 | **Answer lookup:** with internet access, an agent may fetch public material that overlaps the oracle, for example S1's official conformance suite | internal, construct | web requests logged and reported per arm; hold-out tests added to public oracles; fictional domains (S4) where lookup cannot help. Access is the same for every arm, so it is not an arm asymmetry |
 | T14 | **Model sensitivity:** a harness's effect may depend on the model | external | model slices (§6): from v0.2 a ladder of models read per step (dl-007, dl-008); cross-model numbers are shown as a separate comparison, never mixed with same-model ones; a comparison between campaigns on different models is marked cross-model (1.2) |
 | T15 | **Tool drift:** competitors release every few days, so a result describes one version only (1.2) | external | every harness pinned per campaign, assessed for eligibility at that version, and its artifact published; the version shown beside every value; across campaigns only deltas against each campaign's own baseline are compared (T7) |
+| T16 | **Reviewer kinship (1.13):** the review loop's reviewer may run the model that wrote the code it reviews, and judge it more leniently | construct | one reviewer for every arm, so within one model the bias is the same across arms; it differs by the run's model (a model slice, another agent, the weak-and-strong comparison), where M-V values are marked; another reviewer model a later choice |
+| T17 | **Stripping limits (1.13):** the reviewer's copy loses the harness's files, but the code may still carry its traces (a task id in a comment, a record's name) | internal | every path the setup added (even one a step changed: its template would show the tool), the reserved names and the run's history stripped; what else the agent wrote, its records included, stays in every arm alike, read as the arm's own output |
 
 ---
 
@@ -507,3 +515,10 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
     (the approver's choice in chat); 1.7 read "the seed and the README alone". Source:
     [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md)
     (requirements 1.50, REQ-RUN-20).
+18. **Amendment 1.13 (v0.3, W19, 2026-11-13).** §4.7: the approver's choices in chat: the loop after the run's last
+    step, the reviewer on a stripped copy and the fixer in the run's own workspace, its fixes never scored; Claude Code
+    on `claude-sonnet-5-5` at `medium` as the reviewer; at most 5 rounds, nits never fixed (the quick check settled);
+    M-V2 by the lines of the previous fix's diff; after the review, the reviewer's copy keeps the agent's records and a
+    later round sees the whole copy. §5: T16 and T17. Source:
+    [task-147](../memory/task/task-147-w19-s-requirements-and-acceptance-the-review-loop-f4.9.md)
+    (requirements 1.58, REQ-RUN-21, REQ-SCO-16).
