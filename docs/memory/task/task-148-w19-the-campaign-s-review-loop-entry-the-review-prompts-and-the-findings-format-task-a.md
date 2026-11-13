@@ -2,7 +2,7 @@
 id: task-148-w19-the-campaign-s-review-loop-entry-the-review-prompts-and-the-findings-format-task-a
 type: task
 title: "W19: the campaign's review_loop entry, the review prompts and the findings' format (task A)"
-status: pending
+status: backlog
 release: v0.3
 wave: W19
 features: [F4.9]
