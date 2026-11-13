@@ -37,6 +37,26 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
     'experiment design §2 Arms table; REQ-RUN-12 (manual copied as `CLAUDE.md`); task-015 Design (`PROJECT_RULES.md`); arms/baseline-docs/manual.md; REQ-FMT-05 and task-067 Design (speckit, speckit-docs); task-071 Design (openspec); task-072 Design (openspec-docs)',
   ],
   [
+    'configured-variants',
+    'task-146 criterion 4; experiment design 1.7 §2 (configured variants); REQ-FMT-05 as amended in 1.50 (`<harness>-configured`)',
+  ],
+  [
+    'configured-arms',
+    'REQ-FMT-05 and REQ-RUN-03 as amended in 1.50 (the configuration copied after the setup); REQ-RUN-11 as amended in 1.50 (configured docs controls, unread files listed); REQ-FMT-04 as amended in 1.50 (versions 1.1 only); task-142',
+  ],
+  [
+    'configuring-agent',
+    'REQ-RUN-20 and REQ-CLI-14 as amended in 1.50 and 1.57 (the session, its places, its refusals, the scan of what it writes); REQ-FMT-04 and REQ-FMT-08 as amended in 1.50 (scenario content, the leak scan, never rewritten); REQ-RES-10 as amended in 1.50 (a correction is a new version); REQ-SCO-08 as amended in 1.49 (M-K3 once); task-141; task-145',
+  ],
+  [
+    'configured-defaults',
+    'docs/calibration/configuring.md §3 (task-143); REQ-RES-02 as amended in 1.50 (files and patch)',
+  ],
+  [
+    'configured-properties',
+    'docs/calibration/configuring.md §4, "Knowledge beyond the seed" and "The boundaries named" (task-143); experiment design §5 T12',
+  ],
+  [
     'baseline-docs-control',
     'experiment design §2 parity rules and §5 T3; REQ-RUN-11; task-015 Design ("The input is the wingfoil arm’s configuration as the agent meets it", results kept under `generated/`); scenarios/README K3; dl-005 Context; task-067 Design (a docs control per harness, baseline-docs’ manual); task-072 Design (openspec-docs)',
   ],
@@ -299,7 +319,10 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
     'experiment design §5 T10 and decision 6 (amendment 1.1); scenarios/README K5 (sequencer decision 3: public campaign on the latest released WingFoil; v0.2.2 and its capabilities, amendment 1.3)',
   ],
   ['threat-t11', 'experiment design §5 T11'],
-  ['threat-t12', 'experiment design §5 T12'],
+  [
+    'threat-t12',
+    'experiment design §5 T12; REQ-RES-02 as amended in 1.50 (the configuring agent published, T12)',
+  ],
   ['threat-t13', 'experiment design §5 T13; REQ-RUN-10 (shell network use not seen)'],
   ['threat-t14', 'experiment design §5 T14 and §6; calibration v0.1 §5 option A (wingfoil arm only)'],
   ['this-execution', 'task-046 Design "Generated: ’This execution’"'],

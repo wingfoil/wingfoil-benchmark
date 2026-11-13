@@ -2,7 +2,7 @@
 id: task-146-w18-the-configured-variants-published-on-the-contest-form-and-the-method-page
 type: task
 title: "W18: the configured variants published, on the contest form and the method page"
-status: in-progress
+status: approved
 release: v0.3
 wave: W18
 features: [F5.5, F7.2, F7.5]
@@ -97,4 +97,71 @@ and tests only; nothing spent.
 
 ## Execution notes
 
+- 2026-11-12: backlog → in-progress on main; worktree `../WingFoil2-Benchmark-wt/t146`.
+- **Red first** (`550a2b7f`): `test/unit/site/configuring.test.ts` (five tests of the block, red: no module), the
+  form's two tests and the method page's "no configured arm" sentence in `test/unit/site/method.test.ts`, and the two
+  scenarios in `results.feature` with their tests in `test/acceptance/configured-arms.test.ts`.
+- **The work** (`ae59d5ba`):
+  - `.github/ISSUE_TEMPLATE/contest-setup.yml`: the `subject` dropdown after `arm`; the opening text's path from a
+    contested configuration to a new scenario version and campaign.
+  - `src/site/configuring.ts` (new), `configuringSection`: the profile's agent, model and caps and the prompt in full,
+    each with its SHA-256, read by the records' digests (`recordedFile`, `recordedManual` generalized in
+    `src/site/recorded.ts`); per configuration its files, the patch as a material page, its sessions' cost, the files
+    its docs control does not read (outside the generator's `kept`), and the harness arm's places with sources.
+    `RunRecord` gains `scenario` and `version` (`src/site/model.ts`); `methodPages` passes the block as
+    `<!-- configuring -->`, or a sentence when no configured arm ran.
+  - `site-content/method.md`: the arms sentence; "Configured variants" with four statements (`configured-arms`,
+    `configuring-agent`, `configured-defaults`, `configured-properties`), their sources in
+    `test/unit/site/method-statements.test.ts`; T12's line.
+  - `docs/calibration/configuring.md` 1.1: §3's sentence on the command's leak scan (task-145).
+- **Two deviations from the Design, found by the targeted suites:** an arm that is not configured is not loaded
+  (the setup-as-it-ran test removes `arms/wingfoil` from the working tree, and the block must not refuse it); and a
+  version holding no configuration of a configured arm that ran is said on the page, not refused, since
+  `test/unit/site/configured-site.test.ts` (task-142) runs `wingfoil-configured` on a 1.0 stand-in, which may hold
+  none, and a campaign refuses such a run anyway.
+- Targeted tests green: `test/unit/site/` and `test/acceptance/configured-arms.test.ts`; tsc and eslint clean. No
+  `site/` page changes; nothing spent.
+
 ## Review
+
+- **Round 1** (an independent read-only agent, in a clone under `mktemp`, 2026-11-12): nothing blocking; tsc,
+  prettier, the targeted suites and red-first confirmed. Seven should-fix findings and six nits, all addressed:
+  1. "Not rendered by its docs control" read the generator's `kept` directories, not what it reads: now a file is
+     not rendered when the generator's output, the configuration rendered alone with its docs control's options, is
+     the same without it. A scratchpad script (`unrendered-146.mjs`) on the twelve 1.1 configurations: none
+     unrendered, as the reviewer found by hand. Tests: an OpenSpec schema under `openspec/` and a constitution with
+     no principle heading are listed.
+  2. The arms are read as their runs recorded them: `setupPages` returns the arms it resolved (working tree or
+     history) and the block reads them, the tree's only for an arm no run recorded. Test added.
+  3. The method page's session sentence: the project as the setup leaves it (seed, tool, the scenario's rules),
+     without manual or MCP server, never a step's prompt, the oracle's hidden tests or the hold-out.
+  4. S1's three configurations name the RFCs, and S2's boundaries are "such as": checked against the configuration
+     files (every S1 configuration names RFC 6901, 6902, 7396, 8259; S2's wingfoil one has no coupon days).
+     `configuring.md` §4 corrected the same way, beyond criterion 5's one sentence: a fact the page now repeats.
+  5. Tests on a real profile's shape (model, effort, caps), an escaped prompt, the profile from the history.
+  6. The site build reaches the block: `configured-site.test.ts` asserts the configured-variants section names its
+     run's version.
+  7. Several prompt or profile digests: each configuration names its own; "the same for every harness" only with
+     one.
+  Nits: no agent header when no configuration was found; the profile's effort shown; the form's later fields cover
+  a configuration; "leak-scanned" without "as the seed is"; "The 1.1 versions hold configurations"; S8's rules
+  sentence per tool.
+- **Round 2** (a second independent agent, on round 1's fixes): nothing blocking. Addressed:
+  1. The unrendered files were computed over the configuration alone, while the docs control renders it over the
+     setup's workspace: a configuration editing a directive the scenario's roles load, or rebinding roles, was listed.
+     Now rendered over the scenario's own configuration for the harness arm (what the setup copies, limited to the
+     generator's places), a removed file falling back to the base's; what the tool's init writes is not known to the
+     site, and the method page says so. The twelve 1.1 configurations: still none unrendered, the block built from
+     the compiled code by a scratchpad script (`unrendered-146b.mjs`, twelve configurations, twelve patch pages).
+  2–4. The method page: Spec Kit's boundaries on S1 to S3 only; the patch against the project as the setup leaves it;
+     `bench scenario configure` scans what the session wrote.
+  5. Tests pinning the docs control's options (every-role, from the tree and as the runs recorded it), the base's
+     roles, and a generator that cannot render a configuration (now a refusal naming it, not an exception), each
+     checked by mutation. `methodPages` passing the setup pages' arms to the block stays pinned only by the code.
+  Nits: no docs control is said as such; the leak scan's summary narrowed.
+- **Full suites, first run** (2026-11-12, `e086b1e1`, behind the load gate): LINT 0, TEST 1, BUILD 0, BIN 0,
+  DOCKER 0. The one failure, task-073's characterization `@F7.2 A setup can be contested from its page`, pinned the
+  form's fields to four; the targeted runs had not included `test/acceptance/competitors.test.ts`. Sent back to
+  in-progress by the approver; the test and its `competitors.feature` scenario now include the subject field.
+- **Full suites, second run** (2026-11-13, `72230b8e`): LINT 0, TEST 0, BUILD 0, BIN 0, DOCKER 0; pre-review green.
+  Log: the main checkout's `.cache/full-suites/2026-11-12/task_task-146-…-72230b8e-001103.txt`.

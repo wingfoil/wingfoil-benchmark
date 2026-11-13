@@ -1,9 +1,9 @@
 # The configuring sessions of S1, S2, S3 and S8 at 1.1
 
-**Version:** 1.0
-**Date:** 2026-11-08
+**Version:** 1.1
+**Date:** 2026-11-12
 **Status:** Draft
-**Traces to:** [task-143](../memory/task/task-143-w18-the-twelve-configurations-of-s1-s2-s3-and-s8-at-1.1.md); [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md); [requirements](../02_specification/requirements.md) REQ-RUN-20, REQ-CLI-14
+**Traces to:** [task-143](../memory/task/task-143-w18-the-twelve-configurations-of-s1-s2-s3-and-s8-at-1.1.md); [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md); [requirements](../02_specification/requirements.md) REQ-RUN-20, REQ-CLI-14; 1.1: [task-146](../memory/task/task-146-w18-the-configured-variants-published-on-the-contest-form-and-the-method-page.md)
 
 ---
 
@@ -57,13 +57,14 @@ Sessions: 12; their cost: 0.7237 EUR.
 
 No session touched a project file, recorded work in the tool, changed the team's members or roles, or wrote outside
 the harness's configuration places: each result passed the command's checks (places, offences, symbolic links; the
-command's leak scan covers its prompt only). The configurations' own leak scan is `bench scenario validate`'s, which
-passes on the four versions since bug-047's fix (§4). A scratchpad check found no line of a configuration equal to a
-line of its version's step prompts or oracle that the seed does not also hold.
+command's leak scan covered its prompt only when they ran). The configurations' own leak scan is `bench scenario
+validate`'s, which passes on the four versions since bug-047's fix (§4); since task-145 (requirements 1.57),
+`configure` also runs it on the configuration it has just written. A scratchpad check found no line of a
+configuration equal to a line of its version's step prompts or oracle that the seed does not also hold.
 
 ## 4. Notes
 
-- **Knowledge beyond the seed.** S1's wingfoil configuration names JSON standards by number (RFC 8259, 6901, 6902,
+- **Knowledge beyond the seed.** S1's three configurations name JSON standards by number (RFC 8259, 6901, 6902,
   7396); the seed has none of them, and two appear in S1's step prompts. They appear only in the agent's own writing,
   from the README's "follow the published standards it implements" and the project's name; the session saw no prompt.
   A configured arm carries what its configuring agent knows of the domain: a property of the variant, which the
@@ -72,9 +73,10 @@ line of its version's step prompts or oracle that the seed does not also hold.
   ordinary word an oracle file quotes as a test group's name (`duplicate`, `identifiers`), used as prose. Fixed in
   task-143 (requirements 1.55): a configuration is not searched for an oracle literal of one prose word; camelCase
   names and upper-case codes still are. The configurations are as the sessions wrote them.
-- **The boundaries named.** S2's configurations list the boundaries to test (exactly €50.00, half a cent, day 14
-  against day 15, a coupon's first and last day). They follow from the README's thresholds, and they are also where
-  S2's reported defects lie: what the configured arms gain from their configuring agent, which the method page states.
+- **The boundaries named.** S2's configurations list boundaries to test: all three exactly €50.00, half a cent and day
+  14 against day 15; Spec Kit's and OpenSpec's also a coupon's first and last day. They follow from the README's
+  thresholds, and they are also where S2's reported defects lie: what the configured arms gain from their configuring
+  agent, which the method page states.
 - **The cost** is small: each session cost less than its harness arm's dearest Sonnet 5.5 step in the stored
   campaigns (task-143's estimate), so M-K3's one-off part (REQ-SCO-08 as amended in 1.49) is a few cents per
   configured arm and version. The estimate, two to four times that step, was too high.

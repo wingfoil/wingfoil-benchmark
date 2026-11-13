@@ -128,3 +128,16 @@ Feature: Stored results, run detail, finding notes and the published site
     When it is aggregated
     Then the harness-versus-docs comparison pairs "speckit-configured" with "speckit-docs-configured"
     And the site gives "speckit-configured" a setup page with the speckit arm's manual and setup script
+
+  # task-146, F7.5 (REQ-RES-10 and REQ-RES-02 as amended in 1.50): the configured variants published
+  @F7.5
+  Scenario: The contest form covers a configured arm's configuration
+    When the contest form is read
+    Then it lists the configured arms and asks whether the setup or the configuration is contested
+
+  @F7.5
+  Scenario: The method page states the configuring agent and each configuration
+    When the site is built for an execution that ran "speckit-configured" on S1 1.1
+    Then the method page names the agent, the model and the caps, and quotes the prompt with its SHA-256
+    And lists the configuration's files and the session's patch against the setup's workspace
+    And lists the configuration files its docs control did not render

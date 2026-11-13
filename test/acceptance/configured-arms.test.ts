@@ -5,8 +5,10 @@ import { parse, stringify } from 'yaml';
 
 import { armDigest, loadArm } from '../../src/arms/index.js';
 import { checkCampaign } from '../../src/cli/index.js';
+import { historyCli, systemProcess } from '../../src/core/index.js';
 import { aggregateExecution } from '../../src/results/index.js';
 import { runCampaign } from '../../src/runner/index.js';
+import { configuringSection } from '../../src/site/configuring.js';
 import { setupHtml } from '../../src/site/method.js';
 import { escapeHtml } from '../../src/site/render.js';
 import { execution } from '../support/aggregate-fixture.js';
@@ -421,5 +423,57 @@ describe("scoring.feature and results.feature, a configured arm's figures (task-
     expect(page).toContain('<code>speckit-docs-configured</code>: the same agent');
     expect(page).toContain('href="manual-speckit-configured.html"');
     expect(page).toContain('Written to <code>.specify/memory/constitution.md</code>');
+  });
+});
+
+describe('results.feature, the configured variants published (task-146, F7.5)', () => {
+  it("@F7.5 The contest form covers a configured arm's configuration", () => {
+    const form = parse(readFileSync(repoPath('.github/ISSUE_TEMPLATE/contest-setup.yml'), 'utf8')) as {
+      body: { id?: string; attributes: { options?: string[] } }[];
+    };
+    const options = (id: string) => form.body.find((field) => field.id === id)?.attributes.options ?? [];
+    // Then it lists the configured arms
+    expect(options('arm')).toEqual(
+      expect.arrayContaining(['wingfoil-configured', 'speckit-configured', 'openspec-configured']),
+    );
+    // And asks whether the setup or the configuration is contested
+    expect(options('subject')).toEqual(['the setup', 'the configuration']);
+  });
+
+  it('@F7.5 The method page states the configuring agent and each configuration', async () => {
+    const constitution =
+      '# Constitution\n\n## Core Principles\n\n### I. Small functions\n\nKeep every function small.\n';
+    const override = '.specify/templates/overrides/plan-template.md';
+    const repo = configuredRepo(
+      ['baseline', 'speckit-configured', 'speckit-docs-configured'],
+      ['S1@1.1'],
+      [
+        {
+          scenario: 'S1@1.1',
+          arm: 'speckit-configured',
+          files: { '.specify/memory/constitution.md': constitution, [override]: '# Plan\n' },
+        },
+      ],
+    );
+    // When the site's method block is built for an execution that ran "speckit-configured" on S1 1.1
+    const section = await configuringSection(
+      repo.root,
+      [{ scenario: 'S1', version: '1.1', arm: 'speckit-configured' }],
+      historyCli(systemProcess),
+    );
+    if (!section.ok) throw new Error(JSON.stringify(section.issues));
+    const { html, material } = section.value;
+    // Then it names the agent, the model and the caps, and quotes the prompt with its SHA-256
+    expect(html).toContain('claude-code');
+    expect(html).toMatch(/<th scope="row">Model<\/th>/);
+    expect(html).toMatch(/<th scope="row">Caps<\/th>/);
+    expect(html).toContain(`sha256:${sha256(FIXTURE_PROMPT)}`);
+    expect(html).toContain(escapeHtml(FIXTURE_PROMPT));
+    // And lists the configuration's files and the session's patch against the setup's workspace
+    expect(html).toContain('<code>.specify/memory/constitution.md</code>');
+    expect(html).toContain(sha256(constitution));
+    expect([...material.keys()]).toEqual(['configuration-S1@1.1-speckit-configured.html']);
+    // And lists the configuration files its docs control did not render
+    expect(html).toContain(`Not rendered by its docs control</th><td><code>${override}</code>`);
   });
 });
