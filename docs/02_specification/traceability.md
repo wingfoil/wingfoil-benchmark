@@ -110,7 +110,7 @@ scheduled), G-A, G-B (v0.4 from sequencer 1.2) and G-G (v1.0) have no v0.1 scena
 | T14 model sensitivity | model slices as a separate comparison; v0.2: a model ladder (dl-007, dl-008), cross-model comparisons marked | REQ-FMT-01 (`models` slices); v0.2: REQ-SCO-13 |
 | T15 tool drift (v0.2) | every harness pinned, assessed at that version and its artifact published; the version beside every value; across campaigns only deltas | REQ-FMT-03, 11, 12; REQ-RES-03 (as amended in 1.26); REQ-SCO-13 |
 | T16 reviewer kinship (v0.3) | one reviewer, model and prompt for every arm; M-V values marked across models | REQ-RUN-21; REQ-RES-02 |
-| T17 stripping limits (v0.3) | every path the setup added or changed, the reserved names and the run's history stripped from the reviewer's copy | REQ-RUN-21 |
+| T17 stripping limits (v0.3) | every path the setup added, the reserved names and the run's history stripped from the reviewer's copy | REQ-RUN-21 |
 
 ## 4. Findings
 

@@ -56,17 +56,18 @@ this task.
    loop, so every earlier campaign stays valid and unchanged. A dry-run profile may carry the same entry (REQ-CLI-05).
 2. **The loop (a new REQ-RUN):** on every completed run, once the last step's commit and patch are stored, the runner
    builds the reviewer's copy, a fresh repository of the seed and the final tree both stripped of every path the setup
-   added or changed and of the reserved names (choice 5), and the fixer's copy of the final workspace (scoring reads the
-   stored patches, never the loop); the **reviewer**, in its own container, reads round 1's diff between the two commits
-   and, in later rounds, the whole copy pointed at the fix's diff (choice 6), works read-only, and returns its findings
-   as JSON (severity `blocker`/`should-fix`/`nit`, file, line, title, why); the **fixer** is the run's agent and model,
-   in a fresh container of the run's image with its harness and manual as in a step, given the blockers and should-fixes
-   and `review/fixer-prompt.md`, under the approver policy; the loop closes by choice 3. A failed or unparseable
-   reviewer, a fixer that changes nothing, an interrupt and a quota rejection each end the loop with that outcome,
-   recorded; a run that did not complete records `no loop`; `--resume` reruns only an interrupted loop.
+   added and of the reserved names (choice 5), and keeps the run's container as a temporary image for the fixer (scoring
+   reads the stored patches, never the loop); the **reviewer**, in its own container, reads round 1's diff between the
+   two commits and, in later rounds, the whole copy with every fix so far, pointed at the last fix's diff (choice 6),
+   reads only, and returns its findings as JSON (severity `blocker`/`should-fix`/`nit`, file, line, title, why); the
+   **fixer** is the run's agent and model, in a container of the run's temporary image with its harness, manual and MCP
+   server as in a step, given the blockers and should-fixes and `review/fixer-prompt.md`, under the approver policy; the
+   loop closes by choice 3. A failed or unparseable reviewer, a fixer that changes nothing, an interrupt and a quota
+   rejection each end the loop with that outcome, recorded; a run that did not complete records `no loop`; `--resume`
+   also reruns the loops left unfinished by an interrupt, quota or an infrastructure failure.
 3. **The records (REQ-FMT-06):** each run's `review/` holds, per round, the findings, the fix's patch, both sessions'
-   usage and transcripts (git-ignored as a step's), and the loop's outcome (`clean`, `not clean at 5`, `failed`,
-   `no fix`), with the reviewer's pins and the prompt's SHA-256.
+   usage and transcripts (git-ignored as a step's), and the loop's outcome (`clean`, `not clean at 5`, `failed`, `no
+   fix`, `interrupted`, `quota exhausted`, `no loop`), with the reviewer's pins and the prompt's SHA-256.
 4. **The metrics (a new REQ-SCO):** M-V1 rounds to clean (a loop not clean at 5 is reported as such, not as 5); M-V2
    the fix-induced share by choice 4, undefined when no finding follows round 1; M-V3 the loop's cost, the reviewer's
    and the fixer's M-K1 and M-K2 apart. Each per arm against the baseline and the docs control (REQ-SCO-14), on
@@ -109,7 +110,8 @@ this task.
 
 - 2026-11-13: backlog → in-progress on main; worktree `../WingFoil2-Benchmark-wt/t147`.
 - **The documents:** `requirements.md` 1.58 (REQ-RUN-21 and REQ-SCO-16 new; REQ-FMT-01, REQ-FMT-06, REQ-FMT-08,
-  REQ-RUN-08, REQ-RUN-09, REQ-SCO-14, REQ-RES-02, REQ-CLI-02, REQ-CLI-03 and REQ-CLI-05 amended); `traceability.md`
+  REQ-RUN-01, REQ-RUN-02, REQ-RUN-08, REQ-RUN-09, REQ-RUN-13, REQ-RUN-19, REQ-SCO-14, REQ-RES-02, REQ-RES-06,
+  REQ-CLI-02, REQ-CLI-03, REQ-CLI-05 and REQ-CLI-11 amended); `traceability.md`
   1.8 (F4.9 in §2; T16 and T17 in §3); `09_experiment-design.md` 1.13 (§4.7 with the four choices, the quick check
   settled; T16, T17).
 - **The scenarios drafted** for W19's implementing tasks, each to be added with its test red first:
@@ -148,6 +150,7 @@ this task.
     And whose agent wrote "src/cart.ts" and "specs/001-cart/spec.md"
     When the reviewer session starts
     Then its copy holds "src/cart.ts" and "specs/001-cart/spec.md" and none of the setup's paths
+    And a setup-added file a step changed, such as the constitution, is not in it either
     And its git history is two commits, the stripped seed and the stripped final tree, with no step commit message
     And it holds no step prompt, oracle file or hold-out file
 
@@ -170,10 +173,30 @@ this task.
     Then the loop ends as "no fix"
 
   @F4.9
+  Scenario: The fixer works with the arm's harness as in a step
+    Given a completed run of "wingfoil" whose loop's round 1 reports a blocker
+    When the fixer session starts
+    Then it runs from the run's temporary image, with the wingfoil MCP server and the verdict hook of the last step
+    And the image is removed when the loop ends
+
+  @F4.9
+  Scenario: A quota rejection in a loop stops the campaign
+    Given a fixer session rejected for the subscription's quota
+    When the round ends
+    Then the loop ends as "quota exhausted", the run stays "completed", and the campaign stops
+
+  @F4.9
+  Scenario: A fixer that reaches its intervention cap ends the loop
+    Given a fixer whose interventions reach "review_loop.caps.fixer_interventions"
+    When the cap is reached
+    Then its session ends and the loop is "failed"
+
+  @F4.9
   Scenario: An interrupted loop is resumed alone
     Given a campaign interrupted during a run's review loop
     When it is resumed
-    Then only that loop runs again, from round 1, and none of the run's steps
+    Then that loop runs again from round 1, from the run's temporary image, and none of the run's steps
+    And the earlier loop's records move to "review/attempts/1/"
 
   @F4.9
   Scenario: A round with a blocker or a should-fix is fixed and its fix re-reviewed
@@ -237,7 +260,7 @@ this task.
   Scenario: A dry run measures the loop
     Given a dry-run profile that pins a review loop
     When a dry run of S2 1.1 in "baseline" completes
-    Then it records its loop, and the estimate reads it for "S2@1.1/baseline/<model>" with the reviewer's model
+    Then it records its loop, and the estimate reads it under "review/S2@1.1/baseline/<model>", the run's model
     And a dry run whose loop pins differ from the campaign's is not read
 
   # results.feature (task C)
@@ -278,3 +301,22 @@ this task.
   - **Nits:** the reserved names listed; caps per session in criterion 1; the drafted scenarios gain no loop, the
     whole-copy round, unparseable findings, no fix, the resumed loop, M-V2 undefined and the dry run's loop; a
     hold-out sentence in REQ-RES-02; the reviewer's network (the run's) stated.
+- **Round 2** (a second independent agent, on `cfff7c23`): round 1's blocker closed for every arm as set up today
+  (every setup only adds paths, read from the dry runs' setup patches). One new blocking finding, from the fix:
+  - **Blocking, the fixer's container:** a fresh container of the run's image has no harness, MCP server or verdict
+    hook, which the setup installs inside the run's container, and the setup cannot be re-run without
+    re-initializing the workspace. **Decided here, for the approver's gate:** the run's container is committed to a
+    temporary per-run image before its removal, and each fixer session runs from it with its copy at the
+    workspace's path, so the fixer is a step after the last (the agent's home shared as between steps); the image
+    is kept until the loop ends, so a resumed loop starts from it. The alternative, an install-only part of each arm
+    (a REQ-FMT-05 change), was not chosen.
+  - **Should-fix, addressed:** a setup-added file a step changed stays stripped (its template shows the tool), in
+    REQ-RUN-21 and T17; only added paths are stripped, a seed path the setup changed kept as project code;
+    `--resume` reruns unfinished loops besides the runs it re-runs, reading `review/loop.json`, the earlier loop
+    under `review/attempts/<k>/`, the copies from the temporary image, leftovers and REQ-CLI-03's price counting
+    loops; a later round's copy with every earlier fix; the reviewer reads only (no install, build or run); the
+    fixer's intervention cap ends the loop `failed`; an infrastructure failure of a loop is resumable; `ceiling_eur`
+    checked between rounds.
+  - **Nits:** the estimate key in its own `review/` namespace, `<model>` the run's; T16's marking in REQ-RES-02;
+    this file's criteria, documents list and scenarios (the fixer's harness, quota, the intervention cap); the stops'
+    wording.
