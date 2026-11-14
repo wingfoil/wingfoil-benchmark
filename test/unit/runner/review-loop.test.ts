@@ -96,6 +96,8 @@ describe('the command line gives the runner its reviewer (REQ-RUN-15 for the rev
       out.stderr,
     ).toBe(0);
     expect(reviewer.requests).toHaveLength(1);
+    // What the loops cost, apart from the steps' (REQ-RUN-09 as amended in 1.58).
+    expect(out.stdout).toContain('review loops: 1 loop, 0.0000 EUR');
   });
 
   it('refuses a reviewer that spends without the spending flag, naming it', async () => {

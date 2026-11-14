@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -102,7 +110,9 @@ describe('gitCli.exportTree and gitCli.dirtyPaths (task-149, the review loop)', 
     writeFileSync(join(repository, 'new', 'b.txt'), 'b\n');
     rmSync(join(repository, 'a.txt'));
     expect(await git.dirtyPaths(repository)).toEqual(['a.txt', 'new/b.txt']);
-    const log = execFileSync('git', ['-C', repository, 'log', '--format=%an <%ae> %cn <%ce>'], { encoding: 'utf8' });
+    const log = execFileSync('git', ['-C', repository, 'log', '--format=%an <%ae> %cn <%ce>'], {
+      encoding: 'utf8',
+    });
     expect(log.trim()).toBe('Project <project@localhost> Project <project@localhost>');
   });
 });

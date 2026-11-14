@@ -444,6 +444,14 @@ async function runCampaignCommand(
     .flatMap((run) => run.steps)
     .reduce((total, step) => total + step.usage.costUsd, 0);
   io.stdout(`${totalLine(spent, rate, 'cost')}\n`);
+  // The review loops' cost, apart from the steps' (REQ-RUN-09 as amended in 1.58): in EUR, as each loop records it.
+  const loops = summary.runs.flatMap((run) =>
+    run.loop === undefined || run.loop.outcome === 'no loop' ? [] : [run.loop],
+  );
+  if (loops.length > 0) {
+    const eur = loops.reduce((total, loop) => total + loop.costEur, 0);
+    io.stdout(`review loops: ${count(loops.length, 'loop')}, ${eur.toFixed(4)} EUR\n`);
+  }
   return summary.completed ? EXIT.ok : EXIT.failure;
 }
 

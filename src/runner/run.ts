@@ -35,6 +35,7 @@ import type {
   GitPort,
   InterventionKind,
   Result,
+  ReviewLoop,
   Scenario,
   StepVerdict,
 } from '../core/index.js';
@@ -1026,10 +1027,19 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
   const finish = async (run: RunResult): Promise<RunResult> => {
     const loop = plan.pins.review_loop;
     if (loop === undefined) return run;
-    if (run.outcome !== 'completed' || container === undefined || setup?.tree === undefined) {
-      return { ...run, loop: writeNoLoop(run.outputDir, loop, run.outcome) };
+    try {
+      return { ...run, loop: await reviewLoopOf(run, loop) };
+    } catch (error) {
+      // Only its record failed to be written: said, and the run kept as it ended, never re-recorded as a failure.
+      options.logError?.(`run ${name}: the review loop's record could not be written: ${reasonOf(error)}`);
+      return { ...run, loop: { outcome: 'failed', reason: reasonOf(error), costEur: 0 } };
     }
-    const summary = await executeReviewLoop(
+  };
+  const reviewLoopOf = async (run: RunResult, loop: ReviewLoop): Promise<LoopSummary> => {
+    if (run.outcome !== 'completed' || container === undefined || setup?.tree === undefined) {
+      return writeNoLoop(run.outputDir, loop, run.outcome);
+    }
+    return executeReviewLoop(
       {
         loop,
         repoRoot: plan.repoRoot,
@@ -1056,7 +1066,6 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
       },
       options,
     );
-    return { ...run, loop: summary };
   };
   try {
     if (interrupted()) throw new Error('interrupted before its container was created');
