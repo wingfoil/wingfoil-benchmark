@@ -30,9 +30,25 @@ export function scanConfiguringPrompt(
   declarations: LeakScanDeclarations,
   holdout?: HoldoutAdditions,
 ): Issue[] {
+  return scanPrompt(CONFIGURING_PROMPT, text, scenario, declarations, holdout);
+}
+
+/**
+ * A prompt an agent reads outside a step, scanned as the configuring prompt is (REQ-FMT-08 as amended in 1.50 and
+ * 1.58): the harness names, and the oracle literals of `scenario`, the hold-out's too when one is given. Each finding
+ * names `path` and the source, never the literal; a harness named twice is one finding per mention, as the step
+ * prompts' scan reports them.
+ */
+export function scanPrompt(
+  path: string,
+  text: string,
+  scenario: Scenario,
+  declarations: LeakScanDeclarations,
+  holdout?: HoldoutAdditions,
+): Issue[] {
   const min = declarations.oracle_literal_min_length;
   const issues: Issue[] = harnessMentions(text, declarations.harness_names).map((mention) => ({
-    path: CONFIGURING_PROMPT,
+    path,
     message: `names the harness '${mention}'`,
   }));
   const sources = [
@@ -43,7 +59,7 @@ export function scanConfiguringPrompt(
   ];
   for (const source of sources) {
     if (oracleLiterals(readFileSync(source.path, 'utf8'), min).some((literal) => text.includes(literal))) {
-      issues.push({ path: CONFIGURING_PROMPT, message: `holds a literal of ${source.label}` });
+      issues.push({ path, message: `holds a literal of ${source.label}` });
     }
   }
   return issues;

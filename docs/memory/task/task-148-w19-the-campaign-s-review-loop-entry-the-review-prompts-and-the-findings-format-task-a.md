@@ -2,7 +2,7 @@
 id: task-148-w19-the-campaign-s-review-loop-entry-the-review-prompts-and-the-findings-format-task-a
 type: task
 title: "W19: the campaign's review_loop entry, the review prompts and the findings' format (task A)"
-status: in-progress
+status: approved
 release: v0.3
 wave: W19
 features: [F4.9]
@@ -78,4 +78,53 @@ State read on 2026-11-13 (main `9254bbaa`): no `review_loop` key exists in `camp
 
 ## Execution notes
 
+- 2026-11-13: backlog → in-progress on main; worktree `../WingFoil2-Benchmark-wt/t148`.
+- **Red first** (`00d61f05`): `test/unit/core/review.test.ts` (the findings' parser and the entry's schema, red: no
+  `parseFindings`, `review_loop` refused as an unknown key) and the three scenarios in `campaign.feature` with their
+  tests in `test/acceptance/campaign.test.ts` (red but the characterization, which the first draft wrongly ran on the
+  dry-run profiles too: now each kind is loaded by its own loader).
+- **The work:**
+  - `src/core/review.ts` (new): `findingSchema`, `findingsSchema`, `parseFindings` (the message as JSON, or its one
+    fenced `json` block; any other shape an issue at `findings`).
+  - `src/core/campaign.ts`: `reviewLoopSchema` (the prompts under `review/` by SHA-256, `max_rounds` 1 to 10, the
+    caps, the effort checked against the reviewer agent's levels); `campaignSchema.review_loop` optional, and
+    `dryRunProfileSchema` picks it.
+  - `src/scenario/configuring.ts`: `scanPrompt(path, …)`, `scanConfiguringPrompt` now its caller (messages unchanged);
+    `src/scenario/review-prompts.ts` (new): `reviewPromptIssues`, the files and their SHA-256, then the scan against
+    every scenario version run, a literal named with its version, each distinct finding once.
+  - `checkCampaign` and `checkDryRun` call it when the entry is present.
+  - `review/prompt.md` and `review/fixer-prompt.md`, scanned by `reviewPromptIssues` against the repository's nine
+    loadable scenario versions: no finding.
+- **Criterion 3's hold-out:** neither `campaign validate` nor the dry run's check reads a hold-out (REQ-CLI-10), so
+  their scan is against the oracle; `bench scenario validate` with a hold-out (the option or `BENCH_HOLDOUT_PATH`)
+  now also scans `review/prompt.md` and `review/fixer-prompt.md` against its additions (review round 1, finding 3:
+  the first draft had no path at all to the hold-out).
+- A dry-run test (`test/unit/runner/campaign.test.ts`) written after the code, as verification of criterion 2 for
+  profiles.
+
 ## Review
+
+- **Round 1** (an independent read-only agent, in a clone under `mktemp`, 2026-11-13): nothing blocking; tsc,
+  prettier, eslint and the targeted suites green; red-first confirmed at `00d61f05`; the thirteen campaigns' ids and
+  validity identical on the branch and its merge base. Addressed:
+  1. The reviewer's prompt says what `file` holds for a missing file or the design as a whole (`.` for the project)
+     and asks for the key `findings` and no other, which the strict schema requires.
+  2. The fixer's prompt no longer asks for "your usual way of recording your work": it pushed harness arms to record
+     more than a step's request does, and a fixer writing records only could escape `no fix`.
+  3. The review prompts reach a hold-out through `bench scenario validate` (Execution notes).
+  Nits: the fence's label exact and in any case; paths normalized (`./` dropped, `.` the project), a leading `\` and
+  `.git/` refused; titles and reasons not blank; the prompts' SHA-256 over their bytes; tests for an oracle literal in
+  a review prompt and for a missing prompt in a dry run; the reviewer's prompt neutral on the two commits. Its note
+  for the gate: the reviewer's blocker covers "a requirement the project states", so the records harness arms keep in
+  the copy (choice 5 of task-147) become documentation the code is judged against; to read with the loop's results.
+- **Round 2** (a second independent agent, on `ec22cca2`; a first attempt stopped with the session and was run
+  again): nothing blocking; the round-1 items done, each fix's test failing when it is reverted. One should-fix: the
+  path normalization ran after the checks, so `.//src/a.ts` became absolute, `.//.git/config` escaped the `.git`
+  refusal and `./` became empty. Now `copyPath` normalizes first (repeated `/` collapsed, `.` segments dropped,
+  nothing left is `.`) and checks the result; a `\\` anywhere is refused. Nits: `validateScenario`'s doc comment
+  back on it and naming the review prompts; the hold-out scan covers every `review/*.md`, not the two names only.
+- **Round 3** (a third independent agent, on `484afc5c`): nothing blocking or should-fix; no probed path yields an
+  absolute, empty, escaping or `.git` result, and the test fails with the order reverted. Its nits applied: a `.git`
+  segment refused anywhere and in any case; the validate scan reads files only; its test also plants a prompt of
+  another name (scanned) and a text file and a `.md` directory (ignored).
+

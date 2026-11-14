@@ -1,3 +1,4 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { SCENARIO_ID, SCENARIO_VERSION } from '../core/index.js';
@@ -9,6 +10,7 @@ import {
   loadHoldoutAdditions,
   loadLeakScanDeclarations,
   loadScenario,
+  scanPrompt,
   scanScenario,
 } from '../scenario/index.js';
 import type { HoldoutAdditions } from '../scenario/index.js';
@@ -62,13 +64,17 @@ export function parseScenarioArguments(args: readonly string[]): ScenarioArgumen
   return { ...reference, holdout: path };
 }
 
+/** Where the review loop's prompts live: every campaign pins its own under it (REQ-FMT-01 as amended in 1.58). */
+const REVIEW_DIR = 'review';
+
 /**
  * REQ-CLI-04: `bench scenario validate <id>@<version> [--holdout <path>]`, reading `scenarios/` under
  * `root` (REQ-ARC-03). The scenario's own checks (REQ-FMT-04), its immutability against the results under
  * `root` (REQ-FMT-09), then its hold-out's consistency with
  * `holdout:` when a hold-out is configured — from the option, or else from {@link HOLDOUT_VARIABLE}
  * (REQ-CLI-10) — and every addition under a declared suite's id (dl-001). Then the leak scan (REQ-FMT-08) with the declarations of `scenarios/leak-scan.yaml`,
- * the hold-out's additions included; its findings name files and steps, never content.
+ * the hold-out's additions included; with a hold-out, also every review prompt under `review/` (REQ-FMT-08 as amended
+ * in 1.58). Its findings name files and steps, never content.
  */
 export function validateScenario(args: ScenarioArguments, root: string): ScenarioValidation {
   const name = `${args.id}@${args.version}`;
@@ -80,6 +86,21 @@ export function validateScenario(args: ScenarioArguments, root: string): Scenari
   if (!declarations.ok) return { ok: false, issues: declarations.issues };
   const scan = (additions?: HoldoutAdditions): ScenarioValidation | undefined => {
     const leaks = scanScenario(scenario.value, declarations.value, additions);
+    // With a hold-out, the review loop's prompts are scanned against its additions too (REQ-FMT-08 as amended in 1.58,
+    // task-148): a campaign's check scans them against the oracle, and never reads a hold-out.
+    if (additions !== undefined) {
+      const dir = join(root, REVIEW_DIR);
+      const prompts = existsSync(dir)
+        ? readdirSync(dir, { withFileTypes: true })
+            .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+            .map((entry) => entry.name)
+            .sort()
+        : [];
+      for (const prompt of prompts.map((name) => `${REVIEW_DIR}/${name}`)) {
+        const text = readFileSync(join(root, prompt), 'utf8');
+        leaks.push(...scanPrompt(prompt, text, scenario.value, declarations.value, additions));
+      }
+    }
     return leaks.length > 0 ? { ok: false, issues: leaks } : undefined;
   };
 

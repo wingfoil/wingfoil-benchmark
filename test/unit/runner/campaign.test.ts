@@ -1,13 +1,16 @@
-import { copyFileSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
 import { checkCampaign, checkDryRun } from '../../../src/runner/index.js';
+import { loadScenario, oracleLiterals, reviewPromptIssues } from '../../../src/scenario/index.js';
 import { plainArmYaml } from '../../support/arm-fixture.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
 import { dryRunProfileYaml } from '../../support/dry-run-fixture.js';
 import { repoPath } from '../../support/paths.js';
+import { tempDir } from '../../support/scenario-fixture.js';
 
 type Yaml = Record<string, unknown>;
 
@@ -271,4 +274,99 @@ describe('scripted verdicts need policy v3 (task-117, dl-029)', () => {
         ]);
     },
   );
+});
+
+describe("a dry-run profile's review loop (task-148, REQ-CLI-05 as amended in 1.58)", () => {
+  const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+  it('checks its prompts as a campaign does: present, as pinned and scanned', () => {
+    const { root } = writeRepo({ ...completeCampaignYaml(), arms: ['baseline'] }, ['S1@1.0']);
+    copyFileSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
+    mkdirSync(join(root, 'review'));
+    const prompt = '# Review\n\nReview the code.\n';
+    const fixer = '# Fix\n\nFix it as Spec Kit would.\n';
+    writeFileSync(join(root, 'review', 'prompt.md'), prompt);
+    writeFileSync(join(root, 'review', 'fixer-prompt.md'), fixer);
+    const loop = {
+      agent: { name: 'claude-code', version: '2.1.300' },
+      model: 'claude-sonnet-5-5',
+      effort: 'medium',
+      prompt: { file: 'review/prompt.md', sha256: sha(prompt) },
+      fixer_prompt: { file: 'review/fixer-prompt.md', sha256: sha(fixer) },
+      max_rounds: 5,
+      caps: {
+        session_time_s: 1800,
+        session_tokens: 10_000_000,
+        session_cost_eur: 2,
+        fixer_interventions: 20,
+      },
+    };
+    const check = (reviewLoop: unknown) => {
+      writeFileSync(
+        join(root, 'scenarios', 'dry-run.yaml'),
+        stringify({ ...dryRunProfileYaml(), harnesses: {}, review_loop: reviewLoop }),
+      );
+      const checked = checkDryRun({ id: 'S1', version: '1.0', arm: 'baseline' }, root);
+      return checked.ok ? [] : checked.issues;
+    };
+
+    expect(check(loop)).toEqual([
+      { path: 'review/fixer-prompt.md', message: "names the harness 'Spec Kit'" },
+    ]);
+    rmSync(join(root, 'review', 'prompt.md'));
+    expect(check(loop)).toEqual([
+      { path: 'review_loop.prompt', message: 'review/prompt.md: not found' },
+      { path: 'review/fixer-prompt.md', message: "names the harness 'Spec Kit'" },
+    ]);
+    writeFileSync(join(root, 'review', 'prompt.md'), prompt);
+    expect(check({ ...loop, prompt: { ...loop.prompt, sha256: 'd'.repeat(64) } })).toEqual([
+      { path: 'review_loop.prompt', message: expect.stringContaining('review/prompt.md: its SHA-256 is ') },
+      { path: 'review/fixer-prompt.md', message: "names the harness 'Spec Kit'" },
+    ]);
+  });
+});
+
+describe("the review prompts' scan against the oracle (task-148, REQ-FMT-08 as amended in 1.58)", () => {
+  it('names the version and the oracle file whose literal a review prompt holds, never the literal', () => {
+    const scenario = loadScenario(repoPath('scenarios'), 'S1', '1.0');
+    if (!scenario.ok) throw new Error(JSON.stringify(scenario.issues));
+    const oracle = readFileSync(
+      join(scenario.value.dir, 'oracle', 'create-patch', 'create-patch.test.mts'),
+      'utf8',
+    );
+    const literal = oracleLiterals(oracle, 8)[0] ?? '';
+    expect(literal).not.toBe('');
+    const root = tempDir('bench-review-');
+    mkdirSync(join(root, 'review'));
+    mkdirSync(join(root, 'scenarios'));
+    copyFileSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
+    const prompt = `# Review\n\nCheck that ${literal} holds.\n`;
+    const fixer = '# Fix\n\nFix it.\n';
+    writeFileSync(join(root, 'review', 'prompt.md'), prompt);
+    writeFileSync(join(root, 'review', 'fixer-prompt.md'), fixer);
+    const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+    const loop = {
+      agent: { name: 'claude-code' as const, version: '2.1.300' },
+      model: 'claude-sonnet-5-5',
+      effort: 'medium',
+      prompt: { file: 'review/prompt.md', sha256: sha(prompt) },
+      fixer_prompt: { file: 'review/fixer-prompt.md', sha256: sha(fixer) },
+      max_rounds: 5,
+      caps: {
+        session_time_s: 1800,
+        session_tokens: 10_000_000,
+        session_cost_eur: 2,
+        fixer_interventions: 20,
+      },
+    };
+
+    const issues = reviewPromptIssues(root, loop, [scenario.value]);
+
+    expect(issues).toEqual([
+      {
+        path: 'review/prompt.md',
+        message: expect.stringMatching(/^holds a literal of S1@1\.0's oracle\/create-patch\//),
+      },
+    ]);
+    expect(JSON.stringify(issues)).not.toContain(literal);
+  });
 });

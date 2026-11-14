@@ -214,3 +214,22 @@ Feature: Campaign definition, cost estimate and budget guard
       | S1 1.1's record names a base-arm digest the configured arm's pin does not resolve |
       | the two records carry different prompt SHA-256                                    |
       | a record's profile SHA-256 is held by no commit                                   |
+
+  # task-148, F4.9 (requirements 1.58): the campaign's review loop entry
+  @F4.9
+  Scenario: A campaign without a review loop is unchanged
+    Given a campaign file with no "review_loop" entry
+    When it is validated
+    Then it is valid as before, and every campaign file of the repository still loads
+
+  @F4.9
+  Scenario: A campaign pins its review loop
+    Given a campaign whose "review_loop" pins the reviewer, the prompts' SHA-256 and 5 rounds
+    When it is validated
+    Then it is valid, and a prompt whose SHA-256 differs from its file, or a missing prompt, is refused, naming the file
+
+  @F4.9
+  Scenario: A review prompt that names a harness is refused
+    Given "review/prompt.md" names "WingFoil"
+    When the campaign is validated
+    Then it is refused, naming the prompt and the harness

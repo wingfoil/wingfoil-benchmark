@@ -1,9 +1,20 @@
-import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parse, stringify } from 'yaml';
 
 import { loadCampaign } from '../../src/campaign/index.js';
+import { loadDryRunProfile } from '../../src/scenario/dry-run.js';
 import { checkCampaign, main } from '../../src/cli/index.js';
 import { runCampaign } from '../../src/runner/index.js';
 import { executionResumable, nextExecution } from '../../src/results/index.js';
@@ -887,3 +898,81 @@ function loadIdOf(file: string): string {
   if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
   return loaded.value.id;
 }
+
+describe("campaign.feature, the review loop's entry (task-148, F4.9)", () => {
+  const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+  const PROMPT = '# Review\n\nReview the code and report findings.\n';
+  const FIXER = '# Fix\n\nFix the findings given.\n';
+  /** A repository whose campaign pins a review loop over `prompt` and `fixer`, written under `review/`. */
+  function reviewRepo(prompt = PROMPT, fixer = FIXER, pins: { prompt?: string; fixer?: string } = {}) {
+    const yaml = {
+      ...completeCampaignYaml(),
+      review_loop: {
+        agent: { name: 'claude-code', version: '2.1.300' },
+        model: 'claude-sonnet-5-5',
+        effort: 'medium',
+        prompt: { file: 'review/prompt.md', sha256: pins.prompt ?? sha(prompt) },
+        fixer_prompt: { file: 'review/fixer-prompt.md', sha256: pins.fixer ?? sha(fixer) },
+        max_rounds: 5,
+        caps: {
+          session_time_s: 1800,
+          session_tokens: 10_000_000,
+          session_cost_eur: 2,
+          fixer_interventions: 20,
+        },
+      },
+    };
+    const repo = writeRepo(yaml);
+    mkdirSync(join(repo.root, 'review'));
+    writeFileSync(join(repo.root, 'review', 'prompt.md'), prompt);
+    writeFileSync(join(repo.root, 'review', 'fixer-prompt.md'), fixer);
+    writeFileSync(
+      join(repo.root, 'scenarios', 'leak-scan.yaml'),
+      'harness_names: [WingFoil, Spec Kit, OpenSpec]\noracle_literal_min_length: 8\n',
+    );
+    return repo;
+  }
+  const issuesOf = (file: string) => {
+    const checked = checkCampaign(file);
+    return checked.ok ? [] : checked.issues;
+  };
+
+  it('@F4.9 A campaign without a review loop is unchanged', () => {
+    // Given a campaign file with no "review_loop" entry: it is valid as before
+    expect(checkCampaign(writeRepo().file).ok).toBe(true);
+    // And every campaign file of the repository still loads, none of them holding one
+    const files = readdirSync(repoPath('campaigns')).filter((file) => file.endsWith('.yaml'));
+    for (const name of files.filter((file) => !file.endsWith('.dry-run.yaml'))) {
+      const loaded = loadCampaign(repoPath('campaigns', name));
+      expect(loaded.ok ? loaded.value.spec.review_loop : loaded.issues, name).toBeUndefined();
+    }
+    // And every dry-run profile beside them
+    for (const name of files.filter((file) => file.endsWith('.dry-run.yaml'))) {
+      const loaded = loadDryRunProfile(repoPath('campaigns', name));
+      expect(loaded.ok ? loaded.value.review_loop : loaded.issues, name).toBeUndefined();
+    }
+  });
+
+  it('@F4.9 A campaign pins its review loop', () => {
+    // Given a campaign whose "review_loop" pins the reviewer, the prompts' SHA-256 and 5 rounds: it is valid
+    expect(issuesOf(reviewRepo().file)).toEqual([]);
+    // And a prompt whose SHA-256 differs from its file is refused, naming the file
+    expect(issuesOf(reviewRepo(PROMPT, FIXER, { prompt: 'c'.repeat(64) }).file)).toEqual([
+      { path: 'review_loop.prompt', message: expect.stringContaining('review/prompt.md') },
+    ]);
+    // And a missing prompt file is refused, naming it
+    const missing = reviewRepo();
+    rmSync(join(missing.root, 'review', 'fixer-prompt.md'));
+    expect(issuesOf(missing.file)).toEqual([
+      { path: 'review_loop.fixer_prompt', message: expect.stringContaining('review/fixer-prompt.md') },
+    ]);
+  });
+
+  it('@F4.9 A review prompt that names a harness is refused', () => {
+    const repo = reviewRepo('# Review\n\nReview the code as WingFoil would.\n');
+
+    expect(issuesOf(repo.file)).toEqual([
+      { path: 'review/prompt.md', message: "names the harness 'WingFoil'" },
+    ]);
+  });
+});

@@ -7,7 +7,7 @@ import type { Campaign } from '../campaign/index.js';
 import { eligibilityIssues, fail, harnessCoverage, ok, verdictPolicyIssue } from '../core/index.js';
 import type { Arm, Issue, Result, Scenario } from '../core/index.js';
 import { versionChange } from '../results/index.js';
-import { loadScenario } from '../scenario/index.js';
+import { loadScenario, reviewPromptIssues } from '../scenario/index.js';
 
 import { configuredIssues } from './configured-pins.js';
 import { loadPinnedArm, pinnedDigestIssue } from './pinned-arm.js';
@@ -89,6 +89,11 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
       if (register.ok) issues.push(...eligibilityIssues(campaign.spec.harnesses, arms, register.value));
       else if (arms.some((arm) => arm.requires !== undefined)) issues.push(...register.issues);
     }
+  }
+  // The review loop's prompts: present, as pinned, and scanned as the configuring prompt is (REQ-FMT-01 and REQ-FMT-08
+  // as amended in 1.58), against the scenario versions that loaded.
+  if (campaign.spec.review_loop !== undefined) {
+    issues.push(...reviewPromptIssues(campaign.repoRoot, campaign.spec.review_loop, scenarios));
   }
   // Every arm's files still digest to what the campaign pins (REQ-FMT-01 as amended, REQ-FMT-13, F7.2): a changed arm
   // is a new campaign, never a silent change under the old identity.
