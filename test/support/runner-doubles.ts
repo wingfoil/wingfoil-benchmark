@@ -139,6 +139,12 @@ export function doubles(
     commits?: Readonly<Record<string, string>>;
     /** What archiving a commit writes, given the file it writes to; by default nothing. */
     archive?: (file: string) => void;
+    /** The tree a ref names (task-149); by default a new one at every call. */
+    treeOf?: (directory: string, ref: string) => string | undefined;
+    /** What exporting a tree writes into `directory` (task-149); by default nothing. */
+    exportOf?: (repository: string, tree: string, directory: string) => void;
+    /** The paths a repository's working tree changed against its commit (task-149); by default none. */
+    dirtyOf?: (directory: string) => readonly string[];
     /** Containers that already exist, as Docker names them: what an interrupted run left behind. */
     leftovers?: readonly string[];
     /** Which of {@link leftovers} are running, as another invocation's would be. */
@@ -300,7 +306,17 @@ export function doubles(
     tree: (directory, ref) => {
       trees += 1;
       recorded.gitCalls.push(`tree ${directory} ${ref}`);
-      return Promise.resolve(`tree-${trees}`.padEnd(40, '0'));
+      return Promise.resolve(options.treeOf?.(directory, ref) ?? `tree-${trees}`.padEnd(40, '0'));
+    },
+    // The review loop's copy (task-149): what a tree holds is the test's to write.
+    exportTree: (repository, tree, directory) => {
+      recorded.gitCalls.push(`export ${repository} ${tree} ${directory}`);
+      options.exportOf?.(repository, tree, directory);
+      return Promise.resolve();
+    },
+    dirtyPaths: (directory) => {
+      recorded.gitCalls.push(`dirty ${directory}`);
+      return Promise.resolve([...(options.dirtyOf?.(directory) ?? [])]);
     },
     apply: (directory, patchFile) => {
       recorded.gitCalls.push(`apply ${directory} ${patchFile}`);

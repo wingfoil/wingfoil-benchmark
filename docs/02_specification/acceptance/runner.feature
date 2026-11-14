@@ -1,7 +1,7 @@
 # Acceptance — Runner (v0.1)
 # Traces to: F2.1–F2.7 · J2 steps 3–4 · experiment design §2 (arms, parity), §3 (run protocol) · is/is-not 1.1
 # · dl-021 (v0.3)
-# Version: 1.1 · Status: Approved (1.0, 2026-09-22); 1.1 (v0.3, task-114, 2026-10-27) for review
+# Version: 1.2 · Status: Approved (1.0, 2026-09-22); 1.1 (v0.3, task-114) and 1.2 (v0.3, task-149) for review
 
 Feature: Isolated, multi-step runs of a scenario in an arm
   As the WingFoil maintainer
@@ -127,3 +127,102 @@ Feature: Isolated, multi-step runs of a scenario in an arm
     When a run of "speckit-configured" on S8 1.1 is set up
     Then the workspace holds the configured constitution, and "setup/diff.patch" holds it
     And a run whose generated rules differ from the record's is refused before step 1
+
+  # task-149, F4.9 (requirements 1.58): the review loop in the runner
+  @F4.9
+  Scenario: The review loop runs after the last step, never changing what is scored
+    Given a completed run of a campaign that pins a review loop
+    When its last step's commit and patch are stored
+    Then the reviewer reads a stripped copy and the fixer works in the run's workspace
+    And the run's patches, and its scores, are those it would have without the loop
+
+  @F4.9
+  Scenario: A run that did not complete has no loop
+    Given a run of a campaign that pins a review loop, killed at its step cap
+    When the run ends
+    Then its "review/loop.json" records "no loop" with the run's outcome, and no review session runs
+
+  @F4.9
+  Scenario: The reviewer sees the code without what the setup installed
+    Given a run of "speckit" whose setup added ".specify/scripts/bash/common.sh", "CLAUDE.md" and ".mcp.json"
+    And whose agent wrote "src/cart.ts" and "specs/001-cart/spec.md"
+    When the reviewer session starts
+    Then its copy holds "src/cart.ts" and "specs/001-cart/spec.md" and none of the setup's paths
+    And a setup-added file a step changed, such as the constitution, is not in it either
+    And its git history is two commits, the stripped seed and the stripped final tree, with no step commit message
+    And it holds no step prompt, oracle file or hold-out file
+
+  @F4.9
+  Scenario: A later round reviews the whole copy, pointed at the fix
+    Given round 1's fix changed "src/cart.ts"
+    When round 2's reviewer starts
+    Then its copy is the whole stripped tree with the fix applied, and it is pointed at the fix's diff
+
+  @F4.9
+  Scenario: A reviewer whose findings do not parse ends the loop as failed
+    Given a reviewer whose final result is not the findings' JSON
+    When the round ends
+    Then the loop ends as "failed", and the run's results are kept
+
+  @F4.9
+  Scenario: A fixer that changes nothing ends the loop
+    Given round 1 reports a blocker, and the fixer's patch changes only paths the reviewer's copy strips
+    When the round ends
+    Then the loop ends as "no fix"
+
+  @F4.9
+  Scenario: The fixer works with the arm's harness as in a step
+    Given a completed run of "wingfoil" whose loop's round 1 reports a blocker
+    When the fixer session starts
+    Then it runs in the run's own container, with the wingfoil MCP server and the verdict hook of the last step
+    And the run's stored patches and "commits.json" are unchanged, and no image is made
+
+  @F4.9
+  Scenario: A quota rejection in a loop stops the campaign
+    Given a fixer session rejected for the subscription's quota
+    When the round ends
+    Then the loop ends as "quota exhausted", the run stays "completed", and the campaign stops
+
+  @F4.9
+  Scenario: A fixer that reaches its intervention cap ends the loop
+    Given a fixer whose interventions reach "review_loop.caps.fixer_interventions"
+    When the cap is reached
+    Then its session ends and the loop is "failed"
+
+  @F4.9
+  Scenario: An interrupted loop is not resumed
+    Given a campaign interrupted during a run's review loop
+    When it is resumed
+    Then that run's loop stays recorded as "interrupted" with its rounds so far, the run "completed"
+    And no loop session and none of the run's steps run again
+
+  @F4.9
+  Scenario: A round with a blocker or a should-fix is fixed and its fix re-reviewed
+    Given the reviewer's round 1 reports a should-fix
+    When the loop goes on
+    Then the arm's own agent fixes it in the run's workspace, its diff recorded as round 1's "fix.patch"
+    And round 2 reviews that diff
+
+  @F4.9
+  Scenario: A round with nits only closes the loop
+    Given the reviewer's round 2 reports two nits and nothing else
+    When the loop goes on
+    Then it closes as "clean" at round 2, and no fixer session runs for the nits
+
+  @F4.9
+  Scenario: A loop that does not close by the cap is not clean
+    Given a reviewer that reports a blocker in every round
+    When five rounds have run
+    Then the loop ends as "not clean at 5", and no sixth round runs
+
+  @F4.9
+  Scenario: A reviewer that changes the copy ends the loop as failed
+    Given a reviewer session that edits a file of its copy
+    When the round ends
+    Then the loop ends as "failed", naming the file, and the run's results are kept
+
+  @F4.9
+  Scenario: A loop session killed at its cap keeps the run's results
+    Given a fixer session that exceeds "review_loop.caps.session_time_s"
+    When it is killed
+    Then the loop ends as "failed", and the run's steps, scores and M-K1 are unchanged

@@ -7,17 +7,28 @@ import {
   readFileSync,
   writeFileSync,
 } from 'node:fs';
-import { join, relative } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { dirname, join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { claudeCodeAgent, fakeAgent, loadFakeScript, readSession } from '../../src/agents/index.js';
 import { renderProjectRules } from '../../src/arms/index.js';
 import type { AgentPort, ResumeRequest, StepRequest } from '../../src/agents/index.js';
 import { main } from '../../src/cli/index.js';
-import { checkCampaign, runCampaign } from '../../src/runner/index.js';
+import { gitCli, systemProcess } from '../../src/core/index.js';
+import { buildReviewCopy, checkCampaign, runCampaign, setupAddedPaths } from '../../src/runner/index.js';
 import { writeArmsNamed } from '../support/arm-fixture.js';
 import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
-import { doubles } from '../support/runner-doubles.js';
+import { doubles, NO_USAGE } from '../support/runner-doubles.js';
+import {
+  finding,
+  findingsMessage,
+  FIXER_PROMPT,
+  loopCampaign,
+  REVIEW_PROMPT,
+  reviewerDouble,
+  reviewLoopYaml,
+} from '../support/review-fixture.js';
 import { dryRunProfileYaml, priceCampaign, writeDryRunProfile } from '../support/dry-run-fixture.js';
 import { repoPath } from '../support/paths.js';
 import { promptFile, stepNumbers, tempDir } from '../support/scenario-fixture.js';
@@ -836,5 +847,512 @@ describe('a step that ends with no result event (REQ-RUN-09 as amended in 1.49, 
     expect(dry.outcome).toBe('interrupted');
     expect(dry.steps[0]).toMatchObject({ cost_reported: false });
     expect(stdout).toContain(`step 01 ${(dry.steps[0]?.cost_bound_usd ?? 0).toFixed(4)} USD (at its bound)`);
+  });
+});
+
+describe('runner.feature, the review loop (task-149, F4.9)', () => {
+  /** The run's `review/` record. */
+  interface LoopRecord {
+    reviewer: { agent: { name: string; version: string }; model: string; effort: string };
+    prompt_sha256: string;
+    fixer_prompt_sha256: string;
+    max_rounds: number;
+    outcome: string;
+    reason?: string;
+    cost_eur: number;
+    rounds: { n: number; findings: Record<string, number>; fixed: boolean }[];
+  }
+  const loopOf = (outputDir: string): LoopRecord =>
+    JSON.parse(readFileSync(join(outputDir, 'review', 'loop.json'), 'utf8')) as LoopRecord;
+  /** S1 has two steps: a fixer session is the step after the last, one per round. */
+  const isFixer = (request: { step: number }) => request.step > 2;
+
+  /** A campaign of S1 with a review loop, run with the doubles and `reviewer`. */
+  async function loopRun(
+    reviewer: ReturnType<typeof reviewerDouble>,
+    options: {
+      ports?: Parameters<typeof doubles>[0];
+      loop?: Record<string, unknown>;
+      arms?: readonly string[];
+      repetitions?: number;
+      runner?: Partial<Parameters<typeof runCampaign>[1]>;
+      yaml?: (yaml: Record<string, unknown>) => void;
+    } = {},
+  ) {
+    const { checked, root } = loopCampaign({
+      ...(options.arms === undefined ? {} : { arms: options.arms }),
+      ...(options.repetitions === undefined ? {} : { repetitions: options.repetitions }),
+      ...(options.loop === undefined ? {} : { loop: options.loop }),
+      ...(options.yaml === undefined ? {} : { yaml: options.yaml }),
+    });
+    const ports = doubles(options.ports);
+    const summary = await runCampaign(checked, {
+      ...ports,
+      reviewer: { agent: reviewer },
+      ...options.runner,
+    });
+    const run = summary.runs[0];
+    if (run === undefined) throw new Error('no run');
+    return { summary, ports, run, checked, root };
+  }
+
+  /** Every file below `dir` but `review/`, its content with `replace`'s pairs replaced. */
+  function recordsOf(dir: string, replace: readonly [string, string][]): Record<string, string> {
+    return Object.fromEntries(
+      filesUnder(dir)
+        .filter((file) => !relative(dir, file).startsWith('review'))
+        .map((file) => [
+          relative(dir, file),
+          replace.reduce((text, [from, to]) => text.replaceAll(from, to), readFileSync(file, 'utf8')),
+        ]),
+    );
+  }
+
+  it('@F4.9 The review loop runs after the last step, never changing what is scored', async () => {
+    // Given a completed run of a campaign that pins a review loop
+    const reviewer = reviewerDouble((n) =>
+      n === 1 ? findingsMessage(finding('should-fix', 'README.md', 1)) : findingsMessage(),
+    );
+    let containerAtFix: { removed: boolean; reviewers: number } | undefined;
+    const ports: Parameters<typeof doubles>[0] = {
+      onStep: (request) => {
+        if (isFixer(request)) {
+          containerAtFix = {
+            removed: looped.ports.recorded.removes.includes('container-1'),
+            reviewers: looped.ports.recorded.creates.length - 1,
+          };
+        }
+      },
+    };
+    // eslint-disable-next-line prefer-const
+    let looped: Awaited<ReturnType<typeof loopRun>>;
+    looped = await loopRun(reviewer, { ports });
+    const plain = await (async () => {
+      const { checked, root } = loopCampaign({ loop: null });
+      const d = doubles();
+      const summary = await runCampaign(checked, d);
+      return { run: summary.runs[0], checked, root, ports: d };
+    })();
+
+    // When its last step's commit and patch are stored, the loop starts
+    const calls = looped.ports.recorded.gitCalls;
+    const workspace = looped.run.workspace;
+    const lastStep = calls.indexOf(`commit ${workspace} step 02 --allow-empty`);
+    const firstExport = calls.findIndex((call) => call.startsWith('export '));
+    expect(lastStep).toBeGreaterThan(-1);
+    expect(firstExport).toBeGreaterThan(lastStep);
+    // Then the reviewer reads a stripped copy, in a container of its own whose only mount is the copy
+    const reviewerCreate = looped.ports.recorded.creates[1];
+    expect(reviewerCreate?.image).toBe(`${looped.checked.campaign.id}-review`);
+    expect(reviewerCreate?.workspace).not.toBe(workspace);
+    expect(reviewerCreate?.workspace).toBe(join(dirname(workspace), 'review', '1'));
+    expect(reviewer.requests).toHaveLength(2);
+    // And the fixer works in the run's workspace, its container still there
+    expect(containerAtFix).toEqual({ removed: false, reviewers: 1 });
+    expect(calls).toContain(`commit ${workspace} review fix 1 --allow-empty`);
+    expect(looped.ports.recorded.removes.at(-1)).toBe('container-1');
+    expect(loopOf(looped.run.outputDir).outcome).toBe('clean');
+    // And the run's patches, and its scores, are those it would have without the loop
+    expect(looped.run.outcome).toBe('completed');
+    const replace = (root: string, id: string): [string, string][] => [
+      [root, '<root>'],
+      [id, '<id>'],
+    ];
+    expect(recordsOf(looped.run.outputDir, replace(looped.root, looped.checked.campaign.id))).toEqual(
+      recordsOf(plain.run?.outputDir ?? '', replace(plain.root, plain.checked.campaign.id)),
+    );
+    expect(existsSync(join(plain.run?.outputDir ?? '', 'review'))).toBe(false);
+  });
+
+  it('@F4.9 A run that did not complete has no loop', async () => {
+    // Given a run of a campaign that pins a review loop, killed at its step cap
+    const reviewer = reviewerDouble(() => findingsMessage());
+    const { run, ports } = await loopRun(reviewer, {
+      ports: { stopOf: (request) => (request.step === 1 ? 'cap reached' : undefined) },
+    });
+    // When the run ends
+    expect(run.outcome).toBe('cap reached');
+    // Then its "review/loop.json" records "no loop" with the run's outcome, and no review session runs
+    expect(loopOf(run.outputDir)).toMatchObject({ outcome: 'no loop', reason: 'cap reached', rounds: [] });
+    expect(reviewer.requests).toEqual([]);
+    expect(ports.recorded.creates).toHaveLength(1);
+  });
+
+  it('@F4.9 The reviewer sees the code without what the setup installed', async () => {
+    // Given a run of "speckit" whose setup added ".specify/scripts/bash/common.sh", "CLAUDE.md" and ".mcp.json"
+    const workspace = tempDir('bench-review-ws-');
+    const sh = (...args: string[]) =>
+      execFileSync('git', ['-C', workspace, ...args], {
+        encoding: 'utf8',
+        env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+      }).trim();
+    const write = (path: string, text: string) => {
+      mkdirSync(dirname(join(workspace, path)), { recursive: true });
+      writeFileSync(join(workspace, path), text);
+    };
+    const commit = (message: string) => {
+      sh('add', '--all');
+      sh('-c', 'user.name=Runner', '-c', 'user.email=runner@bench', 'commit', '-q', '-m', message);
+      return sh('rev-parse', 'HEAD^{tree}');
+    };
+    sh('init', '-q', '--initial-branch=main');
+    write('README.md', '# Shop\n');
+    write('src/index.ts', 'export {};\n');
+    const seed = commit('seed');
+    write('.specify/scripts/bash/common.sh', '#!/bin/sh\n');
+    write('.specify/memory/constitution.md', '# Constitution template\n');
+    write('CLAUDE.md', '# Manual\n');
+    write('.mcp.json', '{}\n');
+    write('.claude/commands/plan.md', 'Plan.\n');
+    write('README.md', '# Shop\n\nSet up.\n');
+    const setup = commit('setup');
+    // And whose agent wrote "src/cart.ts" and "specs/001-cart/spec.md"
+    write('src/cart.ts', 'export const cart = [];\n');
+    write('specs/001-cart/spec.md', '# Cart\n');
+    write('.specify/memory/constitution.md', '# Constitution of the shop\n');
+    write('src/CLAUDE.md', '# Nested manual\n');
+    write('README.md', '# Shop\n\nSet up, then the cart.\n');
+    const final = commit('step 01: a message of the run');
+
+    // When the reviewer session starts
+    const git = gitCli(systemProcess);
+    const stripped = await setupAddedPaths(workspace, seed, setup, git);
+    const copyDir = join(tempDir('bench-review-copy-'), '1');
+    const commits = await buildReviewCopy({ workspace, copyDir, before: seed, after: final, stripped }, git);
+
+    // Then its copy holds "src/cart.ts" and "specs/001-cart/spec.md" and none of the setup's paths
+    const held = filesUnder(copyDir)
+      .map((file) => relative(copyDir, file))
+      .filter((path) => !path.startsWith('.git/'))
+      .sort();
+    expect(held).toEqual(['README.md', 'specs/001-cart/spec.md', 'src/cart.ts', 'src/index.ts']);
+    // And a setup-added file a step changed, such as the constitution, is not in it either
+    expect(existsSync(join(copyDir, '.specify'))).toBe(false);
+    // A seed path the setup changed keeps its final content, as project code
+    expect(readFileSync(join(copyDir, 'README.md'), 'utf8')).toBe('# Shop\n\nSet up, then the cart.\n');
+    // And its git history is two commits, the stripped seed and the stripped final tree, with no step commit message
+    const log = execFileSync('git', ['-C', copyDir, 'log', '--format=%H %an %s'], { encoding: 'utf8' })
+      .trim()
+      .split('\n');
+    expect(log).toHaveLength(2);
+    expect(log.map((line) => line.split(' ')[0])).toEqual([commits.after, commits.before]);
+    expect(log.join('\n')).not.toMatch(/step|seed|setup|Runner/);
+    // And it holds no step prompt, oracle file or hold-out file
+    expect(held.some((path) => /prompts|oracle|hidden/.test(path))).toBe(false);
+  });
+
+  it('@F4.9 A later round reviews the whole copy, pointed at the fix', async () => {
+    // Given round 1's fix changed "src/cart.ts"
+    const reviewer = reviewerDouble((n) =>
+      n === 1 ? findingsMessage(finding('should-fix', 'src/cart.ts', 3)) : findingsMessage(),
+    );
+    const { run, ports } = await loopRun(reviewer);
+    const workspace = run.workspace;
+    // When round 2's reviewer starts
+    const exports = ports.recorded.gitCalls
+      .filter((call) => call.startsWith('export '))
+      .map((call) => call.split(' '));
+    const round2 = join(dirname(workspace), 'review', '2');
+    // Then its copy is the whole stripped tree with the fix applied: a fresh copy of the tree before the fix and after
+    const intoRound2 = exports.filter((call) => call[3] === round2);
+    expect(intoRound2).toHaveLength(2);
+    expect(intoRound2.every((call) => call[1] === workspace)).toBe(true);
+    expect(intoRound2[0]?.[2]).toBe(run.steps[1]?.tree);
+    expect(intoRound2[1]?.[2]).not.toBe(run.steps[1]?.tree);
+    expect(ports.recorded.creates[2]?.workspace).toBe(round2);
+    // And it is pointed at the fix's diff
+    const [first, second] = reviewer.requests;
+    expect(first?.prompt).toMatch(/whole change/);
+    expect(second?.prompt).toMatch(/latest fix/);
+    expect(second?.prompt).toMatch(/git diff [0-9a-z-]+ [0-9a-z-]+/);
+    expect(second?.prompt.endsWith(REVIEW_PROMPT)).toBe(true);
+    expect(second?.model).toBe('fake-reviewer');
+    expect(second?.effort).toBe('medium');
+  });
+
+  it('@F4.9 A reviewer whose findings do not parse ends the loop as failed', async () => {
+    // Given a reviewer whose final result is not the findings' JSON
+    const reviewer = reviewerDouble(() => 'The code looks fine to me.');
+    const { run, ports } = await loopRun(reviewer);
+    // When the round ends
+    // Then the loop ends as "failed", and the run's results are kept
+    expect(loopOf(run.outputDir)).toMatchObject({
+      outcome: 'failed',
+      reason: expect.stringMatching(/findings/),
+    });
+    expect(run.outcome).toBe('completed');
+    expect(run.steps.map((step) => step.outcome)).toEqual(['completed', 'completed']);
+    expect(ports.recorded.steps.filter(isFixer)).toEqual([]);
+  });
+
+  it('@F4.9 A fixer that changes nothing ends the loop', async () => {
+    // Given round 1 reports a blocker, and the fixer's patch changes only paths the reviewer's copy strips
+    const reviewer = reviewerDouble(() => findingsMessage(finding('blocker')));
+    const { run, ports } = await loopRun(reviewer, {
+      ports: {
+        treeOf: (directory) => (directory.endsWith(join('review', '2')) ? 'same'.padEnd(40, '0') : undefined),
+      },
+    });
+    // When the round ends
+    // Then the loop ends as "no fix"
+    expect(loopOf(run.outputDir)).toMatchObject({ outcome: 'no fix' });
+    expect(reviewer.requests).toHaveLength(1);
+    expect(ports.recorded.steps.filter(isFixer)).toHaveLength(1);
+    expect(run.outcome).toBe('completed');
+  });
+
+  it("@F4.9 The fixer works with the arm's harness as in a step", async () => {
+    // Given a completed run of "wingfoil" whose loop's round 1 reports a blocker (each run's round 2 is clean)
+    const reviewer = reviewerDouble((n) =>
+      n % 2 === 1 ? findingsMessage(finding('blocker')) : findingsMessage(),
+    );
+    const removedAtFix: string[][] = [];
+    const looped = await loopRun(reviewer, {
+      arms: ['baseline', 'wingfoil'],
+      yaml: (yaml) => {
+        yaml.harnesses = { wingfoil: { tool: 'wingfoil', version: '3df305e' } };
+      },
+      ports: {
+        onStep: (request) => {
+          if (isFixer(request)) removedAtFix.push([...looped.ports.recorded.removes]);
+        },
+      },
+      runner: { harnessSources: { wingfoil: '/clones/wingfoil' } },
+    });
+    const { summary, ports, checked } = looped;
+    const run = summary.runs.find((candidate) => candidate.arm === 'wingfoil');
+    if (run === undefined) throw new Error('no wingfoil run');
+    const container = `container-${ports.recorded.creates.findIndex((create) => create.workspace === run.workspace) + 1}`;
+    // When the fixer session starts
+    const requests = ports.recorded.steps;
+    const fixer = requests.filter(isFixer).at(-1);
+    const lastStep = requests.filter((request) => !isFixer(request)).at(-1);
+    // Then it runs in the run's own container, with the wingfoil MCP server of the last step
+    expect(run.outcome).toBe('completed');
+    expect(fixer?.step).toBe(3);
+    expect(removedAtFix.at(-1)).not.toContain(container);
+    expect(fixer?.mcpConfig).toBeDefined();
+    expect(fixer?.mcpConfig).toBe(lastStep?.mcpConfig);
+    expect(fixer?.model).toBe('fake-model');
+    expect(fixer?.prompt).toContain(FIXER_PROMPT);
+    // And the run's stored patches and "commits.json" are unchanged, and no image is made
+    expect(ports.recorded.builds).toEqual([checked.campaign.id, `${checked.campaign.id}-review`]);
+    for (const step of ['01', '02']) {
+      expect(readFileSync(join(run.outputDir, 'steps', step, 'diff.patch'), 'utf8')).not.toMatch(/review/);
+    }
+    expect(existsSync(join(run.outputDir, 'review', '1', 'commits.json'))).toBe(false);
+    expect(existsSync(join(run.outputDir, 'review', '1', 'fix.patch'))).toBe(true);
+  });
+
+  it('@F4.9 A quota rejection in a loop stops the campaign', async () => {
+    // Given a fixer session rejected for the subscription's quota
+    const reviewer = reviewerDouble(() => findingsMessage(finding('blocker')));
+    const { run, summary } = await loopRun(reviewer, {
+      repetitions: 2,
+      ports: { stopOf: (request) => (isFixer(request) ? 'quota exhausted' : undefined) },
+    });
+    // When the round ends
+    // Then the loop ends as "quota exhausted", the run stays "completed", and the campaign stops
+    expect(loopOf(run.outputDir).outcome).toBe('quota exhausted');
+    expect(run.outcome).toBe('completed');
+    expect(summary.runs).toHaveLength(1);
+    expect(summary.outcome).toBe('quota exhausted');
+  });
+
+  it('@F4.9 A fixer that reaches its intervention cap ends the loop', async () => {
+    // Given a fixer whose interventions reach "review_loop.caps.fixer_interventions"
+    const reviewer = reviewerDouble(() => findingsMessage(finding('blocker')));
+    const { run, ports } = await loopRun(reviewer, {
+      loop: reviewLoopYaml({ caps: { fixer_interventions: 1 } }),
+      ports: { messageOf: (request) => (isFixer(request) ? 'Which one?' : undefined) },
+    });
+    // When the cap is reached
+    // Then its session ends and the loop is "failed"
+    expect(ports.recorded.resumes.filter(isFixer)).toHaveLength(1);
+    expect(loopOf(run.outputDir)).toMatchObject({
+      outcome: 'failed',
+      reason: expect.stringMatching(/intervention cap/),
+    });
+    expect(run.outcome).toBe('completed');
+  });
+
+  it('@F4.9 An interrupted loop is not resumed', async () => {
+    // Given a campaign interrupted during a run's review loop
+    const controller = new AbortController();
+    const reviewer = reviewerDouble((n) => {
+      if (n === 2) controller.abort();
+      return findingsMessage(finding('should-fix'));
+    });
+    const { run, summary, checked } = await loopRun(reviewer, { runner: { signal: controller.signal } });
+    expect(summary.outcome).toBe('interrupted');
+    expect(run.outcome).toBe('completed');
+    const before = loopOf(run.outputDir);
+    expect(before.outcome).toBe('interrupted');
+    expect(before.rounds.map((round) => round.n)).toEqual([1]);
+    expect(before.rounds[0]?.fixed).toBe(true);
+    // When it is resumed
+    const again = reviewerDouble(() => findingsMessage());
+    const ports = doubles();
+    const resumed = await runCampaign(
+      checked,
+      { ...ports, reviewer: { agent: again } },
+      { resume: summary.execution },
+    );
+    // Then that run's loop stays recorded as "interrupted" with its rounds so far, the run "completed"
+    expect(loopOf(run.outputDir)).toEqual(before);
+    expect(JSON.parse(readFileSync(join(run.outputDir, 'run.json'), 'utf8'))).toMatchObject({
+      outcome: 'completed',
+    });
+    // And no loop session and none of the run's steps run again
+    expect(again.requests).toEqual([]);
+    expect(ports.recorded.steps).toEqual([]);
+    expect(resumed.runs).toEqual([]);
+  });
+
+  it('@F4.9 A round with a blocker or a should-fix is fixed and its fix re-reviewed', async () => {
+    // Given the reviewer's round 1 reports a should-fix
+    const reviewer = reviewerDouble((n) =>
+      n === 1
+        ? {
+            finalMessage: findingsMessage(
+              finding('should-fix', 'src/cart.ts', 3),
+              finding('nit', 'README.md', 2),
+            ),
+            transcript: ['{"type":"result","said":"s3cr3t-token"}'],
+            usage: { ...NO_USAGE, inputTokens: 10, costUsd: 0.1, costEur: 0.09 },
+          }
+        : findingsMessage(),
+    );
+    const { run, ports } = await loopRun(reviewer, {
+      runner: { secrets: ['s3cr3t-token'] },
+      ports: {
+        usageOf: (request) => (isFixer(request) ? { ...NO_USAGE, costUsd: 0.2, costEur: 0.18 } : NO_USAGE),
+      },
+    });
+    // When the loop goes on
+    // Then the arm's own agent fixes it in the run's workspace, its diff recorded as round 1's "fix.patch"
+    const fixers = ports.recorded.steps.filter(isFixer);
+    expect(fixers).toHaveLength(1);
+    expect(fixers[0]?.prompt).toContain('A should-fix');
+    expect(fixers[0]?.prompt).not.toContain('A nit');
+    expect(fixers[0]?.prompt).toContain(FIXER_PROMPT);
+    const round1 = join(run.outputDir, 'review', '1');
+    expect(readFileSync(join(round1, 'fix.patch'), 'utf8')).toContain(run.workspace);
+    // And round 2 reviews that diff
+    expect(reviewer.requests).toHaveLength(2);
+    expect(reviewer.requests[1]?.prompt).toMatch(/latest fix/);
+    // The records (REQ-FMT-06)
+    const loop = loopOf(run.outputDir);
+    expect(loop).toMatchObject({
+      reviewer: { agent: { name: 'fake', version: '1.0.0' }, model: 'fake-reviewer', effort: 'medium' },
+      max_rounds: 5,
+      outcome: 'clean',
+      rounds: [
+        { n: 1, findings: { blocker: 0, 'should-fix': 1, nit: 1 }, fixed: true },
+        { n: 2, findings: { blocker: 0, 'should-fix': 0, nit: 0 }, fixed: false },
+      ],
+    });
+    expect(loop.reason).toBeUndefined();
+    expect(loop.prompt_sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(loop.cost_eur).toBeCloseTo(0.27, 6);
+    expect(
+      (JSON.parse(readFileSync(join(round1, 'findings.json'), 'utf8')) as { findings: unknown[] }).findings,
+    ).toHaveLength(2);
+    expect(JSON.parse(readFileSync(join(round1, 'reviewer-usage.json'), 'utf8'))).toMatchObject({
+      inputTokens: 10,
+    });
+    expect(JSON.parse(readFileSync(join(round1, 'fixer-usage.json'), 'utf8'))).toMatchObject({
+      usage: { costEur: 0.18 },
+      interventions: [],
+      outcome: 'completed',
+    });
+    expect(readFileSync(join(round1, 'reviewer.jsonl'), 'utf8')).not.toContain('s3cr3t-token');
+    expect(existsSync(join(round1, 'fixer.jsonl'))).toBe(true);
+    expect(existsSync(join(run.outputDir, 'review', '2', 'fix.patch'))).toBe(false);
+    // The loop's usage is never the run's (REQ-RUN-09)
+    const record = JSON.parse(readFileSync(join(run.outputDir, 'run.json'), 'utf8')) as {
+      steps: { usage: { costEur: number } }[];
+    };
+    expect(record.steps.map((step) => step.usage.costEur)).toEqual([0, 0]);
+  });
+
+  it('@F4.9 A round with nits only closes the loop', async () => {
+    // Given the reviewer's round 2 reports two nits and nothing else
+    const reviewer = reviewerDouble((n) =>
+      n === 1
+        ? findingsMessage(finding('should-fix'))
+        : findingsMessage(finding('nit'), finding('nit', 'src/a.ts', 4)),
+    );
+    const { run, ports } = await loopRun(reviewer);
+    // When the loop goes on
+    // Then it closes as "clean" at round 2, and no fixer session runs for the nits
+    const loop = loopOf(run.outputDir);
+    expect(loop.outcome).toBe('clean');
+    expect(loop.rounds).toHaveLength(2);
+    expect(ports.recorded.steps.filter(isFixer).map((request) => request.step)).toEqual([3]);
+  });
+
+  it('@F4.9 A loop that does not close by the cap is not clean', async () => {
+    // Given a reviewer that reports a blocker in every round
+    const reviewer = reviewerDouble(() => findingsMessage(finding('blocker')));
+    const { run, ports } = await loopRun(reviewer);
+    // When five rounds have run
+    // Then the loop ends as "not clean at 5", and no sixth round runs
+    const loop = loopOf(run.outputDir);
+    expect(loop).toMatchObject({ outcome: 'not clean at 5', reason: expect.any(String) });
+    expect(reviewer.requests).toHaveLength(5);
+    // The last round's findings are never fixed: no review would read the fix.
+    expect(ports.recorded.steps.filter(isFixer).map((request) => request.step)).toEqual([3, 4, 5, 6]);
+  });
+
+  it('@F4.9 A reviewer that changes the copy ends the loop as failed', async () => {
+    // Given a reviewer session that edits a file of its copy
+    const reviewer = reviewerDouble(() => findingsMessage());
+    const { run } = await loopRun(reviewer, {
+      ports: { dirtyOf: (directory) => (directory.endsWith(join('review', '1')) ? ['src/cart.ts'] : []) },
+    });
+    // When the round ends
+    // Then the loop ends as "failed", naming the file, and the run's results are kept
+    expect(loopOf(run.outputDir)).toMatchObject({
+      outcome: 'failed',
+      reason: expect.stringContaining('src/cart.ts'),
+    });
+    expect(run.outcome).toBe('completed');
+  });
+
+  it("@F4.9 A loop session killed at its cap keeps the run's results", async () => {
+    // Given a fixer session that exceeds "review_loop.caps.session_time_s"
+    const reviewer = reviewerDouble(() => findingsMessage(finding('blocker')));
+    const base = doubles({
+      usageOf: () => ({ ...NO_USAGE, costUsd: 0.5, costEur: 0.45 }),
+      execResultOf: (command) => (command[4] === 'sleep' ? { code: 124, stdout: '', stderr: '' } : undefined),
+    });
+    const agent: AgentPort = {
+      runStep: async (request) => {
+        if (isFixer(request)) {
+          base.recorded.steps.push(request);
+          await request.run(['sleep', '1000']);
+          return { sessionId: request.sessionId, usage: NO_USAGE, transcript: [], error: 'no result event' };
+        }
+        return base.agent.runStep(request);
+      },
+      resume: (request) => base.agent.resume(request),
+    };
+    const { checked } = loopCampaign({ loop: reviewLoopYaml({ caps: { session_time_s: 60 } }) });
+    const summary = await runCampaign(checked, { ...base, agent, reviewer: { agent: reviewer } });
+    const run = summary.runs[0];
+    // When it is killed
+    const timed = base.recorded.execs.find((exec) => exec.command[4] === 'sleep');
+    expect(Number(timed?.command[3])).toBeLessThanOrEqual(60);
+    // Then the loop ends as "failed", and the run's steps, scores and M-K1 are unchanged
+    expect(loopOf(run?.outputDir ?? '')).toMatchObject({
+      outcome: 'failed',
+      reason: expect.stringMatching(/time cap/),
+    });
+    expect(run?.outcome).toBe('completed');
+    const record = JSON.parse(readFileSync(join(run?.outputDir ?? '', 'run.json'), 'utf8')) as {
+      steps: { usage: { costEur: number } }[];
+    };
+    expect(record.steps.map((step) => step.usage.costEur)).toEqual([0.45, 0.45]);
   });
 });
