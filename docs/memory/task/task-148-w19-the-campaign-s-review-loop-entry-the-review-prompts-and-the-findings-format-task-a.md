@@ -117,3 +117,10 @@ State read on 2026-11-13 (main `9254bbaa`): no `review_loop` key exists in `camp
   a review prompt and for a missing prompt in a dry run; the reviewer's prompt neutral on the two commits. Its note
   for the gate: the reviewer's blocker covers "a requirement the project states", so the records harness arms keep in
   the copy (choice 5 of task-147) become documentation the code is judged against; to read with the loop's results.
+- **Round 2** (a second independent agent, on `ec22cca2`; a first attempt stopped with the session and was run
+  again): nothing blocking; the round-1 items done, each fix's test failing when it is reverted. One should-fix: the
+  path normalization ran after the checks, so `.//src/a.ts` became absolute, `.//.git/config` escaped the `.git`
+  refusal and `./` became empty. Now `copyPath` normalizes first (repeated `/` collapsed, `.` segments dropped,
+  nothing left is `.`) and checks the result; a `\\` anywhere is refused. Nits: `validateScenario`'s doc comment
+  back on it and naming the review prompts; the hold-out scan covers every `review/*.md`, not the two names only.
+

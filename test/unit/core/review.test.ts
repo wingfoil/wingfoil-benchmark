@@ -39,13 +39,32 @@ describe("the reviewer's findings (task-148, REQ-RUN-21)", () => {
     expect(refused(JSON.stringify({ findings: [{ ...FINDING, extra: 1 }] }))).toMatch(/extra|unrecognized/i);
     expect(refused('```json\n{"findings": []}\n```\n```json\n{"findings": []}\n```')).toMatch(/one/);
     expect(refused(JSON.stringify({ findings: [{ ...FINDING, file: '.git/config' }] }))).toMatch(/git/);
-    expect(refused(JSON.stringify({ findings: [{ ...FINDING, file: '\\share\\a.ts' }] }))).toMatch(
-      /relative/,
-    );
+    expect(refused(JSON.stringify({ findings: [{ ...FINDING, file: '\\share\\a.ts' }] }))).toMatch(/'\/'/);
     expect(refused(JSON.stringify({ findings: [{ ...FINDING, file: '' }] }))).toMatch(/file/);
     expect(refused(JSON.stringify({ findings: [{ ...FINDING, title: '   ' }] }))).toMatch(/title/);
     expect(refused(JSON.stringify({ findings: [], summary: 'fine' }))).not.toBe('accepted');
     expect(refused('```jsonc\n{"findings": []}\n```')).toMatch(/no findings/);
+  });
+
+  it('normalizes a path before checking it, so no spelling escapes the checks (review round 2)', () => {
+    const files = (...paths: string[]) => {
+      const parsed = parseFindings(JSON.stringify({ findings: paths.map((file) => ({ ...FINDING, file })) }));
+      return parsed.ok
+        ? parsed.value.map((finding) => finding.file)
+        : parsed.issues.map((issue) => issue.message);
+    };
+    expect(files(' ./src//cart.ts ', './', '././', 'src/./a.ts')).toEqual([
+      'src/cart.ts',
+      '.',
+      '.',
+      'src/a.ts',
+    ]);
+    expect(files('.//src/a.ts')).toEqual(['src/a.ts']);
+    expect(String(files('.//.git/config'))).toMatch(/git directory/);
+    expect(String(files('.git\\config'))).toMatch(/'\/'/);
+    expect(String(files('.\\src\\a.ts'))).toMatch(/'\/'/);
+    expect(String(files('/abs/a.ts'))).toMatch(/relative/);
+    expect(String(files('//abs/a.ts'))).toMatch(/relative/);
   });
 
   it('reads one spelling per file, the project as ".", and a fence labelled in any case (review round 1)', () => {

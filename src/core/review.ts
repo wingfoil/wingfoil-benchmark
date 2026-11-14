@@ -10,16 +10,37 @@ import { parseWith } from './yaml-file.js';
  * relative path, and a line of it as that round's reviewer saw it, or none (a missing file, a design remark).
  */
 
-/** A path inside the copy: relative, with no `..` segment. */
+/**
+ * One spelling per file, so that rounds compare: repeated `/` collapsed, `.` segments dropped, so that `./src//a.ts`
+ * is `src/a.ts`; nothing left is the project, `.`. A leading `/` survives, for the check after it to refuse.
+ */
+function normalizedPath(path: string): string {
+  const absolute = path.startsWith('/');
+  const segments = path.split('/').filter((segment) => segment !== '' && segment !== '.');
+  if (segments.length === 0) return absolute ? '/' : '.';
+  return `${absolute ? '/' : ''}${segments.join('/')}`;
+}
+
+/** A path inside the copy: relative, `/`-separated, with no `..` segment, never the copy's git directory. */
 const copyPath = z
   .string()
   .trim()
   .min(1)
-  .refine((path) => !/^[\\/]/.test(path) && !/^[A-Za-z]:/.test(path), 'must be a path relative to the copy')
-  .refine((path) => !path.split(/[\\/]/).includes('..'), 'must not leave the copy')
-  .refine((path) => !/^(?:\.\/)*\.git(?:\/|$)/.test(path), "must not name the copy's git directory")
-  // One spelling per file, so that rounds compare: `./src/a.ts` is `src/a.ts`; `.` stays the project.
-  .transform((path) => (path === '.' ? path : path.replace(/^(?:\.\/)+/, '')));
+  .refine((path) => !path.includes('\\'), "must separate its segments with '/'")
+  .transform(normalizedPath)
+  .pipe(
+    z
+      .string()
+      .refine(
+        (path) => !path.startsWith('/') && !/^[A-Za-z]:/.test(path),
+        'must be a path relative to the copy',
+      )
+      .refine((path) => !path.split('/').includes('..'), 'must not leave the copy')
+      .refine(
+        (path) => path !== '.git' && !path.startsWith('.git/'),
+        "must not name the copy's git directory",
+      ),
+  );
 
 export const findingSchema = z.strictObject({
   severity: z.enum(['blocker', 'should-fix', 'nit']),
