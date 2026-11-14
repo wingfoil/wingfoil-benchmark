@@ -2,7 +2,7 @@
 id: task-149-w19-the-review-loop-in-the-runner-task-b
 type: task
 title: "W19: the review loop in the runner (task B)"
-status: draft
+status: pending
 release: v0.3
 wave: W19
 features: [F4.9]
