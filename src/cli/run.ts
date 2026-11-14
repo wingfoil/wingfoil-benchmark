@@ -35,6 +35,7 @@ import {
   count,
   EXIT,
   portsFor,
+  reviewerFor,
   report,
   SPENDING_FLAG,
   USAGE,
@@ -371,6 +372,9 @@ async function runCampaignCommand(
 
   const resolved = ports ? { ok: true as const, value: ports } : portsFor(spec, credential, credentialFile);
   if (!resolved.ok) return report(resolved.issues, io);
+  // The review loop's reviewer, its credential its own (REQ-RUN-21, task-149).
+  const reviewer = reviewerFor(spec.review_loop, spec, { allowSpending, ports });
+  if (!reviewer.ok) return report(reviewer.issues, io);
 
   // The warning, last, so that nobody confirms what a missing credential would stop a second later.
   if (guard.value.eur > warn_eur) {
@@ -417,6 +421,7 @@ async function runCampaignCommand(
                 secrets: secrets ?? [],
                 refreshSecrets: () => codexFileSecrets(credentialFile),
               }),
+          ...(reviewer.value === undefined ? {} : { reviewer: reviewer.value }),
           signal,
         },
         resume === undefined ? {} : { resume: resume.value },

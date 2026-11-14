@@ -164,7 +164,13 @@ export function executionSpendingEur(executionDir: string, usdToEur: number): nu
   if (!existsSync(runsDir)) return 0;
   let total = 0;
   for (const entry of readdirSync(runsDir, { withFileTypes: true, recursive: true })) {
-    if (!entry.isFile() || entry.name !== 'run.json') continue;
+    if (!entry.isFile()) continue;
+    // A review loop's cost counts as a step's (REQ-RUN-08 as amended in 1.58, task-149): its record says what it spent.
+    if (entry.name === 'loop.json' && basename(entry.parentPath) === 'review') {
+      total += loopSpendingEur(join(entry.parentPath, entry.name), executionDir);
+      continue;
+    }
+    if (entry.name !== 'run.json') continue;
     const file = join(entry.parentPath, entry.name);
     let run: { steps?: { usage?: { costEur?: unknown }; cost_bound_usd?: unknown }[] };
     const unreadable = (reason: string, cause?: unknown) =>
@@ -183,4 +189,17 @@ export function executionSpendingEur(executionDir: string, usdToEur: number): nu
     }
   }
   return total;
+}
+
+/** What a run's review loop spent, in EUR, from its `review/loop.json` (REQ-FMT-06 as amended in 1.58). */
+function loopSpendingEur(file: string, executionDir: string): number {
+  let loop: { cost_eur?: unknown };
+  try {
+    loop = JSON.parse(readFileSync(file, 'utf8')) as typeof loop;
+  } catch (error) {
+    throw new Error(`${relative(dirname(dirname(executionDir)), file)} cannot be read: ${(error as Error).message}`, {
+      cause: error,
+    });
+  }
+  return loop !== null && typeof loop === 'object' && typeof loop.cost_eur === 'number' ? loop.cost_eur : 0;
 }

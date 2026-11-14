@@ -55,6 +55,8 @@ import { agentIdentityFor } from './identity.js';
 import { prepareProjectRules, PROJECT_RULES } from './project-rules.js';
 import type { HarnessArtefact } from './harness.js';
 import { copyEnvironment } from './workspace.js';
+import { executeReviewLoop, writeNoLoop } from './review-loop.js';
+import type { LoopSummary } from './review-loop.js';
 
 /** The ports a campaign runs against (REQ-ARC-04), and where its output goes. */
 export interface RunnerOptions {
@@ -102,6 +104,15 @@ export interface RunnerOptions {
   readonly signal?: AbortSignal;
   /** The date `execution.json` records (REQ-FMT-06 as amended); `new Date()` unless injected (task-079). */
   readonly date?: () => Date;
+  /**
+   * The review loop's reviewer (REQ-RUN-21, task-149): its agent's adapter, the credential its container gets and the
+   * values to scrub, whatever the campaign's own agent. Required when the plan pins a review loop.
+   */
+  readonly reviewer?: {
+    readonly agent: AgentPort;
+    readonly containerEnv?: Readonly<Record<string, string>>;
+    readonly secrets?: readonly string[];
+  };
 }
 
 /**
@@ -253,10 +264,15 @@ export interface RunResult {
   readonly error?: string;
   /** For a failed run, the step it failed in, 0 before step 1 (task-079): what `fail_fast` counts by. */
   readonly failedStep?: number;
+  /** The run's review loop, when the plan pins one (REQ-RUN-21): read by the campaign, never written to `run.json`. */
+  readonly loop?: LoopSummary;
 }
 
 /** What a run is pinned to, whether a campaign file or a dry-run profile pins it (task-021). */
-export type RunPins = Pick<CampaignFile, 'harnesses' | 'agent' | 'approver_policy' | 'caps' | 'currency'>;
+export type RunPins = Pick<
+  CampaignFile,
+  'harnesses' | 'agent' | 'approver_policy' | 'caps' | 'currency' | 'review_loop'
+>;
 
 /** One run to execute: one scenario, in one arm, with one model, once. */
 export interface PlannedRun {
@@ -704,6 +720,13 @@ async function executeRuns(
     plan.arms.map((arm) => [arm.name, armDigest(arm.from?.root ?? plan.repoRoot, arm.name)]),
   );
   await buildRunImage(plan.id, plan.pins.agent, options);
+  // The reviewer's image (REQ-RUN-01 as amended in 1.58): the reviewer agent on the same base, nothing of any arm.
+  const loop = plan.pins.review_loop;
+  if (loop !== undefined) {
+    if (options.reviewer === undefined)
+      throw new Error(`the ${plan.noun} pins a review loop, but no reviewer was given`);
+    await buildRunImage(reviewerImage(plan.id), loop.agent, options);
+  }
   // Every harness before any run: an arm never runs without the one it requires (REQ-RUN-14).
   const harnesses = await prepareHarnesses(
     { id: plan.id, repoRoot: plan.repoRoot, arms: plan.arms, harnesses: plan.pins.harnesses },
@@ -750,6 +773,7 @@ async function executeRuns(
           execution,
           resultsDir,
           leftovers,
+          spent,
           // Whatever an earlier attempt left moves aside first (task-080): 1 for a first run.
           attempts: nextAttempt(runOutputDir(resultsDir, next)),
           // Taken above for every arm of the plan, which is where `arm` comes from.
@@ -766,7 +790,29 @@ async function executeRuns(
       options.agent.endRun?.();
     }
     results.push(run);
-    spent += spentEur(run.steps, plan.pins);
+    spent += spentEur(run.steps, plan.pins) + (run.loop?.costEur ?? 0);
+    // A loop's quota, interrupt or ceiling stops the campaign as a step's would; the run keeps `completed` (REQ-RUN-21).
+    if (run.loop?.outcome === 'quota exhausted') {
+      return {
+        runs: results,
+        stop: {
+          reason: 'quota',
+          detail: `run ${runName(next)}'s review loop stopped at the subscription's quota`,
+        },
+      };
+    }
+    if (run.loop?.outcome === 'interrupted') {
+      return {
+        runs: results,
+        stop:
+          run.loop.ceiling === true
+            ? {
+                reason: 'ceiling',
+                detail: `${spent} of ${plan.ceilingEur ?? 0} EUR spent in run ${runName(next)}'s review loop`,
+              }
+            : { reason: 'interrupt', detail: `interrupted during run ${runName(next)}'s review loop` },
+      };
+    }
     if (run.outcome === 'interrupted') {
       return {
         runs: results,
@@ -819,6 +865,13 @@ interface RunContext {
   readonly projectRules?: string | undefined;
   /** Which attempt of the run this is (REQ-FMT-06 as amended, task-080): 1 unless a resume runs it again. */
   readonly attempts: number;
+  /** What the campaign spent before this run, in EUR: the review loop's ceiling check reads it (REQ-RUN-08). */
+  readonly spent: number;
+}
+
+/** The reviewer's image tag (REQ-RUN-01 as amended in 1.58), beside the run image's. */
+function reviewerImage(id: string): string {
+  return `${id}-review`;
 }
 
 /**
@@ -844,7 +897,8 @@ export interface ContainerRequest {
   readonly image: string;
   readonly name: string;
   readonly workspace: string;
-  readonly arm: Arm;
+  /** The run's arm; absent for the review loop's reviewer, which gets nothing of any arm (REQ-RUN-21). */
+  readonly arm?: Arm;
   readonly agentName: string;
   /**
    * Whether the arm's MCP server reaches an agent that reads it from its own configuration (dl-025, task-105); a
@@ -876,7 +930,11 @@ export async function openContainer(
     workspace,
     user: CONTAINER_USER,
     // The arm's telemetry settings (REQ-RUN-18), then the credential: the runner's names win over an arm's.
-    env: { ...telemetryEnvironment(arm), ...profile.environment, ...options.containerEnv },
+    env: {
+      ...(arm === undefined ? {} : telemetryEnvironment(arm)),
+      ...profile.environment,
+      ...options.containerEnv,
+    },
     // The credential file (dl-019), the one mount besides the workspace, read-write as Codex refreshes it.
     ...(credentialMount === undefined ? {} : { mounts: [credentialMount] }),
   });
@@ -887,7 +945,7 @@ export async function openContainer(
   for (const file of profile.files) {
     // An agent that reads its MCP servers from its own configuration gets the arm's there (dl-025, task-105).
     const content =
-      request.mcp && file.path === profile.mcpInConfig && arm.mcpPath !== undefined
+      request.mcp && file.path === profile.mcpInConfig && arm?.mcpPath !== undefined
         ? `${file.content}\n${codexMcpServers(JSON.parse(readFileSync(arm.mcpPath, 'utf8')) as unknown)}`
         : file.content;
     const written = await options.docker.exec(container, [
@@ -953,15 +1011,62 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     if (container !== undefined) removal ??= remove(container, options);
   };
   const interrupted = () => options.signal?.aborted === true;
+  // What the review loop reads of the run (REQ-RUN-21), set as the run goes.
+  let containerName = '';
+  let seedTree: string | undefined;
+  let policy: ApproverPolicy | undefined;
+  let previousTree = '';
+  let previousCommit = '';
+  let mcpConfig: string | undefined;
+  /**
+   * The run's record, then its review loop when the plan pins one (REQ-RUN-21, task-149): after the last step's commit
+   * and patch are stored and before the container is removed. The loop never throws and never changes the run: an
+   * interrupt or a failure during it ends the loop, not the run. A run that did not complete records `no loop`.
+   */
+  const finish = async (run: RunResult): Promise<RunResult> => {
+    const loop = plan.pins.review_loop;
+    if (loop === undefined) return run;
+    if (run.outcome !== 'completed' || container === undefined || setup?.tree === undefined) {
+      return { ...run, loop: writeNoLoop(run.outputDir, loop, run.outcome) };
+    }
+    const summary = await executeReviewLoop(
+      {
+        loop,
+        repoRoot: plan.repoRoot,
+        reviewerImage: reviewerImage(plan.id),
+        pins: plan.pins,
+        leftovers: context.leftovers,
+        spent: context.spent + spentEur(run.steps, plan.pins),
+        ...(plan.ceilingEur === undefined ? {} : { ceilingEur: plan.ceilingEur }),
+        run: {
+          container,
+          containerName,
+          workspace,
+          outputDir,
+          scenario,
+          arm,
+          model,
+          policy: policy as ApproverPolicy,
+          ...(mcpConfig === undefined ? {} : { mcpConfig }),
+          seedTree: seedTree as string,
+          setupTree: setup.tree,
+          finalTree: previousTree,
+          finalCommit: previousCommit,
+        },
+      },
+      options,
+    );
+    return { ...run, loop: summary };
+  };
   try {
     if (interrupted()) throw new Error('interrupted before its container was created');
     // The campaign's validation refuses a version this runner does not implement; this is the type's
     // proof of it, and the guard if a campaign ever reached a run by another path.
-    const policy = approverPolicy(plan.pins.approver_policy);
+    policy = approverPolicy(plan.pins.approver_policy);
     if (policy === undefined) {
       throw new Error(`the approver policy ${plan.pins.approver_policy} is not implemented`);
     }
-    const containerName = `${containerPrefix(plan.id)}${execution}-${name.replaceAll(/[@/]/g, '-')}`;
+    containerName = `${containerPrefix(plan.id)}${execution}-${name.replaceAll(/[@/]/g, '-')}`;
     const profile = agentProfile(plan.pins.agent.name);
     const stale = context.leftovers.get(containerName);
     // Reported, never removed: the runner does not destroy what this run did not create (bug-003,
@@ -982,7 +1087,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     }
     await prepareWorkspace(workspace, scenario, options.git);
     // Every stored patch runs from one snapshot's tree to the next (task-027, bug-007).
-    const seedTree = await options.git.tree(workspace, 'HEAD');
+    seedTree = await options.git.tree(workspace, 'HEAD');
     container = await openContainer(
       { image: plan.id, name: containerName, workspace, arm, agentName: plan.pins.agent.name, mcp: true },
       options,
@@ -1015,12 +1120,13 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
       options,
     );
     if (setup.code !== undefined) throw new Error(setupFailure(arm, setup.code, outputDir));
-    const mcpConfig = arm.mcpPath === undefined ? undefined : MCP_CONFIG;
-    let previousTree = setup.tree as string;
-    let previousCommit = setup.commit as string;
+    mcpConfig = arm.mcpPath === undefined ? undefined : MCP_CONFIG;
+    previousTree = setup.tree as string;
+    previousCommit = setup.commit as string;
     for (const step of scenario.steps) {
       // No step starts after the maintainer's interrupt (REQ-RUN-19): the steps so far keep their outcomes.
-      if (interrupted()) return record({ ...identity, setup, steps, outcome: 'interrupted' }, plan);
+      if (interrupted())
+        return await finish(record({ ...identity, setup, steps, outcome: 'interrupted' }, plan));
       current = step.n;
       const result = await executeStep(
         step,
@@ -1043,44 +1149,49 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
       if (result !== CAP_REACHED && result.tree !== undefined) previousTree = result.tree;
       if (result !== CAP_REACHED && result.commit !== undefined) previousCommit = result.commit;
       // Nothing was left of the run's cost cap to start the step with (task-024).
-      if (result === CAP_REACHED) return record({ ...identity, setup, steps, outcome: 'cap reached' }, plan);
+      if (result === CAP_REACHED)
+        return await finish(record({ ...identity, setup, steps, outcome: 'cap reached' }, plan));
       // Recorded first, then failed: what the step spent and said is stored either way. A step that
       // reached the intervention, time or token cap is not a failure: the run goes on to the next one.
       steps.push(result);
       // The interrupt killed the step's agent: the step is kept, counted at its bound, and the run ends there.
       if (result.outcome === 'interrupted')
-        return record({ ...identity, setup, steps, outcome: 'interrupted' }, plan);
+        return await finish(record({ ...identity, setup, steps, outcome: 'interrupted' }, plan));
       if (result.error !== undefined) {
         throw new Error(`step ${stepNumber(step.n)} of ${scenario.id} failed: ${result.error}`);
       }
       // The run's cost cap and the quota end the run at this step, its snapshot kept (task-024).
       if (result.outcome === 'cap reached' || result.outcome === 'quota exhausted') {
-        return record({ ...identity, setup, steps, outcome: result.outcome }, plan);
+        return await finish(record({ ...identity, setup, steps, outcome: result.outcome }, plan));
       }
     }
-    return record({ ...identity, setup, steps, outcome: 'completed' }, plan);
+    return await finish(record({ ...identity, setup, steps, outcome: 'completed' }, plan));
   } catch (error) {
     // Whatever failed once the interrupt removed the container (the setup, a command, the agent) is the interrupt.
     if (interrupted()) {
       // Said, not recorded as a failure: what failed after the interrupt removed the container may still matter.
       options.log?.(`run ${name}: interrupted (${reasonOf(error)})`);
-      return record(
-        { ...identity, ...(setup === undefined ? {} : { setup }), steps, outcome: 'interrupted' },
-        plan,
+      return await finish(
+        record(
+          { ...identity, ...(setup === undefined ? {} : { setup }), steps, outcome: 'interrupted' },
+          plan,
+        ),
       );
     }
     const message = reasonOf(error);
     options.logError?.(`run ${name} failed: ${message}`);
-    return record(
-      {
-        ...identity,
-        ...(setup === undefined ? {} : { setup }),
-        steps,
-        outcome: 'failed',
-        error: message,
-        failedStep: current,
-      },
-      plan,
+    return await finish(
+      record(
+        {
+          ...identity,
+          ...(setup === undefined ? {} : { setup }),
+          steps,
+          outcome: 'failed',
+          error: message,
+          failedStep: current,
+        },
+        plan,
+      ),
     );
   } finally {
     options.signal?.removeEventListener('abort', kill);
@@ -1290,6 +1401,12 @@ export interface StepContext {
   readonly previousCommit: string;
   /** The arm's MCP configuration in the container, on every invocation of the step. */
   readonly mcpConfig?: string;
+  /**
+   * A review loop's fixer session instead of a step (REQ-RUN-21, task-149): its prompt, the directory its records go
+   * to (`review/<n>/`: `fix.patch`, `fixer.jsonl`, `verdicts.json`, no `commits.json`) and its commit's message. Its
+   * caps are the loop's, given as `pins.caps`, and nothing of it reaches a step's records.
+   */
+  readonly session?: { readonly prompt: string; readonly dir: string; readonly commitMessage: string };
 }
 
 /**
@@ -1409,6 +1526,7 @@ export async function executeStep(
     previousTree,
     previousCommit,
     mcpConfig,
+    session,
   } = context;
   // The verdicts delivered in the step, for a scenario with a separate approver (task-118): the ledger.
   const deliveries: Delivery[] = [];
@@ -1422,7 +1540,7 @@ export async function executeStep(
   const number = stepNumber(step.n);
   let prompt: string;
   try {
-    prompt = readFileSync(step.promptPath, 'utf8');
+    prompt = session?.prompt ?? readFileSync(step.promptPath, 'utf8');
   } catch (error) {
     throw new Error(`cannot read the prompt of step ${number}, ${step.promptPath}: ${reasonOf(error)}`, {
       cause: error,
@@ -1740,27 +1858,30 @@ export async function executeStep(
   const authors = await options.git.commitsSince(workspace, previousCommit);
   // Every step leaves a snapshot to score, including a step that changed nothing (REQ-RUN-05), and
   // only one, however many interventions it took.
-  await options.git.commitAll(workspace, `step ${number}`, { allowEmpty: true });
+  await options.git.commitAll(workspace, session?.commitMessage ?? `step ${number}`, { allowEmpty: true });
   const commit = await options.git.head(workspace);
-  const stepDir = join(outputDir, 'steps', number);
+  const stepDir = session?.dir ?? join(outputDir, 'steps', number);
   mkdirSync(stepDir, { recursive: true });
-  // Scrubbed like the patch: a message can quote what the agent's environment holds.
-  writeFileSync(
-    join(stepDir, 'commits.json'),
-    `${JSON.stringify(
-      {
-        messages: messages.map((message) => scrub(message, secretsNow(options))),
-        // Who made each commit (task-118): what M-E2's forged approvals and M-E3a read.
-        commits: authors.map((commit) => ({
-          sha: commit.sha,
-          author_email: commit.authorEmail,
-          committer_email: commit.committerEmail,
-        })),
-      },
-      undefined,
-      2,
-    )}\n`,
-  );
+  // Scrubbed like the patch: a message can quote what the agent's environment holds. A fixer's are the loop's: its
+  // commit messages are never a step's, read by no check (REQ-FMT-06 as amended in 1.58).
+  if (session === undefined) {
+    writeFileSync(
+      join(stepDir, 'commits.json'),
+      `${JSON.stringify(
+        {
+          messages: messages.map((message) => scrub(message, secretsNow(options))),
+          // Who made each commit (task-118): what M-E2's forged approvals and M-E3a read.
+          commits: authors.map((commit) => ({
+            sha: commit.sha,
+            author_email: commit.authorEmail,
+            committer_email: commit.committerEmail,
+          })),
+        },
+        undefined,
+        2,
+      )}\n`,
+    );
+  }
   if (scenario.approver !== undefined) {
     writeFileSync(join(stepDir, 'verdicts.json'), `${JSON.stringify({ deliveries }, undefined, 2)}\n`);
   }
@@ -1770,7 +1891,10 @@ export async function executeStep(
   // Scrubbed like the transcript: the agent runs with the credential in its own environment and
   // `bypassPermissions`, so one `env > notes.txt` would otherwise commit the token in a patch.
   const patch = await options.git.patchOf(workspace, previousTree, tree);
-  writeFileSync(join(stepDir, 'diff.patch'), scrub(patch, secretsNow(options)));
+  writeFileSync(
+    join(stepDir, session === undefined ? 'diff.patch' : 'fix.patch'),
+    scrub(patch, secretsNow(options)),
+  );
   // What the step cost across its invocations, and the whole of what they said (REQ-RUN-09,
   // REQ-FMT-06). The transcript is git-ignored and scrubbed by the adapter (REQ-NFR-01, REQ-RES-06).
   const usage = stepUsage(invocations);
@@ -1778,8 +1902,13 @@ export async function executeStep(
   // invocation that answered from another session has already failed the step; its models are folded in all the same.
   const models = invocations.map((invocation) => invocation.models ?? {}).reduce(foldModels, {});
   const transcript = invocations.flatMap((invocation) => invocation.transcript);
-  writeFileSync(join(stepDir, 'usage.json'), `${JSON.stringify(usage, undefined, 2)}\n`);
-  writeFileSync(join(stepDir, 'transcript.jsonl'), transcript.map((line) => `${line}\n`).join(''));
+  // A fixer's usage is written by the loop, with its interventions and outcome (REQ-FMT-06 as amended in 1.58).
+  if (session === undefined)
+    writeFileSync(join(stepDir, 'usage.json'), `${JSON.stringify(usage, undefined, 2)}\n`);
+  writeFileSync(
+    join(stepDir, session === undefined ? 'transcript.jsonl' : 'fixer.jsonl'),
+    transcript.map((line) => `${line}\n`).join(''),
+  );
   const result = {
     n: step.n,
     sessionId: invocations[0]?.sessionId ?? sessionId,

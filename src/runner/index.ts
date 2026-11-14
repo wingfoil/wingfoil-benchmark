@@ -17,3 +17,7 @@ export {
   totalLine,
 } from './estimate.js';
 export type { CampaignKey, Estimate, EstimateLine } from './estimate.js';
+export { buildReviewCopy, isStripped, setupAddedPaths } from './review-copy.js';
+export type { CopyCommits, CopyRequest } from './review-copy.js';
+export { executeReviewLoop, fixerPreamble, reviewPreamble, writeNoLoop } from './review-loop.js';
+export type { LoopContext, LoopOutcome, LoopSummary } from './review-loop.js';

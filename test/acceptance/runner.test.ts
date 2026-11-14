@@ -877,6 +877,8 @@ describe('runner.feature, the review loop (task-149, F4.9)', () => {
       repetitions?: number;
       runner?: Partial<Parameters<typeof runCampaign>[1]>;
       yaml?: (yaml: Record<string, unknown>) => void;
+      /** Filled with the doubles before the run starts: what a hook reads during it. */
+      seen?: { ports?: ReturnType<typeof doubles> };
     } = {},
   ) {
     const { checked, root } = loopCampaign({
@@ -886,6 +888,7 @@ describe('runner.feature, the review loop (task-149, F4.9)', () => {
       ...(options.yaml === undefined ? {} : { yaml: options.yaml }),
     });
     const ports = doubles(options.ports);
+    if (options.seen !== undefined) options.seen.ports = ports;
     const summary = await runCampaign(checked, {
       ...ports,
       reviewer: { agent: reviewer },
@@ -903,7 +906,10 @@ describe('runner.feature, the review loop (task-149, F4.9)', () => {
         .filter((file) => !relative(dir, file).startsWith('review'))
         .map((file) => [
           relative(dir, file),
-          replace.reduce((text, [from, to]) => text.replaceAll(from, to), readFileSync(file, 'utf8')),
+          replace
+            .reduce((text, [from, to]) => text.replaceAll(from, to), readFileSync(file, 'utf8'))
+            // Each session's id is random: the only difference two identical runs have.
+            .replaceAll(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<session>'),
         ]),
     );
   }
@@ -914,19 +920,18 @@ describe('runner.feature, the review loop (task-149, F4.9)', () => {
       n === 1 ? findingsMessage(finding('should-fix', 'README.md', 1)) : findingsMessage(),
     );
     let containerAtFix: { removed: boolean; reviewers: number } | undefined;
+    const seen: { ports?: ReturnType<typeof doubles> } = {};
     const ports: Parameters<typeof doubles>[0] = {
       onStep: (request) => {
         if (isFixer(request)) {
           containerAtFix = {
-            removed: looped.ports.recorded.removes.includes('container-1'),
-            reviewers: looped.ports.recorded.creates.length - 1,
+            removed: seen.ports?.recorded.removes.includes('container-1') ?? true,
+            reviewers: (seen.ports?.recorded.creates.length ?? 0) - 1,
           };
         }
       },
     };
-    // eslint-disable-next-line prefer-const
-    let looped: Awaited<ReturnType<typeof loopRun>>;
-    looped = await loopRun(reviewer, { ports });
+    const looped = await loopRun(reviewer, { ports, seen });
     const plain = await (async () => {
       const { checked, root } = loopCampaign({ loop: null });
       const d = doubles();
@@ -1036,7 +1041,7 @@ describe('runner.feature, the review loop (task-149, F4.9)', () => {
       .split('\n');
     expect(log).toHaveLength(2);
     expect(log.map((line) => line.split(' ')[0])).toEqual([commits.after, commits.before]);
-    expect(log.join('\n')).not.toMatch(/step|seed|setup|Runner/);
+    expect(log.join('\n')).not.toMatch(/step|seed|setup|Runner|WingFoil|Benchmark/i);
     // And it holds no step prompt, oracle file or hold-out file
     expect(held.some((path) => /prompts|oracle|hidden/.test(path))).toBe(false);
   });
@@ -1107,14 +1112,16 @@ describe('runner.feature, the review loop (task-149, F4.9)', () => {
       n % 2 === 1 ? findingsMessage(finding('blocker')) : findingsMessage(),
     );
     const removedAtFix: string[][] = [];
+    const seen: { ports?: ReturnType<typeof doubles> } = {};
     const looped = await loopRun(reviewer, {
+      seen,
       arms: ['baseline', 'wingfoil'],
       yaml: (yaml) => {
         yaml.harnesses = { wingfoil: { tool: 'wingfoil', version: '3df305e' } };
       },
       ports: {
         onStep: (request) => {
-          if (isFixer(request)) removedAtFix.push([...looped.ports.recorded.removes]);
+          if (isFixer(request)) removedAtFix.push([...(seen.ports?.recorded.removes ?? [])]);
         },
       },
       runner: { harnessSources: { wingfoil: '/clones/wingfoil' } },

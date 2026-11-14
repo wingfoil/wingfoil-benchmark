@@ -89,7 +89,10 @@ describe('the command line gives the runner its reviewer (REQ-RUN-15 for the rev
     const reviewer = reviewerDouble(() => findingsMessage());
     const { out, io: streams } = io();
     expect(
-      await main(['campaign', 'run', checked.campaign.file], streams, { ...doubles(), reviewer }),
+      await main(['campaign', 'run', checked.campaign.file], streams, {
+        ...doubles(),
+        reviewerAgent: reviewer,
+      }),
       out.stderr,
     ).toBe(0);
     expect(reviewer.requests).toHaveLength(1);
@@ -100,7 +103,8 @@ describe('the command line gives the runner its reviewer (REQ-RUN-15 for the rev
     const { checked } = loopCampaign({ loop });
     priceCampaign(checked.campaign.file);
     const { out, io: streams } = io();
-    expect(await main(['campaign', 'run', checked.campaign.file], streams, doubles())).toBe(2);
+    // Refused as every refusal of `campaign run` is, before anything is built.
+    expect(await main(['campaign', 'run', checked.campaign.file], streams, doubles())).toBe(1);
     expect(out.stderr).toMatch(/review_loop/);
     expect(out.stderr).toMatch(/--allow-spending/);
   });
@@ -119,7 +123,7 @@ describe('the command line gives the runner its reviewer (REQ-RUN-15 for the rev
     const code = await main(
       ['scenario', 'dry-run', 'T3@1.0', '--arm', 'baseline'],
       streams,
-      { ...doubles(), reviewer },
+      { ...doubles(), reviewerAgent: reviewer },
       root,
     );
     expect(code, out.stderr).toBe(0);

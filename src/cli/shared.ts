@@ -12,7 +12,15 @@ import {
 import type { AgentPort } from '../agents/index.js';
 import { fakeAgent } from '../agents/index.js';
 import { dockerCli, gitCli, systemProcess } from '../core/index.js';
-import type { DockerPort, GitPort, ImagePort, Issue, PublishPort, Result } from '../core/index.js';
+import type {
+  DockerPort,
+  GitPort,
+  ImagePort,
+  Issue,
+  PublishPort,
+  Result,
+  ReviewLoop,
+} from '../core/index.js';
 import type { RunnerOptions, RunPins } from '../runner/index.js';
 
 import {
@@ -46,6 +54,8 @@ export interface Ports {
   readonly publish?: PublishPort;
   /** The host's images, for `bench images prune` (task-061); the system's when not given. */
   readonly images?: ImagePort;
+  /** The review loop's reviewer (task-149); the adapter its pinned agent names when not given. */
+  readonly reviewerAgent?: AgentPort;
 }
 
 /** The command line's usage, printed on `--help` and on a usage error. */
@@ -284,6 +294,72 @@ export function agentCredential(): Result<Readonly<Record<string, string>>> {
   const token = loadAgentToken(file);
   if (!token.ok) return token;
   return { ok: true, value: { [AGENT_TOKEN_VARIABLE]: token.value } };
+}
+
+/**
+ * The review loop's reviewer (REQ-RUN-21; REQ-RUN-15 for the reviewer agent, task-149): its adapter and the credential
+ * its container gets, whatever the execution's own agent. A reviewer that spends needs the spending flag as the agent
+ * does; Claude Code's credential is the same token file; a Codex reviewer is not supported in v0.3, since the reviewer
+ * the approver chose is Claude Code's. Injected ports bring their own reviewer, the credential still required.
+ */
+export function reviewerFor(
+  loop: ReviewLoop | undefined,
+  pins: Pick<RunPins, 'currency'>,
+  options: { readonly allowSpending: boolean; readonly ports?: Ports | undefined },
+): Result<RunnerOptions['reviewer']> {
+  if (loop === undefined) return { ok: true, value: undefined };
+  const name = loop.agent.name;
+  if (name !== FREE_AGENT && !options.allowSpending) {
+    return {
+      ok: false,
+      issues: [
+        {
+          path: 'review_loop',
+          message: `the reviewer agent '${name}' spends real money; pass ${SPENDING_FLAG} to run it`,
+        },
+      ],
+    };
+  }
+  if (name === 'codex') {
+    return {
+      ok: false,
+      issues: [
+        { path: 'review_loop.agent', message: "'codex' is not supported as the reviewer agent in v0.3" },
+      ],
+    };
+  }
+  if (name === 'claude-code') {
+    const credential = agentCredential();
+    if (!credential.ok) return credential;
+    const agent =
+      options.ports?.reviewerAgent ??
+      claudeCodeAgent({
+        token: credential.value[AGENT_TOKEN_VARIABLE] ?? '',
+        usdToEur: pins.currency.usd_to_eur,
+      });
+    return {
+      ok: true,
+      value: { agent, containerEnv: credential.value, secrets: Object.values(credential.value) },
+    };
+  }
+  name satisfies typeof FREE_AGENT;
+  if (options.ports?.reviewerAgent !== undefined)
+    return { ok: true, value: { agent: options.ports.reviewerAgent } };
+  const script = process.env[FAKE_SCRIPT_VARIABLE];
+  if (script === undefined) {
+    return {
+      ok: false,
+      issues: [
+        { path: FAKE_SCRIPT_VARIABLE, message: `is not set: ${PURPOSES[FAKE_SCRIPT_VARIABLE] ?? ''}` },
+      ],
+    };
+  }
+  const loaded = loadFakeScript(script);
+  if (!loaded.ok) return loaded;
+  return {
+    ok: true,
+    value: { agent: fakeAgent(loaded.value, { dir: dirname(script), usdToEur: pins.currency.usd_to_eur }) },
+  };
 }
 
 export function report(issues: readonly Issue[], io: Io): number {
