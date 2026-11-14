@@ -128,4 +128,48 @@ The fifteen `runner.feature` scenarios drafted in
 
 ## Execution notes
 
+- 2026-11-14: backlog → in-progress on main; worktree `../WingFoil2-Benchmark-wt/t149`.
+- **Red first** (`eb8fec7a`): the fifteen scenarios in `runner.feature` (1.2) with their tests in
+  `test/acceptance/runner.test.ts`, and `test/unit/runner/review-loop.test.ts` (the records' ignore rules, the loop's
+  cost in the campaign's spending, a leftover reviewer container, the reviewer container's removal, the command line,
+  a dry run's loop); `test/support/review-fixture.ts` (a campaign pinning a loop with the fake agent as reviewer, a
+  reviewer double); the git double gains `treeOf`, `exportOf`, `dirtyOf`. All red for the absent loop, but the wingfoil
+  scenario's first draft, refused for a campaign without `baseline` (now baseline and wingfoil, the wingfoil run read).
+- **The work:**
+  - `src/core/ports/git.ts`: `exportTree` (a throwaway index and `checkout-index`, rather than `archive`, whose
+    `export-ignore` would drop files), `dirtyPaths` (`status --porcelain -z --untracked-files=all`), and
+    `commitAll`'s `identity`; their unit tests in `test/unit/ports/git.test.ts` written after the code, as verification.
+  - `src/runner/review-copy.ts` (new): `setupAddedPaths`, `isStripped` (the setup's added paths, REQ-FMT-08's reserved
+    names from `leak-scan.ts`, now exported), `buildReviewCopy` (a fresh two-commit repository per round, the empty
+    directories pruned, committed by a neutral `Project <project@localhost>`).
+  - `src/runner/review-loop.ts` (new): `executeReviewLoop`, which never throws; `reviewRound` (the reviewer's container
+    from `<id>-review`, the copy its only mount, the loop's caps, the read-only check, `parseFindings`); `fixRound`
+    (`executeStep` with the loop's caps as its pins, `fixer_interventions` as the policy's cap, `session` for its
+    records); `writeLoop`, `writeNoLoop`.
+  - `src/runner/run.ts`: `executeStep`'s `session` (prompt, directory, commit message; no `commits.json` or
+    `usage.json`, `fix.patch` and `fixer.jsonl`); `openContainer`'s `arm` optional; `executeRun`'s `finish` around
+    every record, awaited inside the `try` before the `finally` removes the container; `executeRuns` builds the
+    reviewer's image, adds a loop's cost to `spent`, and stops on a loop's quota, interrupt or ceiling;
+    `RunPins` picks `review_loop`; `RunnerOptions.reviewer`.
+  - `src/results/execution.ts`: a run's `review/loop.json` `cost_eur` counts in the execution's spending.
+  - `src/cli/shared.ts` `reviewerFor`, called by `campaign run` and `scenario dry-run`; `Ports.reviewerAgent` for the
+    tests; `campaign run` says the loops' cost apart from the steps'.
+  - `.gitignore`: `results/**/review/*/reviewer.jsonl` and `fixer.jsonl`.
+- **Decisions taken while building, for the gate:**
+  1. **The copy's identity:** the runner's fixed identity is `WingFoil Benchmark`, a harness name the reviewer would
+     read in the copy's history; the copy is committed by `Project <project@localhost>` instead, and the copy test
+     refuses `WingFoil` and `Benchmark` in its log.
+  2. **No fix after the last round:** a round `max_rounds` with blockers ends the loop `not clean at <max_rounds>`
+     without a fixer session, since no round would review that fix (REQ-RUN-21 is silent on it).
+  3. **The read-only check** reads the working tree against the copy's commit and any commit made over it; a reviewer
+     that checks out an earlier commit to read it is not refused (it changed nothing).
+  4. **The reviewer's caps:** one invocation, never resumed; a rate limit or the quota ends the loop `quota exhausted`
+     (a step waits a rate limit out; the reviewer does not), its time cap kills it, its cost cap is its
+     `--max-budget-usd`, and its tokens over `session_tokens` end the loop `failed` once it reported.
+  5. **A Codex reviewer** is refused by the command line in v0.3 (the approver's reviewer is Claude Code's, and a second
+     credential file is not in the requirements); a reviewer that spends needs `--allow-spending` as the agent does.
+  6. **The loop's cost** is recorded in `loop.json` (`cost_eur`), which the execution's spending reads, rather than
+     summed again from the round files.
+- Pre-review green at `57da63ee`.
+
 ## Review
