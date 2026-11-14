@@ -197,3 +197,16 @@ The fifteen `runner.feature` scenarios drafted in
   - nit 11, REQ-FMT-08 added to `requirements`.
 
   Declared rather than changed: nit 6 (decision 7), nit 9 (decision 9), nit 10 (decision 8).
+- **Round 2** (a fresh read-only agent on `b702eb86`'s diff, 2026-11-15): no blocker; 1 should-fix, 5 nits. Each fix
+  of round 1 checked by removing it and seeing its test fail, but two (the record after a session, the deadline moved
+  by a wait). Fixed:
+  - should-fix 1, a rate-limited reviewer was resumed over its token cap or with nothing left of its cost cap: now ended
+    `failed` at that cap, never resumed, as a step's;
+  - nit 2, a session killed by a hard kill was not counted: `loop.json` counts the coming session at its bound
+    (`session_cost_eur`) before it starts;
+  - nit 3, an injected sleep was not cut short by the interrupt: wrapped in `untilAborted`, as a step's;
+  - nit 4, tests added for the record during a session, the deadline moved by a wait, the interrupt during a wait;
+  - nit 5, `combine` exported from `run.ts` rather than copied;
+  - nit 6, a reviewer resume answered from another session ends the loop `failed`.
+  - The acceptance comparison with and without the loop now normalizes the setup's measured `duration_ms`, which made it
+    flaky under load.

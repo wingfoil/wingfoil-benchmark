@@ -285,14 +285,15 @@ describe("the loop's caps, stops and record (review round 1 of task-149)", () =>
       },
     });
     await runCampaign(checked, { ...ports, reviewer: { agent: reviewer } });
+    // Each session counted at its bound, session_cost_eur (2), while it runs: a session never finished costs that.
     expect(seen[0]).toMatchObject({
       outcome: 'interrupted',
       reason: 'the runner stopped during the loop',
-      cost_eur: 0,
+      cost_eur: 2,
     });
     expect(seen[1]).toMatchObject({
       outcome: 'interrupted',
-      cost_eur: 0.25,
+      cost_eur: 2.25,
       rounds: [{ n: 1, fixed: true }],
     });
   });
@@ -307,5 +308,112 @@ describe("the loop's caps, stops and record (review round 1 of task-149)", () =>
       reason: expect.stringMatching(/review\/prompt\.md: its SHA-256 is/),
     });
     expect(reviewer.requests).toEqual([]);
+  });
+
+  it('does not resume a rate-limited reviewer over its token or cost cap, nor after the interrupt', async () => {
+    const outcomeOf = async (usage: typeof NO_USAGE, signal?: AbortController) => {
+      const resumes: string[] = [];
+      const agent: AgentPort = {
+        runStep: (request) =>
+          Promise.resolve({ sessionId: request.sessionId, usage, transcript: [], stop: 'rate limited' }),
+        resume: (request) => {
+          resumes.push(request.reply);
+          return Promise.resolve({
+            sessionId: request.sessionId,
+            usage,
+            transcript: [],
+            finalMessage: findingsMessage(),
+          });
+        },
+      };
+      const { checked } = loopCampaign({ loop: reviewLoopYaml({ caps: { session_tokens: 10 } }) });
+      const summary = await runCampaign(checked, {
+        ...doubles(),
+        // The interrupt arrives during the wait, whose injected sleep never ends on its own.
+        sleep: () => {
+          signal?.abort();
+          return signal === undefined ? Promise.resolve() : new Promise<void>(() => undefined);
+        },
+        ...(signal === undefined ? {} : { signal: signal.signal }),
+        reviewer: { agent },
+      });
+      return { loop: loopAt(summary.runs[0]?.outputDir), resumes };
+    };
+    const tokens = await outcomeOf({ ...NO_USAGE, inputTokens: 11 });
+    expect(tokens.loop).toMatchObject({
+      outcome: 'failed',
+      reason: expect.stringMatching(/token cap \(10\) at a rate limit/),
+    });
+    expect(tokens.resumes).toEqual([]);
+    // Over the cap in USD at any rate the campaign pins (2 EUR).
+    const cost = await outcomeOf({ ...NO_USAGE, costUsd: 10, costEur: 9 });
+    expect(cost.loop).toMatchObject({
+      outcome: 'failed',
+      reason: expect.stringMatching(/cost cap \(2 EUR\) at a rate limit/),
+    });
+    expect(cost.resumes).toEqual([]);
+    const interrupted = await outcomeOf(NO_USAGE, new AbortController());
+    expect(interrupted.loop).toMatchObject({ outcome: 'interrupted', rounds: [{ n: 1, findings: null }] });
+    expect(interrupted.resumes).toEqual([]);
+  });
+
+  it("moves the reviewer's time cap by a rate limit's wait, as a step's", async () => {
+    const agent: AgentPort = {
+      runStep: async (request) => {
+        await request.run(['probe']);
+        return { sessionId: request.sessionId, usage: NO_USAGE, transcript: [], stop: 'rate limited' };
+      },
+      resume: async (request) => {
+        await request.run(['probe']);
+        return {
+          sessionId: request.sessionId,
+          usage: NO_USAGE,
+          transcript: [],
+          finalMessage: findingsMessage(),
+        };
+      },
+    };
+    const ports = doubles();
+    const { checked } = loopCampaign();
+    // The clock stands still: only the wait moves the deadline.
+    await runCampaign(checked, {
+      ...ports,
+      now: () => 0,
+      sleep: () => Promise.resolve(),
+      reviewer: { agent },
+    });
+    const seconds = ports.recorded.execs
+      .filter((exec) => exec.command[4] === 'probe')
+      .map((exec) => exec.command[3]);
+    expect(seconds).toEqual(['600', '720']);
+  });
+
+  it('refuses a reviewer resume answered from another session', async () => {
+    const agent: AgentPort = {
+      runStep: (request) =>
+        Promise.resolve({
+          sessionId: request.sessionId,
+          usage: NO_USAGE,
+          transcript: [],
+          stop: 'rate limited',
+        }),
+      resume: () =>
+        Promise.resolve({
+          sessionId: 'another',
+          usage: NO_USAGE,
+          transcript: [],
+          finalMessage: findingsMessage(),
+        }),
+    };
+    const { checked } = loopCampaign();
+    const summary = await runCampaign(checked, {
+      ...doubles(),
+      sleep: () => Promise.resolve(),
+      reviewer: { agent },
+    });
+    expect(loopAt(summary.runs[0]?.outputDir)).toMatchObject({
+      outcome: 'failed',
+      reason: expect.stringMatching(/ran in session another/),
+    });
   });
 });

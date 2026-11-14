@@ -908,8 +908,9 @@ describe('runner.feature, the review loop (task-149, F4.9)', () => {
           relative(dir, file),
           replace
             .reduce((text, [from, to]) => text.replaceAll(from, to), readFileSync(file, 'utf8'))
-            // Each session's id is random: the only difference two identical runs have.
-            .replaceAll(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<session>'),
+            // Each session's id is random, and a setup's duration is measured: what two identical runs differ by.
+            .replaceAll(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<session>')
+            .replaceAll(/"duration_ms": \d+/g, '"duration_ms": <ms>'),
         ]),
     );
   }

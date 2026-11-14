@@ -9,6 +9,7 @@ import type { ApproverPolicy, Arm, Finding, ReviewLoop, Scenario } from '../core
 import { buildReviewCopy, setupAddedPaths } from './review-copy.js';
 import {
   CAP_REACHED,
+  combine,
   executeStep,
   openContainer,
   pause,
@@ -17,6 +18,7 @@ import {
   remove,
   secretsNow,
   spentEur,
+  untilAborted,
 } from './run.js';
 import type { RunnerOptions, RunPins, StepResult } from './run.js';
 
@@ -100,23 +102,6 @@ const NO_USAGE: SessionUsage = {
   turns: 0,
   durationMs: 0,
 };
-
-/**
- * A session's usage after a resume: the work of each invocation summed, the cost the session's running total, so the
- * larger seen (as a step's, adr-002 decision 8).
- */
-function combined(a: SessionUsage, b: SessionUsage): SessionUsage {
-  return {
-    inputTokens: a.inputTokens + b.inputTokens,
-    outputTokens: a.outputTokens + b.outputTokens,
-    cacheCreationInputTokens: a.cacheCreationInputTokens + b.cacheCreationInputTokens,
-    cacheReadInputTokens: a.cacheReadInputTokens + b.cacheReadInputTokens,
-    costUsd: Math.max(a.costUsd, b.costUsd),
-    costEur: Math.max(a.costEur, b.costEur),
-    turns: a.turns + b.turns,
-    durationMs: a.durationMs + b.durationMs,
-  };
-}
 
 /** Every token a usage counts: what `session_tokens` caps. */
 function tokensOf(usage: SessionUsage): number {
@@ -206,14 +191,10 @@ export async function executeReviewLoop(context: LoopContext, options: RunnerOpt
   };
   const interrupted = () => options.signal?.aborted === true;
   // Written before anything runs and after every session, so that what was spent is never lost (REQ-RUN-08).
-  const progress = () => {
-    writeLoop(
-      run.outputDir,
-      loop,
-      { outcome: 'interrupted', reason: UNFINISHED, costEur: cost },
-      rounds,
-      secrets,
-    );
+  // Before a session, its bound is counted too: a session the runner never finished counts at its bound (REQ-RUN-19).
+  const progress = (pendingEur = 0) => {
+    const costEur = cost + pendingEur;
+    writeLoop(run.outputDir, loop, { outcome: 'interrupted', reason: UNFINISHED, costEur }, rounds, secrets);
   };
   try {
     progress();
@@ -257,6 +238,7 @@ export async function executeReviewLoop(context: LoopContext, options: RunnerOpt
       }
       const roundDir = join(run.outputDir, 'review', String(n));
       mkdirSync(roundDir, { recursive: true });
+      progress(loop.caps.session_cost_eur);
       const reviewed = await reviewRound(
         n,
         { context, copyDir, roundDir, commits, prompt, secrets },
@@ -284,6 +266,7 @@ export async function executeReviewLoop(context: LoopContext, options: RunnerOpt
           reason: `round ${n} reported ${toFix.length} blocker or should-fix finding(s)`,
         });
       }
+      progress(loop.caps.session_cost_eur);
       const fixed = await fixRound(
         n,
         { context, roundDir, toFix, fixerPrompt, afterTree: after, afterCommit },
@@ -349,6 +332,8 @@ async function reviewRound(n: number, input: RoundInput, options: RunnerOptions)
   let killed = false;
   /** The rate limit's waits, in seconds (task-051's constants). */
   const waits: number[] = [];
+  /** The cap that kept a rate-limited session from being resumed. */
+  let stoppedAt: string | undefined;
   let outcome: StepOutcome | undefined;
   let failure: string | undefined;
   try {
@@ -403,10 +388,20 @@ async function reviewRound(n: number, input: RoundInput, options: RunnerOptions)
         !aborted() &&
         waits.length < RATE_LIMIT_WAITS_S.length
       ) {
+        // Not resumed over its token cap, nor with nothing left of its cost cap, as a step's (task-051's review).
+        if (tokensOf(outcome.usage) > caps.session_tokens) {
+          stoppedAt = `token cap (${caps.session_tokens})`;
+          break;
+        }
+        if (limitUsd - outcome.usage.costUsd <= 0) {
+          stoppedAt = `cost cap (${boundEur} EUR)`;
+          break;
+        }
         const waitS = RATE_LIMIT_WAITS_S[waits.length] as number;
         options.log?.(`review round ${n}: rate limited, waiting ${waitS} s before resuming`);
         waits.push(waitS);
-        await sleep(waitS * 1000);
+        // The interrupt cuts the wait short, whatever sleep was injected.
+        await untilAborted(sleep(waitS * 1000), options.signal);
         if (aborted()) break;
         deadline += waitS * 1000;
         const previous: StepOutcome = outcome;
@@ -416,13 +411,18 @@ async function reviewRound(n: number, input: RoundInput, options: RunnerOptions)
           intervention: waits.length,
           sessionId,
           reply: RATE_LIMIT_MESSAGE,
-          remainingCostUsd: Math.max(0, limitUsd - previous.usage.costUsd),
+          remainingCostUsd: limitUsd - previous.usage.costUsd,
           ...effort,
           run,
         });
+        // A resume answered from another session is not this round's (F2.2), as a step's.
+        if (resumed.sessionId !== sessionId) {
+          failure = `its resume ran in session ${resumed.sessionId}, not in ${sessionId}`;
+          break;
+        }
         outcome = {
           ...resumed,
-          usage: combined(previous.usage, resumed.usage),
+          usage: combine(previous.usage, resumed.usage),
           transcript: [...previous.transcript, ...resumed.transcript],
         };
       }
@@ -471,6 +471,12 @@ async function reviewRound(n: number, input: RoundInput, options: RunnerOptions)
     return ended({ outcome: 'failed', reason: `round ${n}'s reviewer failed: ${failure}` });
   if (outcome === undefined)
     return ended({ outcome: 'failed', reason: `round ${n}'s reviewer reported nothing` });
+  if (stoppedAt !== undefined) {
+    return ended({
+      outcome: 'failed',
+      reason: `round ${n}'s reviewer reached its ${stoppedAt} at a rate limit`,
+    });
+  }
   if (outcome.stop === 'quota exhausted' || outcome.stop === 'rate limited') {
     const after = waits.length === 0 ? '' : ` after ${waits.length} rate-limit waits`;
     return ended({

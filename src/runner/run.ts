@@ -1449,7 +1449,7 @@ function remaining(pins: Pick<RunPins, 'caps' | 'currency'>, spent: number): num
  * cost is the largest seen. Summing it would count the step's first session again at every resume;
  * taking the last would lose it when a resume ends with no result and reports nothing.
  */
-function combine(a: SessionUsage, b: SessionUsage): SessionUsage {
+export function combine(a: SessionUsage, b: SessionUsage): SessionUsage {
   return {
     inputTokens: a.inputTokens + b.inputTokens,
     outputTokens: a.outputTokens + b.outputTokens,
@@ -1951,7 +1951,7 @@ export function pause(ms: number, signal: AbortSignal | undefined): Promise<void
 }
 
 /** `promise`, or less: it settles as soon as `signal` aborts (task-079), and as it does when there is no signal. */
-function untilAborted(promise: Promise<void>, signal: AbortSignal | undefined): Promise<void> {
+export function untilAborted(promise: Promise<void>, signal: AbortSignal | undefined): Promise<void> {
   if (signal === undefined) return promise;
   if (signal.aborted) return Promise.resolve();
   return new Promise<void>((resolve, reject) => {
