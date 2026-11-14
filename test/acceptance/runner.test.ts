@@ -860,7 +860,7 @@ describe('runner.feature, the review loop (task-149, F4.9)', () => {
     outcome: string;
     reason?: string;
     cost_eur: number;
-    rounds: { n: number; findings: Record<string, number>; fixed: boolean }[];
+    rounds: { n: number; findings: Record<string, number> | null; fixed: boolean }[];
   }
   const loopOf = (outputDir: string): LoopRecord =>
     JSON.parse(readFileSync(join(outputDir, 'review', 'loop.json'), 'utf8')) as LoopRecord;
@@ -1018,6 +1018,9 @@ describe('runner.feature, the review loop (task-149, F4.9)', () => {
     write('src/CLAUDE.md', '# Nested manual\n');
     write('README.md', '# Shop\n\nSet up, then the cart.\n');
     const final = commit('step 01: a message of the run');
+    // What the run's workspace holds beside its commits never reaches the copy: only trees are read.
+    write('prompts/01.md', 'Step one.\n');
+    write('oracle/expected.ts', 'export {};\n');
 
     // When the reviewer session starts
     const git = gitCli(systemProcess);
@@ -1042,8 +1045,9 @@ describe('runner.feature, the review loop (task-149, F4.9)', () => {
     expect(log).toHaveLength(2);
     expect(log.map((line) => line.split(' ')[0])).toEqual([commits.after, commits.before]);
     expect(log.join('\n')).not.toMatch(/step|seed|setup|Runner|WingFoil|Benchmark/i);
-    // And it holds no step prompt, oracle file or hold-out file
+    // And it holds no step prompt, oracle file or hold-out file, even one lying untracked in the workspace
     expect(held.some((path) => /prompts|oracle|hidden/.test(path))).toBe(false);
+    expect(existsSync(join(workspace, 'prompts', '01.md'))).toBe(true);
   });
 
   it('@F4.9 A later round reviews the whole copy, pointed at the fix', async () => {
@@ -1195,8 +1199,11 @@ describe('runner.feature, the review loop (task-149, F4.9)', () => {
     expect(run.outcome).toBe('completed');
     const before = loopOf(run.outputDir);
     expect(before.outcome).toBe('interrupted');
-    expect(before.rounds.map((round) => round.n)).toEqual([1]);
-    expect(before.rounds[0]?.fixed).toBe(true);
+    // Round 1 fixed; round 2's session ran and was interrupted, a round without findings.
+    expect(before.rounds).toMatchObject([
+      { n: 1, fixed: true },
+      { n: 2, findings: null, fixed: false },
+    ]);
     // When it is resumed
     const again = reviewerDouble(() => findingsMessage());
     const ports = doubles();

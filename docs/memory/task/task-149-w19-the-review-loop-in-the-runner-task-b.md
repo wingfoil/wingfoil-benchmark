@@ -22,7 +22,7 @@ acceptance:
   - "runner.feature#A loop that does not close by the cap is not clean"
   - "runner.feature#A reviewer that changes the copy ends the loop as failed"
   - "runner.feature#A loop session killed at its cap keeps the run's results"
-requirements: [REQ-RUN-21, REQ-FMT-06, REQ-RUN-01, REQ-RUN-02, REQ-RUN-08, REQ-RUN-09, REQ-RUN-13, REQ-RUN-19, REQ-CLI-05]
+requirements: [REQ-RUN-21, REQ-FMT-06, REQ-FMT-08, REQ-RUN-01, REQ-RUN-02, REQ-RUN-08, REQ-RUN-09, REQ-RUN-13, REQ-RUN-19, REQ-CLI-05]
 fixes: []
 tags: ["v0.3","review-loop","w19"]
 ---
@@ -163,13 +163,37 @@ The fifteen `runner.feature` scenarios drafted in
      without a fixer session, since no round would review that fix (REQ-RUN-21 is silent on it).
   3. **The read-only check** reads the working tree against the copy's commit and any commit made over it; a reviewer
      that checks out an earlier commit to read it is not refused (it changed nothing).
-  4. **The reviewer's caps:** one invocation, never resumed; a rate limit or the quota ends the loop `quota exhausted`
-     (a step waits a rate limit out; the reviewer does not), its time cap kills it, its cost cap is its
-     `--max-budget-usd`, and its tokens over `session_tokens` end the loop `failed` once it reported.
+  4. **The reviewer's caps:** a rate limit is waited out and the session resumed as a step's (task-051's waits), the
+     quota after the last wait ending the loop `quota exhausted`; its time cap kills it, its cost cap is its
+     `--max-budget-usd`, and its tokens over `session_tokens` end the loop `failed` once it reported (review round 1,
+     finding 1: the first draft ended the loop at the first rate limit).
   5. **A Codex reviewer** is refused by the command line in v0.3 (the approver's reviewer is Claude Code's, and a second
      credential file is not in the requirements); a reviewer that spends needs `--allow-spending` as the agent does.
   6. **The loop's cost** is recorded in `loop.json` (`cost_eur`), which the execution's spending reads, rather than
      summed again from the round files.
+  7. **The fixer's verdicts:** the fixer is a step without a scripted verdict, so the runner delivers none and its
+     `verdicts.json` is an empty ledger for a scenario with an approver; the verdict hook stays installed in the
+     container, as the last step left it.
+  8. **The copies** under `runs/…/review/<n>/` stay after the loop, git-ignored debris as the run's workspace is.
+  9. **The fixer's number** is the step after the last plus the round (`step 03 …` in the log for round 1 of a two-step
+     scenario); its interventions carry that number in `fixer-usage.json`.
 - Pre-review green at `57da63ee`.
 
 ## Review
+
+- **Round 1** (an independent read-only agent, in a clone under `mktemp`, 2026-11-14): no blocker; 3 should-fix, 8
+  nits. Fixed:
+  - should-fix 1, a reviewer's rate limit ended the loop and stopped the campaign: now waited out and resumed as a
+    step's;
+  - should-fix 2, the ceiling and the reviewer's token, cost and time caps had no test: tests added
+    (`test/unit/runner/review-loop.test.ts`);
+  - should-fix 3, a hard kill during a loop left no `loop.json` and lost its cost: `loop.json` is written as
+    `interrupted` ("the runner stopped during the loop") before round 1 and after every session, with its cost so far;
+  - nit 4, `no fix` is now said before the interrupt and ceiling checks;
+  - nit 5, a round whose session ran and ended the loop is in `rounds`, with `findings: null`;
+  - nit 7, the prompts' SHA-256 is checked again on the bytes sent;
+  - nit 8, the copy test puts an untracked prompt and oracle file in the workspace and finds neither in the copy (the
+    `no fix` scenario keeps its tree double: the stripping itself is the copy test's);
+  - nit 11, REQ-FMT-08 added to `requirements`.
+
+  Declared rather than changed: nit 6 (decision 7), nit 9 (decision 9), nit 10 (decision 8).

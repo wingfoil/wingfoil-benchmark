@@ -11,7 +11,9 @@ import { runCampaign } from '../../../src/runner/index.js';
 import { writeArmsNamed } from '../../support/arm-fixture.js';
 import { dryRunProfileYaml, priceCampaign, writeDryRunProfile } from '../../support/dry-run-fixture.js';
 import { repoPath } from '../../support/paths.js';
+import type { AgentPort } from '../../../src/agents/index.js';
 import {
+  finding,
   FIXER_PROMPT,
   findingsMessage,
   loopCampaign,
@@ -19,7 +21,7 @@ import {
   reviewerDouble,
   reviewLoopYaml,
 } from '../../support/review-fixture.js';
-import { doubles } from '../../support/runner-doubles.js';
+import { doubles, NO_USAGE } from '../../support/runner-doubles.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
 const io = () => {
@@ -132,5 +134,178 @@ describe('the command line gives the runner its reviewer (REQ-RUN-15 for the rev
     const loopFile = join(root, 'results', 'dry-runs', '1', 'runs', 'T3@1.0', 'baseline', 'fake-model', 'r1');
     expect(existsSync(join(loopFile, 'review', 'loop.json'))).toBe(true);
     expect(reviewer.requests).toHaveLength(1);
+  });
+});
+
+describe("the loop's caps, stops and record (review round 1 of task-149)", () => {
+  type Loop = {
+    outcome: string;
+    reason?: string;
+    cost_eur: number;
+    rounds: { n: number; findings: unknown }[];
+  };
+  const loopAt = (outputDir: string | undefined): Loop =>
+    JSON.parse(readFileSync(join(outputDir ?? '', 'review', 'loop.json'), 'utf8')) as Loop;
+  const eur = (costEur: number) => ({ ...NO_USAGE, costEur, costUsd: costEur });
+
+  it("ends a loop at the campaign's ceiling between rounds, and stops the campaign (REQ-RUN-08)", async () => {
+    const { checked } = loopCampaign({
+      repetitions: 2,
+      yaml: (yaml) => {
+        yaml.budget = { warn_eur: 1, ceiling_eur: 1.5 };
+      },
+    });
+    const reviewer = reviewerDouble(() => ({
+      finalMessage: findingsMessage(finding('should-fix')),
+      usage: eur(0.6),
+    }));
+    const ports = doubles({ usageOf: (request) => (request.step <= 2 ? eur(0.5) : NO_USAGE) });
+    const summary = await runCampaign(checked, { ...ports, reviewer: { agent: reviewer } });
+    expect(summary.runs).toHaveLength(1);
+    expect(summary.outcome).toBe('budget exhausted');
+    expect(summary.runs[0]?.outcome).toBe('completed');
+    const loop = loopAt(summary.runs[0]?.outputDir);
+    expect(loop).toMatchObject({
+      outcome: 'interrupted',
+      reason: expect.stringMatching(/ceiling.*before round 2/),
+    });
+    expect(loop.rounds.map((round) => round.n)).toEqual([1]);
+    expect(loop.cost_eur).toBeCloseTo(0.6, 9);
+  });
+
+  it("ends the loop at the reviewer's token cap, cost cap and time cap", async () => {
+    const run = async (
+      reviewer: ReturnType<typeof reviewerDouble>,
+      ports: Parameters<typeof doubles>[0] = {},
+      loop = reviewLoopYaml(),
+    ) => {
+      const { checked } = loopCampaign({ loop });
+      const summary = await runCampaign(checked, { ...doubles(ports), reviewer: { agent: reviewer } });
+      return loopAt(summary.runs[0]?.outputDir);
+    };
+    const tokens = await run(
+      reviewerDouble(() => ({ finalMessage: findingsMessage(), usage: { ...NO_USAGE, inputTokens: 20 } })),
+      {},
+      reviewLoopYaml({ caps: { session_tokens: 10 } }),
+    );
+    expect(tokens).toMatchObject({ outcome: 'failed', reason: expect.stringMatching(/token cap \(10\)/) });
+    expect(tokens.rounds).toEqual([{ n: 1, findings: null, fixed: false }]);
+    const cost = await run(reviewerDouble(() => ({ finalMessage: findingsMessage(), stop: 'cap reached' })));
+    expect(cost).toMatchObject({ outcome: 'failed', reason: expect.stringMatching(/cost cap \(2 EUR\)/) });
+    const time = await run(
+      reviewerDouble(
+        () => ({ error: 'no result event' }),
+        () => ['sleep', '1000'],
+      ),
+      {
+        execResultOf: (command) =>
+          command[4] === 'sleep' ? { code: 124, stdout: '', stderr: '' } : undefined,
+      },
+    );
+    expect(time).toMatchObject({ outcome: 'failed', reason: expect.stringMatching(/time cap \(600 s\)/) });
+    // Killed before it reported: counted at its bound.
+    expect(time.cost_eur).toBe(2);
+  });
+
+  it("waits a reviewer's rate limit out and resumes it, as a step's; after the last wait, the quota", async () => {
+    const slept: number[] = [];
+    const resumed: string[] = [];
+    const limited = (always: boolean): AgentPort => ({
+      runStep: (request) =>
+        Promise.resolve({
+          sessionId: request.sessionId,
+          usage: NO_USAGE,
+          transcript: [],
+          stop: 'rate limited',
+        }),
+      resume: (request) => {
+        resumed.push(request.reply);
+        return Promise.resolve(
+          always
+            ? { sessionId: request.sessionId, usage: NO_USAGE, transcript: [], stop: 'rate limited' }
+            : {
+                sessionId: request.sessionId,
+                usage: NO_USAGE,
+                transcript: [],
+                finalMessage: findingsMessage(),
+              },
+        );
+      },
+    });
+    const sleep = (ms: number) => {
+      slept.push(ms);
+      return Promise.resolve();
+    };
+    const once = loopCampaign();
+    const first = await runCampaign(once.checked, {
+      ...doubles(),
+      sleep,
+      reviewer: { agent: limited(false) },
+    });
+    expect(loopAt(first.runs[0]?.outputDir).outcome).toBe('clean');
+    expect(slept).toEqual([120_000]);
+    expect(resumed).toEqual(['Continue.']);
+    const always = loopCampaign();
+    const second = await runCampaign(always.checked, {
+      ...doubles(),
+      sleep,
+      reviewer: { agent: limited(true) },
+    });
+    expect(loopAt(second.runs[0]?.outputDir)).toMatchObject({
+      outcome: 'quota exhausted',
+      reason: expect.stringMatching(/after 4 rate-limit waits/),
+    });
+    expect(second.outcome).toBe('quota exhausted');
+  });
+
+  it('keeps an unfinished loop recorded, with its cost so far, while it runs (REQ-RUN-19)', async () => {
+    const { checked } = loopCampaign();
+    const seen: Loop[] = [];
+    let outputDir = '';
+    const reviewer = reviewerDouble((n) => {
+      seen.push(loopAt(outputDir));
+      return n === 1
+        ? { finalMessage: findingsMessage(finding('blocker')), usage: eur(0.25) }
+        : findingsMessage();
+    });
+    const ports = doubles({
+      onStep: (request) => {
+        // The run's output directory, known once its first step runs.
+        if (request.step === 1) {
+          outputDir = join(
+            checked.campaign.resultsRoot,
+            checked.campaign.id,
+            '1',
+            'runs',
+            'S1@1.0',
+            'baseline',
+          );
+          outputDir = join(outputDir, 'fake-model', 'r1');
+        }
+      },
+    });
+    await runCampaign(checked, { ...ports, reviewer: { agent: reviewer } });
+    expect(seen[0]).toMatchObject({
+      outcome: 'interrupted',
+      reason: 'the runner stopped during the loop',
+      cost_eur: 0,
+    });
+    expect(seen[1]).toMatchObject({
+      outcome: 'interrupted',
+      cost_eur: 0.25,
+      rounds: [{ n: 1, fixed: true }],
+    });
+  });
+
+  it('refuses a prompt changed since the campaign was checked', async () => {
+    const { checked, root } = loopCampaign();
+    writeFileSync(join(root, 'review', 'prompt.md'), `${REVIEW_PROMPT}Changed.\n`);
+    const reviewer = reviewerDouble(() => findingsMessage());
+    const summary = await runCampaign(checked, { ...doubles(), reviewer: { agent: reviewer } });
+    expect(loopAt(summary.runs[0]?.outputDir)).toMatchObject({
+      outcome: 'failed',
+      reason: expect.stringMatching(/review\/prompt\.md: its SHA-256 is/),
+    });
+    expect(reviewer.requests).toEqual([]);
   });
 });

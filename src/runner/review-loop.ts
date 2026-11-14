@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
@@ -7,7 +7,17 @@ import type { SessionUsage, StepOutcome } from '../agents/index.js';
 import { parseFindings, reasonOf } from '../core/index.js';
 import type { ApproverPolicy, Arm, Finding, ReviewLoop, Scenario } from '../core/index.js';
 import { buildReviewCopy, setupAddedPaths } from './review-copy.js';
-import { CAP_REACHED, executeStep, openContainer, remove, secretsNow, spentEur } from './run.js';
+import {
+  CAP_REACHED,
+  executeStep,
+  openContainer,
+  pause,
+  RATE_LIMIT_MESSAGE,
+  RATE_LIMIT_WAITS_S,
+  remove,
+  secretsNow,
+  spentEur,
+} from './run.js';
 import type { RunnerOptions, RunPins, StepResult } from './run.js';
 
 /**
@@ -34,7 +44,8 @@ export interface LoopSummary {
 /** One round as `loop.json` records it. */
 interface RoundRecord {
   readonly n: number;
-  readonly findings: Readonly<Record<Finding['severity'], number>>;
+  /** The round's findings by severity; `null` for a round whose reviewer session ran and ended the loop. */
+  readonly findings: Readonly<Record<Finding['severity'], number>> | null;
   /** Whether a fixer session followed the round. */
   readonly fixed: boolean;
 }
@@ -89,6 +100,23 @@ const NO_USAGE: SessionUsage = {
   turns: 0,
   durationMs: 0,
 };
+
+/**
+ * A session's usage after a resume: the work of each invocation summed, the cost the session's running total, so the
+ * larger seen (as a step's, adr-002 decision 8).
+ */
+function combined(a: SessionUsage, b: SessionUsage): SessionUsage {
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cacheCreationInputTokens: a.cacheCreationInputTokens + b.cacheCreationInputTokens,
+    cacheReadInputTokens: a.cacheReadInputTokens + b.cacheReadInputTokens,
+    costUsd: Math.max(a.costUsd, b.costUsd),
+    costEur: Math.max(a.costEur, b.costEur),
+    turns: a.turns + b.turns,
+    durationMs: a.durationMs + b.durationMs,
+  };
+}
 
 /** Every token a usage counts: what `session_tokens` caps. */
 function tokensOf(usage: SessionUsage): number {
@@ -148,7 +176,18 @@ function countOf(findings: readonly Finding[]): Record<Finding['severity'], numb
 /** How a reviewer session ended: its findings, or the loop's end. */
 type ReviewerResult =
   | { readonly findings: readonly Finding[]; readonly costEur: number }
-  | { readonly end: Omit<LoopSummary, 'costEur'>; readonly costEur: number };
+  | { readonly end: Omit<LoopSummary, 'costEur'>; readonly costEur: number; readonly ran: boolean };
+
+/**
+ * What `loop.json` says while the loop runs (REQ-RUN-19 as amended in 1.58): a loop the runner never finished — a hard
+ * kill, a reboot — stays recorded as `interrupted`, with its rounds and its cost so far, and is never resumed.
+ */
+const UNFINISHED = 'the runner stopped during the loop';
+
+/** The SHA-256 of `bytes`, hex. */
+function sha256(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
 
 /**
  * Run the loop of a completed run (REQ-RUN-21). It never throws: whatever fails ends the loop as `failed` with its
@@ -166,17 +205,47 @@ export async function executeReviewLoop(context: LoopContext, options: RunnerOpt
     return writeLoop(run.outputDir, loop, done, rounds, secrets);
   };
   const interrupted = () => options.signal?.aborted === true;
+  // Written before anything runs and after every session, so that what was spent is never lost (REQ-RUN-08).
+  const progress = () => {
+    writeLoop(
+      run.outputDir,
+      loop,
+      { outcome: 'interrupted', reason: UNFINISHED, costEur: cost },
+      rounds,
+      secrets,
+    );
+  };
   try {
+    progress();
     const reviewer = options.reviewer;
     if (reviewer === undefined)
       return end({ outcome: 'failed', reason: 'the runner was given no reviewer agent' });
-    const prompt = readFileSync(join(context.repoRoot, loop.prompt.file), 'utf8');
-    const fixerPrompt = readFileSync(join(context.repoRoot, loop.fixer_prompt.file), 'utf8');
+    // The bytes sent are the bytes pinned: a prompt changed since the campaign's check is refused here too.
+    const prompts = [loop.prompt, loop.fixer_prompt].map((pin) => {
+      const bytes = readFileSync(join(context.repoRoot, pin.file));
+      const actual = sha256(bytes);
+      if (actual !== pin.sha256)
+        throw new Error(`${pin.file}: its SHA-256 is ${actual}, not the pinned ${pin.sha256}`);
+      return bytes.toString('utf8');
+    });
+    const [prompt = '', fixerPrompt = ''] = prompts;
     const stripped = await setupAddedPaths(run.workspace, run.seedTree, run.setupTree, options.git);
     let before = run.seedTree;
     let after = run.finalTree;
     let afterCommit = run.finalCommit;
     for (let n = 1; n <= loop.max_rounds; n += 1) {
+      const copyDir = join(dirname(run.workspace), 'review', String(n));
+      const commits = await buildReviewCopy(
+        { workspace: run.workspace, copyDir, before, after, stripped },
+        options.git,
+      );
+      // A fix that changed only what the copy strips changed nothing the reviewer reads: said before any stop.
+      if (
+        n > 1 &&
+        (await options.git.tree(copyDir, commits.before)) === (await options.git.tree(copyDir, commits.after))
+      ) {
+        return end({ outcome: 'no fix', reason: `round ${n - 1}'s fix changed nothing the reviewer reads` });
+      }
       if (interrupted()) return end({ outcome: 'interrupted', reason: `interrupted before round ${n}` });
       // The ceiling, before the loop's first round and between its rounds (REQ-RUN-08 as amended in 1.58).
       if (context.ceilingEur !== undefined && context.spent + cost >= context.ceilingEur) {
@@ -186,18 +255,6 @@ export async function executeReviewLoop(context: LoopContext, options: RunnerOpt
           ceiling: true,
         });
       }
-      const copyDir = join(dirname(run.workspace), 'review', String(n));
-      const commits = await buildReviewCopy(
-        { workspace: run.workspace, copyDir, before, after, stripped },
-        options.git,
-      );
-      // A fix that changed only what the copy strips changed nothing the reviewer reads.
-      if (
-        n > 1 &&
-        (await options.git.tree(copyDir, commits.before)) === (await options.git.tree(copyDir, commits.after))
-      ) {
-        return end({ outcome: 'no fix', reason: `round ${n - 1}'s fix changed nothing the reviewer reads` });
-      }
       const roundDir = join(run.outputDir, 'review', String(n));
       mkdirSync(roundDir, { recursive: true });
       const reviewed = await reviewRound(
@@ -206,7 +263,12 @@ export async function executeReviewLoop(context: LoopContext, options: RunnerOpt
         scrubbing,
       );
       cost += reviewed.costEur;
-      if ('end' in reviewed) return end(reviewed.end);
+      if ('end' in reviewed) {
+        // A round whose session ran is a round of the loop, without findings (task C counts it apart).
+        if (reviewed.ran) rounds.push({ n, findings: null, fixed: false });
+        return end(reviewed.end);
+      }
+      progress();
       const { findings } = reviewed;
       const toFix = findings.filter((finding) => finding.severity !== 'nit');
       // Nits are never fixed: a round with nits only, or none, closes the loop.
@@ -230,6 +292,7 @@ export async function executeReviewLoop(context: LoopContext, options: RunnerOpt
       cost += fixed.costEur;
       rounds.push({ n, findings: countOf(findings), fixed: true });
       if ('end' in fixed) return end(fixed.end);
+      progress();
       before = after;
       after = fixed.tree;
       afterCommit = fixed.commit;
@@ -274,6 +337,7 @@ async function reviewRound(n: number, input: RoundInput, options: RunnerOptions)
         reason: `container ${name} already exists: remove it with: docker rm --force ${name}`,
       },
       costEur: 0,
+      ran: false,
     };
   }
   let container: string | undefined;
@@ -283,6 +347,8 @@ async function reviewRound(n: number, input: RoundInput, options: RunnerOptions)
   };
   const aborted = () => options.signal?.aborted === true;
   let killed = false;
+  /** The rate limit's waits, in seconds (task-051's constants). */
+  const waits: number[] = [];
   let outcome: StepOutcome | undefined;
   let failure: string | undefined;
   try {
@@ -297,7 +363,9 @@ async function reviewRound(n: number, input: RoundInput, options: RunnerOptions)
       },
     );
     const now = options.now ?? (() => performance.now());
-    const deadline = now() + caps.session_time_s * 1000;
+    const sleep = options.sleep ?? ((ms: number) => pause(ms, options.signal));
+    // A rate limit's waits move the deadline by as long, as a step's (task-051).
+    let deadline = now() + caps.session_time_s * 1000;
     const run = async (command: readonly string[]) => {
       const seconds = Math.ceil((deadline - now()) / 1000);
       if (seconds <= 0) {
@@ -314,6 +382,7 @@ async function reviewRound(n: number, input: RoundInput, options: RunnerOptions)
     };
     const sessionId = randomUUID();
     const effort = loop.effort === 'none' ? {} : { effort: loop.effort };
+    const limitUsd = boundEur / pins.currency.usd_to_eur;
     try {
       outcome = await reviewer.agent.runStep({
         scenarioId: 'review',
@@ -321,10 +390,42 @@ async function reviewRound(n: number, input: RoundInput, options: RunnerOptions)
         prompt: `${reviewPreamble(n, commits.before, commits.after)}${input.prompt}`,
         model: loop.model,
         sessionId,
-        remainingCostUsd: boundEur / pins.currency.usd_to_eur,
+        remainingCostUsd: limitUsd,
         ...effort,
         run,
       });
+      // A rate limit is waited out and the session resumed, as a step's (REQ-RUN-13): only after the last wait is it
+      // the quota. Nothing is resumed after the interrupt or past the time cap.
+      while (
+        outcome.stop === 'rate limited' &&
+        outcome.error === undefined &&
+        !killed &&
+        !aborted() &&
+        waits.length < RATE_LIMIT_WAITS_S.length
+      ) {
+        const waitS = RATE_LIMIT_WAITS_S[waits.length] as number;
+        options.log?.(`review round ${n}: rate limited, waiting ${waitS} s before resuming`);
+        waits.push(waitS);
+        await sleep(waitS * 1000);
+        if (aborted()) break;
+        deadline += waitS * 1000;
+        const previous: StepOutcome = outcome;
+        const resumed = await reviewer.agent.resume({
+          scenarioId: 'review',
+          step: n,
+          intervention: waits.length,
+          sessionId,
+          reply: RATE_LIMIT_MESSAGE,
+          remainingCostUsd: Math.max(0, limitUsd - previous.usage.costUsd),
+          ...effort,
+          run,
+        });
+        outcome = {
+          ...resumed,
+          usage: combined(previous.usage, resumed.usage),
+          transcript: [...previous.transcript, ...resumed.transcript],
+        };
+      }
     } catch (error) {
       failure = reasonOf(error);
     }
@@ -340,13 +441,25 @@ async function reviewRound(n: number, input: RoundInput, options: RunnerOptions)
   const costEur = bounded && container !== undefined ? Math.max(usage.costEur, boundEur) : usage.costEur;
   writeFileSync(
     join(roundDir, 'reviewer-usage.json'),
-    `${JSON.stringify({ ...usage, ...(bounded && container !== undefined ? { cost_bound_eur: boundEur } : {}) }, undefined, 2)}\n`,
+    `${JSON.stringify(
+      {
+        ...usage,
+        ...(bounded && container !== undefined ? { cost_bound_eur: boundEur } : {}),
+        ...(waits.length === 0 ? {} : { rate_limit_waits_s: waits }),
+      },
+      undefined,
+      2,
+    )}\n`,
   );
   writeFileSync(
     join(roundDir, 'reviewer.jsonl'),
     (outcome?.transcript ?? []).map((line) => `${scrub(line, secrets)}\n`).join(''),
   );
-  const ended = (summary: Omit<LoopSummary, 'costEur'>): ReviewerResult => ({ end: summary, costEur });
+  const ended = (summary: Omit<LoopSummary, 'costEur'>): ReviewerResult => ({
+    end: summary,
+    costEur,
+    ran: container !== undefined,
+  });
   if (aborted()) return ended({ outcome: 'interrupted', reason: `interrupted during round ${n}'s review` });
   if (killed) {
     return ended({
@@ -359,7 +472,11 @@ async function reviewRound(n: number, input: RoundInput, options: RunnerOptions)
   if (outcome === undefined)
     return ended({ outcome: 'failed', reason: `round ${n}'s reviewer reported nothing` });
   if (outcome.stop === 'quota exhausted' || outcome.stop === 'rate limited') {
-    return ended({ outcome: 'quota exhausted', reason: `round ${n}'s reviewer was stopped at the quota` });
+    const after = waits.length === 0 ? '' : ` after ${waits.length} rate-limit waits`;
+    return ended({
+      outcome: 'quota exhausted',
+      reason: `round ${n}'s reviewer was stopped at the quota${after}`,
+    });
   }
   if (outcome.stop === 'cap reached') {
     return ended({
