@@ -99,8 +99,8 @@ The fifteen `runner.feature` scenarios drafted in
    summed into a step's or the run's (REQ-RUN-09).
 8. **The command line** (unit, red first): `bench campaign run` and `bench scenario dry-run` give the runner the
    reviewer's agent adapter and its credential as REQ-RUN-15 states for that agent (the Claude Code token, read as
-   today, never written), whatever the campaign's own agent; the leftover check reports a leftover reviewer container as a run's.
-   A dry-run profile with `review_loop` runs and records its loop (REQ-CLI-05); task D runs one.
+   today, never written), whatever the campaign's own agent; the leftover check reports a leftover reviewer container
+   as a run's. A dry-run profile with `review_loop` runs and records its loop (REQ-CLI-05); task D runs one.
 9. Checks: prettier, tsc, eslint, `scripts/pre-review.sh main`, the runner tests; an independent review (dl-020); the
    full suites on the approver's go.
 
