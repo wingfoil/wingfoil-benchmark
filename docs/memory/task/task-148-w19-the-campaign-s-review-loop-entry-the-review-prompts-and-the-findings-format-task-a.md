@@ -123,4 +123,8 @@ State read on 2026-11-13 (main `9254bbaa`): no `review_loop` key exists in `camp
   refusal and `./` became empty. Now `copyPath` normalizes first (repeated `/` collapsed, `.` segments dropped,
   nothing left is `.`) and checks the result; a `\\` anywhere is refused. Nits: `validateScenario`'s doc comment
   back on it and naming the review prompts; the hold-out scan covers every `review/*.md`, not the two names only.
+- **Round 3** (a third independent agent, on `484afc5c`): nothing blocking or should-fix; no probed path yields an
+  absolute, empty, escaping or `.git` result, and the test fails with the order reverted. Its nits applied: a `.git`
+  segment refused anywhere and in any case; the validate scan reads files only; its test also plants a prompt of
+  another name (scanned) and a text file and a `.md` directory (ignored).
 

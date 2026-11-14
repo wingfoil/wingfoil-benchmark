@@ -1361,12 +1361,17 @@ describe('the review prompts against a hold-out (task-148, REQ-FMT-08 as amended
     mkdirSync(join(root, 'review'));
     writeFileSync(join(root, 'review', 'prompt.md'), '# Review\n\nMind a hidden expectation here.\n');
     writeFileSync(join(root, 'review', 'fixer-prompt.md'), '# Fix\n\nFix it.\n');
+    // A review prompt of another name is scanned too; a file that is not Markdown, or a directory, is not
+    writeFileSync(join(root, 'review', 'extra.md'), '# Extra\n\nAlso mind a hidden expectation here.\n');
+    writeFileSync(join(root, 'review', 'notes.txt'), 'a hidden expectation here\n');
+    mkdirSync(join(root, 'review', 'drafts.md'));
 
     // Without a hold-out, validate leaves the review prompts to the campaign's check
     expect(validateScenario({ id: 'S2', version: '1.1' }, root).ok).toBe(true);
     // With one, the prompt holding its literal is refused, naming the prompt and the hold-out file only
     const result = validateScenario({ id: 'S2', version: '1.1', holdout }, root);
     expect(result.ok ? [] : result.issues).toEqual([
+      { path: 'review/extra.md', message: `holds a literal of the hold-out file ${suiteId}/extra.test.ts` },
       { path: 'review/prompt.md', message: `holds a literal of the hold-out file ${suiteId}/extra.test.ts` },
     ]);
     expect(JSON.stringify(result)).not.toContain('hidden expectation');

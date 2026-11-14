@@ -91,16 +91,14 @@ export function validateScenario(args: ScenarioArguments, root: string): Scenari
     if (additions !== undefined) {
       const dir = join(root, REVIEW_DIR);
       const prompts = existsSync(dir)
-        ? readdirSync(dir)
-            .filter((name) => name.endsWith('.md'))
+        ? readdirSync(dir, { withFileTypes: true })
+            .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+            .map((entry) => entry.name)
             .sort()
         : [];
       for (const prompt of prompts.map((name) => `${REVIEW_DIR}/${name}`)) {
-        const file = join(root, prompt);
-        if (existsSync(file))
-          leaks.push(
-            ...scanPrompt(prompt, readFileSync(file, 'utf8'), scenario.value, declarations.value, additions),
-          );
+        const text = readFileSync(join(root, prompt), 'utf8');
+        leaks.push(...scanPrompt(prompt, text, scenario.value, declarations.value, additions));
       }
     }
     return leaks.length > 0 ? { ok: false, issues: leaks } : undefined;

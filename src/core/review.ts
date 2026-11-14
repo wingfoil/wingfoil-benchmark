@@ -21,7 +21,7 @@ function normalizedPath(path: string): string {
   return `${absolute ? '/' : ''}${segments.join('/')}`;
 }
 
-/** A path inside the copy: relative, `/`-separated, with no `..` segment, never the copy's git directory. */
+/** A path inside the copy: relative, `/`-separated, with no `..` segment, never a git directory. */
 const copyPath = z
   .string()
   .trim()
@@ -37,8 +37,9 @@ const copyPath = z
       )
       .refine((path) => !path.split('/').includes('..'), 'must not leave the copy')
       .refine(
-        (path) => path !== '.git' && !path.startsWith('.git/'),
-        "must not name the copy's git directory",
+        // Any `.git` segment, in any case: the copy's own, or a nested repository's.
+        (path) => !path.split('/').some((segment) => segment.toLowerCase() === '.git'),
+        'must not name a git directory',
       ),
   );
 

@@ -61,6 +61,7 @@ describe("the reviewer's findings (task-148, REQ-RUN-21)", () => {
     ]);
     expect(files('.//src/a.ts')).toEqual(['src/a.ts']);
     expect(String(files('.//.git/config'))).toMatch(/git directory/);
+    expect(String(files('sub/.GIT/config'))).toMatch(/git directory/);
     expect(String(files('.git\\config'))).toMatch(/'\/'/);
     expect(String(files('.\\src\\a.ts'))).toMatch(/'\/'/);
     expect(String(files('/abs/a.ts'))).toMatch(/relative/);
