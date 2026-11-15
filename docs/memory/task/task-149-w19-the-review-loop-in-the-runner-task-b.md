@@ -220,3 +220,4 @@ The fifteen `runner.feature` scenarios drafted in
   fail without their fixes. Nit 2 applied: an invocation of the reviewer that could not say its cost keeps the round
   at its bound after a resume (`costUnknown` carried over; test added). Nit 1 (the stray-resume test cannot tell a
   maximum from a sum of costs) kept: `combine` is a step's, tested there.
+- Pre-review green at `48f59c04`.
