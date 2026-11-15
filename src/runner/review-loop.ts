@@ -415,16 +415,17 @@ async function reviewRound(n: number, input: RoundInput, options: RunnerOptions)
           ...effort,
           run,
         });
-        // A resume answered from another session is not this round's (F2.2), as a step's.
-        if (resumed.sessionId !== sessionId) {
-          failure = `its resume ran in session ${resumed.sessionId}, not in ${sessionId}`;
-          break;
-        }
+        // Counted first, whatever it answered: what a resume spent is never lost (REQ-RUN-08).
         outcome = {
           ...resumed,
           usage: combine(previous.usage, resumed.usage),
           transcript: [...previous.transcript, ...resumed.transcript],
         };
+        // A resume answered from another session is not this round's (F2.2), as a step's.
+        if (resumed.sessionId !== sessionId) {
+          failure = `its resume ran in session ${resumed.sessionId}, not in ${sessionId}`;
+          break;
+        }
       }
     } catch (error) {
       failure = reasonOf(error);

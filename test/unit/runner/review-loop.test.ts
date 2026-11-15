@@ -332,6 +332,7 @@ describe("the loop's caps, stops and record (review round 1 of task-149)", () =>
         // The interrupt arrives during the wait, whose injected sleep never ends on its own.
         sleep: () => {
           signal?.abort();
+          // Never ends on its own: only the interrupt's cut ends the wait (the test's 5 s timeout otherwise).
           return signal === undefined ? Promise.resolve() : new Promise<void>(() => undefined);
         },
         ...(signal === undefined ? {} : { signal: signal.signal }),
@@ -355,7 +356,7 @@ describe("the loop's caps, stops and record (review round 1 of task-149)", () =>
     const interrupted = await outcomeOf(NO_USAGE, new AbortController());
     expect(interrupted.loop).toMatchObject({ outcome: 'interrupted', rounds: [{ n: 1, findings: null }] });
     expect(interrupted.resumes).toEqual([]);
-  });
+  }, 5_000);
 
   it("moves the reviewer's time cap by a rate limit's wait, as a step's", async () => {
     const agent: AgentPort = {
@@ -397,10 +398,11 @@ describe("the loop's caps, stops and record (review round 1 of task-149)", () =>
           transcript: [],
           stop: 'rate limited',
         }),
+      // What the stray resume spent still counts.
       resume: () =>
         Promise.resolve({
           sessionId: 'another',
-          usage: NO_USAGE,
+          usage: eur(0.3),
           transcript: [],
           finalMessage: findingsMessage(),
         }),
@@ -414,6 +416,7 @@ describe("the loop's caps, stops and record (review round 1 of task-149)", () =>
     expect(loopAt(summary.runs[0]?.outputDir)).toMatchObject({
       outcome: 'failed',
       reason: expect.stringMatching(/ran in session another/),
+      cost_eur: 0.3,
     });
   });
 });

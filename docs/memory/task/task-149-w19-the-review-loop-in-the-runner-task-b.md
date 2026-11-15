@@ -210,3 +210,9 @@ The fifteen `runner.feature` scenarios drafted in
   - nit 6, a reviewer resume answered from another session ends the loop `failed`.
   - The acceptance comparison with and without the loop now normalizes the setup's measured `duration_ms`, which made it
     flaky under load.
+- **Round 3** (a fresh read-only agent on `3689471b`'s diff, 2026-11-15): no blocker; 1 should-fix, 2 nits; every new
+  test of round 2 fails without its fix. Fixed: should-fix 1, a resume answered from another session lost what it
+  spent: its usage and transcript are now counted before the session check (test: the stray resume's 0.30 EUR in
+  `cost_eur`); nit 3, the interrupt-during-a-wait test failed only on vitest's 60 s timeout without its fix: it has a
+  5 s timeout. Nit 2 (a cost of 0 reported with `costUnknown` passes the cost check before a resume) is as a step's,
+  kept.
