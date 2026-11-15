@@ -7,6 +7,8 @@ export {
   harnessMentions,
   loadLeakScanDeclarations,
   oracleLiterals,
+  RESERVED_ANYWHERE,
+  RESERVED_AT_ROOT,
   scanConfiguration,
   scanScenario,
 } from './leak-scan.js';

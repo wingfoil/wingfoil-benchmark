@@ -12,6 +12,7 @@ import {
   checkSpending,
   EXIT,
   portsFor,
+  reviewerFor,
   report,
   SPENDING_FLAG,
   spendingOptions,
@@ -125,6 +126,9 @@ export async function dryRunCommand(
     ? { ok: true as const, value: ports }
     : portsFor(profile, credential, credentialFile);
   if (!resolved.ok) return report(resolved.issues, io);
+  // The review loop's reviewer, its credential its own (REQ-CLI-05 as amended in 1.58, task-149).
+  const reviewer = reviewerFor(profile.review_loop, profile, { allowSpending: args.allowSpending, ports });
+  if (!reviewer.ok) return report(reviewer.issues, io);
 
   // What it expects to spend, before anything is built (REQ-NFR-06).
   const rate = profile.currency.usd_to_eur;
@@ -155,6 +159,7 @@ export async function dryRunCommand(
       runDryRun(checked.value, {
         ...resolved.value,
         ...spendingOptions(spending.value, io),
+        ...(reviewer.value === undefined ? {} : { reviewer: reviewer.value }),
         signal,
       }),
     );

@@ -1,4 +1,13 @@
-import { mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import {
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -65,5 +74,45 @@ describe('gitCli.changesBetween (REQ-RUN-20, task-141)', () => {
     await git.init(repository);
     await git.commitAll(repository, 'setup', { allowEmpty: true });
     expect(await git.changesBetween(repository, 'HEAD', 'HEAD')).toEqual([]);
+  });
+});
+
+describe('gitCli.exportTree and gitCli.dirtyPaths (task-149, the review loop)', () => {
+  it("writes a tree's files elsewhere, export-ignored ones included, the repository untouched", async () => {
+    const repository = tempDir('bench-git-');
+    await git.init(repository);
+    mkdirSync(join(repository, 'src'));
+    writeFileSync(join(repository, 'src', 'a.ts'), 'a\n');
+    writeFileSync(join(repository, '.gitattributes'), 'src/a.ts export-ignore\n');
+    symlinkSync('src/a.ts', join(repository, 'link'));
+    await git.commitAll(repository, 'one');
+    const tree = await git.tree(repository, 'HEAD');
+    writeFileSync(join(repository, 'src', 'a.ts'), 'changed\n');
+    const copy = join(tempDir('bench-copy-'), 'copy');
+
+    await git.exportTree(repository, tree, copy);
+
+    expect(readFileSync(join(copy, 'src', 'a.ts'), 'utf8')).toBe('a\n');
+    expect(readlinkSync(join(copy, 'link'))).toBe('src/a.ts');
+    expect(await git.dirtyPaths(repository)).toEqual(['src/a.ts']);
+  });
+
+  it('lists changed tracked files and untracked ones git does not ignore, and commits by another identity', async () => {
+    const repository = tempDir('bench-git-');
+    await git.init(repository);
+    writeFileSync(join(repository, '.gitignore'), 'out/\n');
+    writeFileSync(join(repository, 'a.txt'), 'a\n');
+    await git.commitAll(repository, 'one', { identity: { name: 'Project', email: 'project@localhost' } });
+    expect(await git.dirtyPaths(repository)).toEqual([]);
+    mkdirSync(join(repository, 'out'));
+    writeFileSync(join(repository, 'out', 'x'), 'x\n');
+    mkdirSync(join(repository, 'new'));
+    writeFileSync(join(repository, 'new', 'b.txt'), 'b\n');
+    rmSync(join(repository, 'a.txt'));
+    expect(await git.dirtyPaths(repository)).toEqual(['a.txt', 'new/b.txt']);
+    const log = execFileSync('git', ['-C', repository, 'log', '--format=%an <%ae> %cn <%ce>'], {
+      encoding: 'utf8',
+    });
+    expect(log.trim()).toBe('Project <project@localhost> Project <project@localhost>');
   });
 });

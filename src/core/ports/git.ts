@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+
 import { processFailure } from './process.js';
 import type { ProcessPort } from './process.js';
 
@@ -72,7 +76,7 @@ export interface GitPort {
    * that changed nothing is still a snapshot, and without it `git commit` fails and the step
    * numbering skips exactly where an agent did nothing.
    */
-  commitAll(directory: string, message: string, options?: { allowEmpty?: boolean }): Promise<void>;
+  commitAll(directory: string, message: string, options?: CommitOptions): Promise<void>;
   /**
    * The patch from tree `from` to tree `to`, for `setup/diff.patch` and `steps/<NN>/diff.patch`
    * (REQ-RUN-05): everything between two snapshots, whatever commits the harness or the agent made in
@@ -115,13 +119,37 @@ export interface GitPort {
    * session added, changed or deleted since the setup commit.
    */
   changesBetween(directory: string, from: string, to: string): Promise<TreeChange[]>;
+  /**
+   * Writes the files of tree `tree` of `repository` into `directory` (task-149): the review loop's copy of a run's
+   * snapshot, outside the workspace and without touching its index or working tree.
+   */
+  exportTree(repository: string, tree: string, directory: string): Promise<void>;
+  /**
+   * The paths of `directory`'s working tree that differ from its commit (task-149): changed tracked files and the
+   * untracked files git does not ignore, in git's order. What the review loop's read-only check reads.
+   */
+  dirtyPaths(directory: string): Promise<string[]>;
+}
+
+/** How a commit is made: `allowEmpty` for a snapshot that changed nothing; `identity` instead of the runner's. */
+export interface CommitOptions {
+  readonly allowEmpty?: boolean;
+  /**
+   * Who the commit is by (task-149): the review loop's copy is committed by a neutral identity, so that the reviewer
+   * reads nothing of the benchmark in its history.
+   */
+  readonly identity?: { readonly name: string; readonly email: string };
 }
 
 /** The git port that calls the `git` command line. */
 export function gitCli(process: ProcessPort): GitPort {
-  async function git(directory: string, args: readonly string[]): Promise<string> {
+  async function git(
+    directory: string,
+    args: readonly string[],
+    env: Readonly<Record<string, string | undefined>> = {},
+  ): Promise<string> {
     const full = [...ISOLATION, '-C', directory, ...args];
-    const result = await process.run('git', full, { env: ISOLATED_ENVIRONMENT });
+    const result = await process.run('git', full, { env: { ...ISOLATED_ENVIRONMENT, ...env } });
     if (result.code !== 0) throw processFailure('git', full, result);
     return result.stdout;
   }
@@ -133,7 +161,18 @@ export function gitCli(process: ProcessPort): GitPort {
     commitAll: async (directory, message, options) => {
       await git(directory, ['add', '--all']);
       const empty = options?.allowEmpty === true ? ['--allow-empty'] : [];
-      await git(directory, ['commit', '--quiet', ...empty, '--message', message]);
+      const who = options?.identity;
+      // The variables beat the `-c` settings: a commit by another identity is made through them.
+      const identity =
+        who === undefined
+          ? {}
+          : {
+              GIT_AUTHOR_NAME: who.name,
+              GIT_AUTHOR_EMAIL: who.email,
+              GIT_COMMITTER_NAME: who.name,
+              GIT_COMMITTER_EMAIL: who.email,
+            };
+      await git(directory, ['commit', '--quiet', ...empty, '--message', message], identity);
     },
     patchOf: (directory, from, to) => git(directory, ['diff', '--binary', '--full-index', from, to]),
     tree: async (directory, ref) => (await git(directory, ['rev-parse', `${ref}^{tree}`])).trim(),
@@ -181,6 +220,30 @@ export function gitCli(process: ProcessPort): GitPort {
         changes.push({ status: status as TreeChange['status'], path: fields[index + 1] as string, mode });
       }
       return changes;
+    },
+    exportTree: async (repository, tree, directory) => {
+      // A throwaway index: the repository's own, and its working tree, are never touched. `checkout-index` rather than
+      // `archive`, whose `export-ignore` attributes would leave files of the tree out of the copy.
+      const scratch = mkdtempSync(join(tmpdir(), 'bench-export-'));
+      try {
+        const index = { GIT_INDEX_FILE: join(scratch, 'index') };
+        await git(repository, ['read-tree', tree], index);
+        mkdirSync(directory, { recursive: true });
+        await git(
+          repository,
+          ['checkout-index', '--all', '--force', `--prefix=${resolve(directory)}/`],
+          index,
+        );
+      } finally {
+        rmSync(scratch, { recursive: true, force: true });
+      }
+    },
+    dirtyPaths: async (directory) => {
+      // `XY path` entries, NUL-separated; a rename's entry is followed by its source path, which is skipped.
+      const fields = (
+        await git(directory, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames'])
+      ).split('\0');
+      return fields.filter((field) => field.length > 3).map((field) => field.slice(3));
     },
   };
 }

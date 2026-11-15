@@ -14,9 +14,9 @@ import type { HoldoutAdditions } from './holdout.js';
  */
 
 /** Names in the seed that a run's setup reserves: Claude Code reads the first two, WingFoil the third. */
-const RESERVED_ANYWHERE = ['CLAUDE.md', 'AGENTS.md', '.claude', '.wingfoil'];
+export const RESERVED_ANYWHERE: readonly string[] = ['CLAUDE.md', 'AGENTS.md', '.claude', '.wingfoil'];
 /** Names reserved at the seed's root only: the runner writes the first, the agent would read the second. */
-const RESERVED_AT_ROOT = ['PROJECT_RULES.md', '.mcp.json'];
+export const RESERVED_AT_ROOT: readonly string[] = ['PROJECT_RULES.md', '.mcp.json'];
 
 /** Read the declarations file; a missing or malformed one is an issue, never a silent default. */
 export function loadLeakScanDeclarations(file: string): Result<LeakScanDeclarations> {

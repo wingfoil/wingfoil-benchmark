@@ -35,6 +35,7 @@ import {
   count,
   EXIT,
   portsFor,
+  reviewerFor,
   report,
   SPENDING_FLAG,
   USAGE,
@@ -371,6 +372,9 @@ async function runCampaignCommand(
 
   const resolved = ports ? { ok: true as const, value: ports } : portsFor(spec, credential, credentialFile);
   if (!resolved.ok) return report(resolved.issues, io);
+  // The review loop's reviewer, its credential its own (REQ-RUN-21, task-149).
+  const reviewer = reviewerFor(spec.review_loop, spec, { allowSpending, ports });
+  if (!reviewer.ok) return report(reviewer.issues, io);
 
   // The warning, last, so that nobody confirms what a missing credential would stop a second later.
   if (guard.value.eur > warn_eur) {
@@ -417,6 +421,7 @@ async function runCampaignCommand(
                 secrets: secrets ?? [],
                 refreshSecrets: () => codexFileSecrets(credentialFile),
               }),
+          ...(reviewer.value === undefined ? {} : { reviewer: reviewer.value }),
           signal,
         },
         resume === undefined ? {} : { resume: resume.value },
@@ -439,6 +444,14 @@ async function runCampaignCommand(
     .flatMap((run) => run.steps)
     .reduce((total, step) => total + step.usage.costUsd, 0);
   io.stdout(`${totalLine(spent, rate, 'cost')}\n`);
+  // The review loops' cost, apart from the steps' (REQ-RUN-09 as amended in 1.58): in EUR, as each loop records it.
+  const loops = summary.runs.flatMap((run) =>
+    run.loop === undefined || run.loop.outcome === 'no loop' ? [] : [run.loop],
+  );
+  if (loops.length > 0) {
+    const eur = loops.reduce((total, loop) => total + loop.costEur, 0);
+    io.stdout(`review loops: ${count(loops.length, 'loop')}, ${eur.toFixed(4)} EUR\n`);
+  }
   return summary.completed ? EXIT.ok : EXIT.failure;
 }
 

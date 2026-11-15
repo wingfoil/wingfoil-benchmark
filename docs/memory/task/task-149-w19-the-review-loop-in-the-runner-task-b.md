@@ -2,7 +2,7 @@
 id: task-149-w19-the-review-loop-in-the-runner-task-b
 type: task
 title: "W19: the review loop in the runner (task B)"
-status: in-progress
+status: approved
 release: v0.3
 wave: W19
 features: [F4.9]
@@ -22,7 +22,7 @@ acceptance:
   - "runner.feature#A loop that does not close by the cap is not clean"
   - "runner.feature#A reviewer that changes the copy ends the loop as failed"
   - "runner.feature#A loop session killed at its cap keeps the run's results"
-requirements: [REQ-RUN-21, REQ-FMT-06, REQ-RUN-01, REQ-RUN-02, REQ-RUN-08, REQ-RUN-09, REQ-RUN-13, REQ-RUN-19, REQ-CLI-05]
+requirements: [REQ-RUN-21, REQ-FMT-06, REQ-FMT-08, REQ-RUN-01, REQ-RUN-02, REQ-RUN-08, REQ-RUN-09, REQ-RUN-13, REQ-RUN-19, REQ-CLI-05]
 fixes: []
 tags: ["v0.3","review-loop","w19"]
 ---
@@ -128,4 +128,96 @@ The fifteen `runner.feature` scenarios drafted in
 
 ## Execution notes
 
+- 2026-11-14: backlog → in-progress on main; worktree `../WingFoil2-Benchmark-wt/t149`.
+- **Red first** (`eb8fec7a`): the fifteen scenarios in `runner.feature` (1.2) with their tests in
+  `test/acceptance/runner.test.ts`, and `test/unit/runner/review-loop.test.ts` (the records' ignore rules, the loop's
+  cost in the campaign's spending, a leftover reviewer container, the reviewer container's removal, the command line,
+  a dry run's loop); `test/support/review-fixture.ts` (a campaign pinning a loop with the fake agent as reviewer, a
+  reviewer double); the git double gains `treeOf`, `exportOf`, `dirtyOf`. All red for the absent loop, but the wingfoil
+  scenario's first draft, refused for a campaign without `baseline` (now baseline and wingfoil, the wingfoil run read).
+- **The work:**
+  - `src/core/ports/git.ts`: `exportTree` (a throwaway index and `checkout-index`, rather than `archive`, whose
+    `export-ignore` would drop files), `dirtyPaths` (`status --porcelain -z --untracked-files=all`), and
+    `commitAll`'s `identity`; their unit tests in `test/unit/ports/git.test.ts` written after the code, as verification.
+  - `src/runner/review-copy.ts` (new): `setupAddedPaths`, `isStripped` (the setup's added paths, REQ-FMT-08's reserved
+    names from `leak-scan.ts`, now exported), `buildReviewCopy` (a fresh two-commit repository per round, the empty
+    directories pruned, committed by a neutral `Project <project@localhost>`).
+  - `src/runner/review-loop.ts` (new): `executeReviewLoop`, which never throws; `reviewRound` (the reviewer's container
+    from `<id>-review`, the copy its only mount, the loop's caps, the read-only check, `parseFindings`); `fixRound`
+    (`executeStep` with the loop's caps as its pins, `fixer_interventions` as the policy's cap, `session` for its
+    records); `writeLoop`, `writeNoLoop`.
+  - `src/runner/run.ts`: `executeStep`'s `session` (prompt, directory, commit message; no `commits.json` or
+    `usage.json`, `fix.patch` and `fixer.jsonl`); `openContainer`'s `arm` optional; `executeRun`'s `finish` around
+    every record, awaited inside the `try` before the `finally` removes the container; `executeRuns` builds the
+    reviewer's image, adds a loop's cost to `spent`, and stops on a loop's quota, interrupt or ceiling;
+    `RunPins` picks `review_loop`; `RunnerOptions.reviewer`.
+  - `src/results/execution.ts`: a run's `review/loop.json` `cost_eur` counts in the execution's spending.
+  - `src/cli/shared.ts` `reviewerFor`, called by `campaign run` and `scenario dry-run`; `Ports.reviewerAgent` for the
+    tests; `campaign run` says the loops' cost apart from the steps'.
+  - `.gitignore`: `results/**/review/*/reviewer.jsonl` and `fixer.jsonl`.
+- **Decisions taken while building, for the gate:**
+  1. **The copy's identity:** the runner's fixed identity is `WingFoil Benchmark`, a harness name the reviewer would
+     read in the copy's history; the copy is committed by `Project <project@localhost>` instead, and the copy test
+     refuses `WingFoil` and `Benchmark` in its log.
+  2. **No fix after the last round:** a round `max_rounds` with blockers ends the loop `not clean at <max_rounds>`
+     without a fixer session, since no round would review that fix (REQ-RUN-21 is silent on it).
+  3. **The read-only check** reads the working tree against the copy's commit and any commit made over it; a reviewer
+     that checks out an earlier commit to read it is not refused (it changed nothing).
+  4. **The reviewer's caps:** a rate limit is waited out and the session resumed as a step's (task-051's waits), the
+     quota after the last wait ending the loop `quota exhausted`; its time cap kills it, its cost cap is its
+     `--max-budget-usd`, and its tokens over `session_tokens` end the loop `failed` once it reported (review round 1,
+     finding 1: the first draft ended the loop at the first rate limit).
+  5. **A Codex reviewer** is refused by the command line in v0.3 (the approver's reviewer is Claude Code's, and a second
+     credential file is not in the requirements); a reviewer that spends needs `--allow-spending` as the agent does.
+  6. **The loop's cost** is recorded in `loop.json` (`cost_eur`), which the execution's spending reads, rather than
+     summed again from the round files.
+  7. **The fixer's verdicts:** the fixer is a step without a scripted verdict, so the runner delivers none and its
+     `verdicts.json` is an empty ledger for a scenario with an approver; the verdict hook stays installed in the
+     container, as the last step left it.
+  8. **The copies** under `runs/…/review/<n>/` stay after the loop, git-ignored debris as the run's workspace is.
+  9. **The fixer's number** is the step after the last plus the round (`step 03 …` in the log for round 1 of a two-step
+     scenario); its interventions carry that number in `fixer-usage.json`.
+- Pre-review green at `57da63ee`.
+
 ## Review
+
+- **Round 1** (an independent read-only agent, in a clone under `mktemp`, 2026-11-14): no blocker; 3 should-fix, 8
+  nits. Fixed:
+  - should-fix 1, a reviewer's rate limit ended the loop and stopped the campaign: now waited out and resumed as a
+    step's;
+  - should-fix 2, the ceiling and the reviewer's token, cost and time caps had no test: tests added
+    (`test/unit/runner/review-loop.test.ts`);
+  - should-fix 3, a hard kill during a loop left no `loop.json` and lost its cost: `loop.json` is written as
+    `interrupted` ("the runner stopped during the loop") before round 1 and after every session, with its cost so far;
+  - nit 4, `no fix` is now said before the interrupt and ceiling checks;
+  - nit 5, a round whose session ran and ended the loop is in `rounds`, with `findings: null`;
+  - nit 7, the prompts' SHA-256 is checked again on the bytes sent;
+  - nit 8, the copy test puts an untracked prompt and oracle file in the workspace and finds neither in the copy (the
+    `no fix` scenario keeps its tree double: the stripping itself is the copy test's);
+  - nit 11, REQ-FMT-08 added to `requirements`.
+
+  Declared rather than changed: nit 6 (decision 7), nit 9 (decision 9), nit 10 (decision 8).
+- **Round 2** (a fresh read-only agent on `b702eb86`'s diff, 2026-11-15): no blocker; 1 should-fix, 5 nits. Each fix
+  of round 1 checked by removing it and seeing its test fail, but two (the record after a session, the deadline moved
+  by a wait). Fixed:
+  - should-fix 1, a rate-limited reviewer was resumed over its token cap or with nothing left of its cost cap: now ended
+    `failed` at that cap, never resumed, as a step's;
+  - nit 2, a session killed by a hard kill was not counted: `loop.json` counts the coming session at its bound
+    (`session_cost_eur`) before it starts;
+  - nit 3, an injected sleep was not cut short by the interrupt: wrapped in `untilAborted`, as a step's;
+  - nit 4, tests added for the record during a session, the deadline moved by a wait, the interrupt during a wait;
+  - nit 5, `combine` exported from `run.ts` rather than copied;
+  - nit 6, a reviewer resume answered from another session ends the loop `failed`.
+  - The acceptance comparison with and without the loop now normalizes the setup's measured `duration_ms`, which made it
+    flaky under load.
+- **Round 3** (a fresh read-only agent on `3689471b`'s diff, 2026-11-15): no blocker; 1 should-fix, 2 nits; every new
+  test of round 2 fails without its fix. Fixed: should-fix 1, a resume answered from another session lost what it
+  spent: its usage and transcript are now counted before the session check (test: the stray resume's 0.30 EUR in
+  `cost_eur`); nit 3, the interrupt-during-a-wait test failed only on vitest's 60 s timeout without its fix: it has a
+  5 s timeout. Nit 2 (a cost of 0 reported with `costUnknown` passes the cost check before a resume) is as a step's,
+  kept.
+- **Round 4** (a fresh read-only agent on `a3c82ebe`'s diff, 2026-11-15): no blocker, no should-fix; both changed tests
+  fail without their fixes. Nit 2 applied: an invocation of the reviewer that could not say its cost keeps the round
+  at its bound after a resume (`costUnknown` carried over; test added). Nit 1 (the stray-resume test cannot tell a
+  maximum from a sum of costs) kept: `combine` is a step's, tested there.
+- Pre-review green at `48f59c04`.
