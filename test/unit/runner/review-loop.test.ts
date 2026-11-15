@@ -419,4 +419,31 @@ describe("the loop's caps, stops and record (review round 1 of task-149)", () =>
       cost_eur: 0.3,
     });
   });
+
+  it("keeps a round at its bound when the reviewer's first invocation could not say its cost", async () => {
+    const agent: AgentPort = {
+      runStep: (request) =>
+        Promise.resolve({
+          sessionId: request.sessionId,
+          usage: NO_USAGE,
+          transcript: [],
+          stop: 'rate limited',
+          costUnknown: true,
+        }),
+      resume: (request) =>
+        Promise.resolve({
+          sessionId: request.sessionId,
+          usage: eur(0.1),
+          transcript: [],
+          finalMessage: findingsMessage(),
+        }),
+    };
+    const { checked } = loopCampaign();
+    const summary = await runCampaign(checked, {
+      ...doubles(),
+      sleep: () => Promise.resolve(),
+      reviewer: { agent },
+    });
+    expect(loopAt(summary.runs[0]?.outputDir)).toMatchObject({ outcome: 'clean', cost_eur: 2 });
+  });
 });

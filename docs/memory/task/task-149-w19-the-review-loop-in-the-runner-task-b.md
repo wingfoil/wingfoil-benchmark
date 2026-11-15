@@ -216,3 +216,7 @@ The fifteen `runner.feature` scenarios drafted in
   `cost_eur`); nit 3, the interrupt-during-a-wait test failed only on vitest's 60 s timeout without its fix: it has a
   5 s timeout. Nit 2 (a cost of 0 reported with `costUnknown` passes the cost check before a resume) is as a step's,
   kept.
+- **Round 4** (a fresh read-only agent on `a3c82ebe`'s diff, 2026-11-15): no blocker, no should-fix; both changed tests
+  fail without their fixes. Nit 2 applied: an invocation of the reviewer that could not say its cost keeps the round
+  at its bound after a resume (`costUnknown` carried over; test added). Nit 1 (the stray-resume test cannot tell a
+  maximum from a sum of costs) kept: `combine` is a step's, tested there.

@@ -420,6 +420,10 @@ async function reviewRound(n: number, input: RoundInput, options: RunnerOptions)
           ...resumed,
           usage: combine(previous.usage, resumed.usage),
           transcript: [...previous.transcript, ...resumed.transcript],
+          // An invocation whose cost is not known keeps the round at its bound, whichever it was.
+          ...(previous.costUnknown === true || resumed.costUnknown === true
+            ? { costUnknown: true as const }
+            : {}),
         };
         // A resume answered from another session is not this round's (F2.2), as a step's.
         if (resumed.sessionId !== sessionId) {
