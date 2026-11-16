@@ -99,3 +99,30 @@ is not built here.
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
+
+- **Criterion 1** (`e4c4f42b`, `4e67fb31`): `npm install --save-dev --save-exact wingfoil@npm:wingfoil@0.3.2` wrote
+  `"0.3.2"`, not the alias form rule 8 requires; `package.json` set back to `npm:wingfoil@0.3.2` by hand and
+  `npm install` re-run (declared: the alias kept; observed: npm drops it with `--save-exact`). The lockfile's integrity
+  equals npm's for 0.3.2 (`sha512-A9Uutvf4…`). `--version` prints `0.3.2 (6de2e13c…)`, the commit `v0.3.2` resolves to
+  in the clone. `memory add --type task --dry-run` (it would add `task-153-…`) and `memory submit task-152-… --dry-run`
+  exit 0 and write nothing; `memory search` reads every element (152 tasks, 50 bugs, 33 decision logs, each the
+  count of files). The `wingfoil-cli` directive: none of its entries is named fixed by 0.3.2's changelog; W-03, W-07,
+  W-08, W-13, W-14 and W-15 re-run with `--dry-run` on 0.3.2 behave as their entries say (W-08: `park` refused, `not a
+  returns state`; W-15: `unknown role 'global'`); version 1.3, *Checked against* `wingfoil@0.3.2` (`6de2e13c`). The
+  sync read at `v0.3.2` (the clone read only, its status unchanged) moved F-036 to `resolved` (bug-409 shipped in
+  v0.3.2) and warned of seven notes cited at WingFoil's `origin/main` by elements their row does not name; recorded
+  in the inbox's README.
+- **Criterion 2:** the branch's diff against main touches nothing under `arms/`, `campaigns/presets/`,
+  `eligibility/`, `configuring/`, `scenarios/` or any `configured/` record, and no existing campaign or profile file.
+- **Criterion 3** (`ae5d9d23` red, `fde2c64f`): `campaigns/v0-3-review-loop.dry-run.yaml`, the reference profile's
+  pins byte for byte plus the default profile's `review_loop`; its test compares both files as loaded and checks
+  `checkDryRun` for the eight keys. Without `--allow-spending`, every one of the eight refuses with "up to the run's
+  cap of 3 EUR, and its review loop's up to 18 EUR (5 rounds)": the reference profile's run cap is 3 EUR, not the
+  default profile's 5, so a dry run's worst case is 21 EUR, 168 EUR for the eight.
+- **Criterion 4** (`38ff7234` red, `2f5b71fd`): `DryRunKey.agent`, filled by the estimate from the campaign's agent
+  and by `scenario dry-run` from the profile's; a dry run whose recorded agent name or version differs is skipped and
+  named (`dry run <n> ran agent <name> <version>, the campaign pins <name> <version>`), one without a version counts.
+  The estimate's provenance note for another agent release is dropped (task-022's Design counted such a dry run with
+  a note; the test that pinned it now pins the skip). REQ-CLI-02 amended in 1.59. Checked on the real records: the
+  stored dry runs ran Claude Code 2.1.280 (19), 2.1.300 (147) and Codex 0.162.1 (41), and `campaign estimate` prints
+  the same for all 13 campaign files before and after the change.
