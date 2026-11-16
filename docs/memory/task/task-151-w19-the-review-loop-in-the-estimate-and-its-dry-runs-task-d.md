@@ -3,27 +3,83 @@ id: task-151-w19-the-review-loop-in-the-estimate-and-its-dry-runs-task-d
 type: task
 title: "W19: the review loop in the estimate, and its dry runs (task D)"
 status: draft
-release: ""           # e.g. v0.1
-wave: ""              # e.g. W1
-features: []          # e.g. [F1.1, F3.1]
-acceptance: []        # e.g. [campaign.feature, scenarios.feature]
-requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
-fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
+release: v0.3
+wave: W19
+features: [F4.9]
+acceptance:
+  - "campaign.feature#A dry run measures the loop"
+requirements: [REQ-CLI-02, REQ-CLI-03, REQ-CLI-05, REQ-RUN-08, REQ-RUN-21, REQ-SCO-16]
+fixes: []
 tags: ["v0.3","review-loop","w19"]
 ---
 
 ## Context
 
-<!-- Why this task, which wave it belongs to, and what "done" means for the wave's "Ends with". -->
+W19's task D, the wave's last, after
+[task-148](task-148-w19-the-campaign-s-review-loop-entry-the-review-prompts-and-the-findings-format-task-a.md)
+(the entry and the prompts), [task-149](task-149-w19-the-review-loop-in-the-runner-task-b.md) (the loop in the runner)
+and [task-150](task-150-w19-the-review-loop-s-metrics-and-its-pages-task-c.md) (M-V1–M-V3 and the pages). It prices the
+loop in the estimate as REQ-CLI-02 and REQ-CLI-03 state (requirements 1.58), pins a loop in the dry-run profile, and,
+on the approver's spending consent, runs the dry runs that end W19: "the review-loop metrics in the dry runs"
+([rel-v0-3](../release/rel-v0-3.md)).
+
+State read on 2026-11-16 (main after task-150's merge): `estimateCampaign` (`src/runner/estimate.ts`) prices each
+scenario × arm × model key at its completed dry runs (`findDryRuns`), steps only; a campaign with `review_loop` is
+estimated as if it had none, so its budget guard counts no loop. A dry-run profile may carry `review_loop` and the dry
+run then records its loop (task-149); `scenarios/dry-run.yaml` carries none. No dry run has a loop yet. The approver's
+choice 2 of 2026-11-13 (task-147): the reviewer is Claude Code on `claude-sonnet-5-5` at `medium`, every arm; at most 5
+rounds.
 
 ## Acceptance criteria
 
-<!-- One line per criterion (Gherkin scenario or requirement), each classified as red-first
-     (new behaviour: a failing test precedes the code) or characterization (existing behaviour). -->
+<!-- Each red first unless marked: a failing test before the code; `acceptance` lists the scenarios as written. -->
+
+1. **"A dry run measures the loop"** (task-147's draft, added to `campaign.feature` with its test red first): a dry run
+   of S2 1.1 in `baseline` under a profile that pins a loop records it, and the estimate reads it under
+   `review/S2@1.1/baseline/<model>`, the run's model; a dry run whose loop pins differ from the campaign's is not read.
+2. **The loop's keys** (unit, red first, REQ-CLI-02 as amended in 1.58): a campaign with `review_loop` adds, for every
+   key with runs left, a line `review/<scenario>@<version>/<arm>/<model>` priced at the completed dry runs of that key
+   whose `review/loop.json` records the campaign's loop pins (the reviewer's agent and version, model, effort, both
+   prompts' SHA-256, `max_rounds`), by the same rule as a step key's (low, mean, high; one dry run plus 35 %); its cost
+   in USD from the rounds' usage files, a session at its bound counted at it. A key no such dry run measured is an
+   issue, as a step key's is, naming the dry runs skipped for other loop pins. A campaign without `review_loop` is
+   estimated byte for byte as today.
+3. **Which loops price a key:** a loop that ran its course (`clean`, `not clean at <n>`, `failed`, `no fix`) counts;
+   one stopped from outside (`interrupted`, `quota exhausted`) does not, its cost not the loop's own.
+4. **The guard** (unit, red first, REQ-CLI-03 as amended in 1.58): the estimate's totals, the confirmation above
+   `warn_eur` and the refusal above `ceiling_eur` count the loops' lines with the steps'; `--resume` prices the loops of
+   the runs left; `bench campaign estimate` prints the loop lines apart from the step lines.
+5. **The dry-run profile:** `scenarios/dry-run.yaml` gains the `review_loop` entry of choice 2: `claude-code` at the
+   profile's agent version, `claude-sonnet-5-5`, `medium`, `review/prompt.md` and `review/fixer-prompt.md` with their
+   SHA-256, `max_rounds: 5`, and the caps proposed in Design; `bench scenario check` and the leak scan pass.
+6. **The figures script** (unit, red first): `scripts/review-loop-figures.ts` prints, for every dry run under
+   `results/dry-runs/` with a loop, its key, outcome, rounds, M-V1, M-V2 and M-V3 (reviewer and fixer apart), read with
+   task-150's `readLoop` and `runReviewMetrics`; no figure in a note is typed by hand.
+7. **The dry runs, on the approver's spending consent only:** before any session, the upper bound of each dry run is
+   given in chat (its steps from the latest dry run of the key without a loop, plus the loop's worst case at its caps);
+   then S1, S2, S3 and S8 at 1.1 in `baseline` and `wingfoil` on `claude-sonnet-5-5` (eight dry runs, one each), the
+   approver's to widen or narrow. Their figures, from the script, go to `docs/calibration/v0.3-review-loop.md`, and
+   W19's "Ends with" is recorded in `rel-v0-3`.
+8. Checks: prettier, tsc, eslint, `scripts/pre-review.sh main`, the estimate's and the dry run's tests, and
+   `test/unit/runner` whole; an independent review (dl-020); the full suites on the approver's go.
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+- **The estimate:** `estimateCampaign` gains a second pass over the same keys when `campaign.spec.review_loop` is set:
+  `findLoopDryRuns(resultsRoot, key, loopPins)` (new, `src/results/dry-runs.ts`) reads each completed dry run's
+  `review/loop.json` through `readLoop`, keeps those whose pins match and whose outcome counts (criterion 3), and
+  returns their loop costs in USD and the skipped ones with why. `EstimateLine` gains `kind: 'steps' | 'review'`;
+  the totals sum both kinds, so `guardFigure` and `campaign run`'s confirmation read them unchanged.
+- **The loop's pins** in `loop.json` (task-149) are the reviewer's agent, model, effort, both prompts' SHA-256 and
+  `max_rounds`; the agent's version is in `reviewer.agent.version`. The caps are not part of the match: they bound a
+  loop, they do not change what a loop that stayed under them cost.
+- **The profile's caps, proposed:** `session_time_s: 1800` and `session_tokens: 10000000` (the profile's step caps),
+  `session_cost_eur: 2`, `fixer_interventions: 5`. A dry run's worst case is then 5 rounds × (reviewer + fixer) × 2 EUR
+  = 20 EUR above its steps, a bound and not an expectation.
+- **Not in this task:** a campaign file gaining `review_loop` (the reference campaign's, step 5 of plan-005); the
+  calibration's dry runs in every arm (step 3); the transcripts' packing of loops (REQ-CLI-11).
+- **For the approver's gate:** criterion 3 (stopped loops do not price), the caps above, and criterion 7's eight dry
+  runs.
 
 ## Execution notes
 
