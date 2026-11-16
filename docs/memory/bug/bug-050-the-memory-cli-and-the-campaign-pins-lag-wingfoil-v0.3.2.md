@@ -15,7 +15,8 @@ included, and the harness the campaigns measure. Raised by the approver on 2026-
 
 ## Expected
 
-The memory CLI is the latest release, and the next campaigns measure the `wingfoil` arm on it.
+The memory CLI is the latest release, and the next campaigns measure the `wingfoil` arm on it, with the agents at
+their latest release too; a dry run prices a key only if it ran the agent version the campaign pins.
 
 ## Actual
 
@@ -42,9 +43,22 @@ WingFoil clone, nothing written there):
 - **MCP server:** the same Resources and Tools; configuration errors name the file relative to the project, and
   `wingfoil://memory/{type}` warns only about that type's unreadable files. `arms/wingfoil/mcp.json` is unchanged.
 
+**Added on 2026-11-16 (the approver's decision to refresh every pin before W19's dry runs):**
+
+- **The agent pins lag too:** `agent.version` is `2.1.300` for Claude Code (pinned 2026-10-21, task-096) in
+  `scenarios/dry-run.yaml`, its `review_loop` reviewer and the presets, while npm's latest is 2.1.325 (2026-11-13);
+  Codex is pinned at 0.162.1 (2026-10-15, task-094), latest 0.169.0.
+- **A step's dry run is matched without its agent's version:** `findDryRuns` (`src/results/dry-runs.ts`) compares the
+  scenario's hash, arm, model, effort, arm digest and harness pin, and records `agent.version` without comparing it,
+  while `findLoopDryRuns` requires the reviewer's. A dry run of another agent release would price a campaign's steps as
+  if it were the same measure.
+
 ## Fix (proposed, for the approver's choice)
 
 A task after W19's task D: the devDependency bumped to `npm:wingfoil@0.3.2` with its lockfile and checked with
 `--version` and `--dry-run` commands; the `wingfoil` arm's manual and comments moved to v0.3.2 (an arm change with its
 own digest, REQ-FMT-13, needing a dry run on the approver's consent); the pins moved in the next campaign files only;
 the tests that treat 0.3.1 as the current WingFoil updated, the historical ones kept.
+Widened on 2026-11-16: the same task moves the agents to their latest release (Codex only if it runs again) and makes
+the agent's version part of a step key's match (REQ-CLI-02 amended), so that W19's dry runs run once, on the refreshed
+pins.

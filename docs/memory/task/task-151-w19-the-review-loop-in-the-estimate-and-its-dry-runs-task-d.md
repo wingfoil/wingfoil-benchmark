@@ -114,6 +114,17 @@ rounds.
   `rel-v0-3`, before approved → done. Upper bounds, read by a scratchpad script from each key's latest completed dry
   run (steps, Sonnet at medium) plus the loop's 18 EUR: 18.19 to 18.66 EUR each, 147.07 EUR for the eight; at the
   run's cap instead of the latest steps, 23 EUR each, 184 EUR.
+- **Full suites green at `04c10b01`** (LINT, TEST, BUILD, BIN, DOCKER at 0); approved at `92e8cdc7`, merged into main
+  at `a0132a52`.
+- **Criterion 7's dry runs wait for the pin refresh (the approver's decision, 2026-11-16).** Run now, on the dry-run
+  profile's pins, they would not outlive
+  [task-152](task-152-align-the-benchmark-to-wingfoil-v0.3.2-the-memory-cli-the-wingfoil-arm-and-the-next-campaigns-pins.md):
+  the four `wingfoil` dry runs' steps would be skipped by `findDryRuns` (the harness pin moves from v0.3.0 to v0.3.2
+  and the arm's digest changes with its manual), and moving the reviewer's Claude Code from 2.1.300 (latest 2.1.325)
+  would make all eight loops miss `findLoopDryRuns`' agent pin. So task-152 refreshes the pins first (WingFoil 0.3.2
+  and the agent), and the eight dry runs run once after it, on the refreshed profile and on the approver's spending
+  consent, with their upper bounds given again then; this task stays approved until they ran, their figures are in
+  `docs/calibration/v0.3-review-loop.md` and W19's "Ends with" is in `rel-v0-3`.
 
 ## Review
 
