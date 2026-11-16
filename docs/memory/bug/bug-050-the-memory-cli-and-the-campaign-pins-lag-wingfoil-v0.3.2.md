@@ -62,3 +62,10 @@ the tests that treat 0.3.1 as the current WingFoil updated, the historical ones 
 Widened on 2026-11-16: the same task moves the agents to their latest release (Codex only if it runs again) and makes
 the agent's version part of a step key's match (REQ-CLI-02 amended), so that W19's dry runs run once, on the refreshed
 pins.
+
+**Narrowed on 2026-11-16 (the approver's decision, option 1):** v0.3's measured pins are frozen (the `wingfoil` arm on
+WingFoil v0.3.1, Claude Code 2.1.300, Codex 0.162.1), since moving them within v0.3 needs v0.3.2's admission, the
+configured variants re-run, REQ-RUN-20's and plan-005's pins amended, and would confound comparisons with v0.3's
+published campaigns. Task-152 fixes the memory CLI's lag and the agent version's missing match; the measured pins'
+lag is fixed at v0.4's start by the pin refresh task-152 files, so this bug goes to `fixed` with task-152 for what it
+fixes and names that refresh for the rest.
