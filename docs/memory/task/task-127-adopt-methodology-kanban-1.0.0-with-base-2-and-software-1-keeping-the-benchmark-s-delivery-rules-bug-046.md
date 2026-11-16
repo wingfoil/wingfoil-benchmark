@@ -48,7 +48,7 @@ WingFoil is the one under test, pinned per campaign).
 ## Input: the engine way of working (2026-11-16)
 
 Relayed by the WingFoil coordination session (WFCoord) on 2026-11-16 as the approver's decision on this repository's
-answer about adopting WingFoil 0.3.x's workflow engine; to be confirmed by the approver in this task's gate.
+answer about adopting WingFoil 0.3.x's workflow engine; confirmed by the approver in chat the same day.
 
 1. task-152 stays a pure pin change (0.3.1 → 0.3.2); the way of working does not change with it.
 2. The way of working is adopted at v0.4's release-planning through this task, when no v0.3 task is open, after every
