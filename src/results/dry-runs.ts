@@ -207,15 +207,19 @@ export function findLoopDryRuns(resultsRoot: string, key: DryRunKey, pins: LoopP
     const runDir = join(record.dir, 'runs', `${key.id}@${key.version}`, key.arm, key.model, 'r1');
     const loop = readLoop(runDir, () => executionRate(record.dir));
     let why: string | undefined;
-    if (!loop.ok) why = `has a loop record that cannot be read (${loop.issues.map((i) => `${i.path}: ${i.message}`).join('; ')})`;
+    if (!loop.ok) {
+      const issues = loop.issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ');
+      why = `has a loop record that cannot be read (${issues})`;
+    }
     else if (loop.value === undefined) why = 'recorded no review loop';
     else {
       const differs = loopPinsDiffer(loop.value, pins);
       if (differs !== undefined) why = `ran the review loop with ${differs}`;
-      else if (!ranItsCourse(loop.value.outcome)) why = `has a loop that did not run its course (${loop.value.outcome})`;
+      else if (!ranItsCourse(loop.value.outcome)) {
+        why = `has a loop that did not run its course (${loop.value.outcome})`;
+      }
       // A loop that failed before its first review (an infrastructure error, no reviewer) spent nothing of its own.
       else if (loop.value.reviewers.length === 0) why = `has a loop whose reviewer never ran (${loop.value.outcome})`;
-
     }
     if (why !== undefined || !loop.ok || loop.value === undefined) {
       if (records.length === 0 && why !== undefined) skipped ??= `dry run ${record.execution} ${why}`;

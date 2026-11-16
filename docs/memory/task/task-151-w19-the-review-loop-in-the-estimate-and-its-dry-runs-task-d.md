@@ -128,3 +128,11 @@ rounds.
     characterization, as said above.
   - **For the gate:** every dry run on the default profile now runs and pays for a loop; a step-only dry run needs
     another profile (`--profile`), there is no flag to skip the loop.
+- **Round 2** (a second fresh agent, on round 1's fixes, `e7ce54b1..736f76b1`): no blocker, two should-fix, four nits.
+  - **Should-fix, fixed:** the loop's worst case counted a fixer after the last round, which never runs: it is
+    (2 × `max_rounds` − 1) × `session_cost_eur`, 18 EUR on the profile, not 20 (Design's "20 EUR" read the same
+    way and is corrected here); and it is rounded to the cent, so a cap like 0.1 EUR prints no float noise.
+  - **Nits, fixed:** a test of the lines' order (two keys, the step lines first); a test of the second dry run's
+    "its steps only" line; a `no loop` with a reviewer session, alone, pins the allow-list; a stray blank line and an
+    over-long line in `dry-runs.ts`. Noted, not changed here: `.prettierignore`'s `results/` (no leading slash) also
+    ignores `src/results/`, older than this task; anchoring it would reformat the folder, a change of its own.

@@ -111,11 +111,14 @@ export async function dryRunCommand(
     );
 
   // The review loop's sessions are capped apart from the run's cost (REQ-RUN-08 as amended in 1.58): its worst case,
-  // every round's reviewer and fixer at their cost cap, is said beside the run's (task-151's review).
+  // every round's reviewer and every fixer but the last round's (no fix follows it) at their cost cap, is said beside
+  // the run's (task-151's review), rounded to the cent.
   const loopBound =
     profile.review_loop === undefined
       ? undefined
-      : profile.review_loop.max_rounds * 2 * profile.review_loop.caps.session_cost_eur;
+      : Number(
+          ((2 * profile.review_loop.max_rounds - 1) * profile.review_loop.caps.session_cost_eur).toFixed(2),
+        );
   const loopBoundText =
     loopBound === undefined
       ? ''

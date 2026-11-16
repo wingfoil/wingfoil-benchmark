@@ -153,6 +153,51 @@ describe("the review loop's keys in the estimate (REQ-CLI-02 as amended in 1.58)
     );
   });
 
+  it('names a loop that did not run its course, on its own (task-151 review round 2)', () => {
+    const { checked, dryRun } = setup();
+    // A reviewer session ran, so only the outcome keeps it out.
+    dryRun(1, 0.1, { outcome: 'no loop', reason: 'odd', rounds: [{ findings: null }] });
+    const estimate = estimateCampaign(checked);
+    expect(estimate.ok ? '' : estimate.issues[0]?.message).toContain(
+      'dry run 1 has a loop that did not run its course (no loop)',
+    );
+  });
+
+  it('prints every step line first, then the loop lines', () => {
+    // Two keys: the campaign's model and a slice of another.
+    const { checked, root } = loopCampaign({
+      yaml: (yaml) => {
+        yaml.models = {
+          default: 'fake-model',
+          slices: [{ model: 'fake-other', scenarios: ['S1'], arms: ['baseline'], repetitions: 1 }],
+        };
+      },
+    });
+    const [scenario] = checked.scenarios;
+    if (scenario === undefined) throw new Error('no scenario');
+    ['fake-model', 'fake-other'].forEach((model, index) => {
+      const dir = writeStoredDryRun(root, index + 1, {
+        id: scenario.id,
+        version: scenario.version,
+        hash: scenario.hash,
+        arm: 'baseline',
+        model,
+        stepCostsUsd: [0.1],
+      });
+      const runDir = join(dir, 'runs', `${scenario.id}@${scenario.version}`, 'baseline', model, 'r1');
+      writeReviewLoop(runDir, { ...cleanAt(1), model: 'fake-reviewer', pins: PINS });
+    });
+    const estimate = estimateCampaign(checked);
+    if (!estimate.ok) throw new Error(JSON.stringify(estimate.issues));
+    const names = formatEstimate(estimate.value, root).map((line) => line.split(':')[0]);
+    expect(names.slice(0, 4)).toEqual([
+      'S1@1.0 baseline fake-model',
+      'S1@1.0 baseline fake-other',
+      'review/S1@1.0/baseline/fake-model',
+      'review/S1@1.0/baseline/fake-other',
+    ]);
+  });
+
   it('says so when a dry run recorded no loop', () => {
     const { checked, dryRun } = setup();
     dryRun(1, 0.1);

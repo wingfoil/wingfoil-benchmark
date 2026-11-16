@@ -237,7 +237,7 @@ describe('bench scenario dry-run: the checks before anything is built (task-021 
       code: 1,
       stderr:
         "dry run: agent 'claude-code' spends real money, up to the run's cap of 1 EUR, and its review loop's up to " +
-        '20 EUR (5 rounds); pass --allow-spending to run it\n',
+        '18 EUR (5 rounds); pass --allow-spending to run it\n',
     });
   });
 
