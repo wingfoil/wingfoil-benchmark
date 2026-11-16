@@ -3,6 +3,10 @@ import { join } from 'node:path';
 
 import { readYamlFile } from '../core/index.js';
 
+import { readLoop } from './review.js';
+import type { StoredLoop } from './review.js';
+import { executionRate } from './runs.js';
+
 /**
  * Where dry runs are stored, under `results/` (REQ-RES-01): numbered like a campaign's executions,
  * and never a campaign's identity, which is 12 hex characters (REQ-FMT-02).
@@ -150,6 +154,113 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
     });
   }
   return { records, ...(records.length === 0 && skipped !== undefined ? { skipped } : {}) };
+}
+
+/**
+ * A campaign's review loop pins as a dry run's loop is matched by (REQ-CLI-02 as amended in 1.58): the reviewer's agent
+ * and version, model and effort, both prompts' SHA-256 and the round cap. The caps are not matched: they bound a loop,
+ * they do not change what a loop that stayed under them cost.
+ */
+export interface LoopPins {
+  readonly agent: { readonly name: string; readonly version: string };
+  readonly model: string;
+  readonly effort: string;
+  readonly promptSha256: string;
+  readonly fixerPromptSha256: string;
+  readonly maxRounds: number;
+}
+
+/** One dry run whose loop prices a key: its execution, directory, the loop's cost in USD and its outcome. */
+export interface LoopDryRun {
+  readonly execution: number;
+  readonly dir: string;
+  readonly costUsd: number;
+  readonly outcome: string;
+}
+
+/** Every dry run whose loop prices a key, newest first, and why the newest candidate did not, if none did. */
+export interface LoopDryRunsLookup {
+  readonly records: readonly LoopDryRun[];
+  readonly skipped?: string;
+}
+
+/**
+ * Whether a loop's outcome is that of a loop that ran its course (task-151's criterion 3): `clean`, `not clean at <n>`,
+ * `failed` or `no fix`. A loop stopped from outside (`interrupted`, `quota exhausted`) or that never ran (`no loop`)
+ * prices nothing: its cost is not the loop's own.
+ */
+function ranItsCourse(outcome: string): boolean {
+  return ['clean', 'failed', 'no fix'].includes(outcome) || /^not clean at [1-9][0-9]*$/.test(outcome);
+}
+
+/**
+ * Every dry run whose review loop prices `key` (REQ-CLI-02 as amended in 1.58, task-151), newest first: a dry run that
+ * counts for the key's steps ({@link findDryRuns}), whose `review/loop.json` records `pins` and an outcome of a loop
+ * that ran its course; its cost in USD from the rounds' usage files, a session at its bound counted at it (task-150's
+ * `readLoop`, at the dry run's own rate).
+ */
+export function findLoopDryRuns(resultsRoot: string, key: DryRunKey, pins: LoopPins): LoopDryRunsLookup {
+  const steps = findDryRuns(resultsRoot, key);
+  const records: LoopDryRun[] = [];
+  let skipped = steps.skipped;
+  for (const record of steps.records) {
+    const runDir = join(record.dir, 'runs', `${key.id}@${key.version}`, key.arm, key.model, 'r1');
+    const loop = readLoop(runDir, () => executionRate(record.dir));
+    let why: string | undefined;
+    if (!loop.ok) {
+      const issues = loop.issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ');
+      why = `has a loop record that cannot be read (${issues})`;
+    }
+    else if (loop.value === undefined) why = 'recorded no review loop';
+    else {
+      const differs = loopPinsDiffer(loop.value, pins);
+      if (differs !== undefined) why = `ran the review loop with ${differs}`;
+      else if (!ranItsCourse(loop.value.outcome)) {
+        why = `has a loop that did not run its course (${loop.value.outcome})`;
+      }
+      // A loop that failed before its first review (an infrastructure error, no reviewer) spent nothing of its own.
+      else if (loop.value.reviewers.length === 0) why = `has a loop whose reviewer never ran (${loop.value.outcome})`;
+    }
+    if (why !== undefined || !loop.ok || loop.value === undefined) {
+      if (records.length === 0 && why !== undefined) skipped ??= `dry run ${record.execution} ${why}`;
+      continue;
+    }
+    const sessions = [...loop.value.reviewers, ...loop.value.fixers];
+    records.push({
+      execution: record.execution,
+      dir: record.dir,
+      costUsd: sessions.reduce((total, session) => total + session.cost_usd, 0),
+      outcome: loop.value.outcome,
+    });
+  }
+  return { records, ...(records.length === 0 && skipped !== undefined ? { skipped } : {}) };
+}
+
+/** The first of a loop's pins that differs from the campaign's, as `<pin> <ran>, the campaign pins <pinned>`. */
+function loopPinsDiffer(loop: StoredLoop, pins: LoopPins): string | undefined {
+  const short = (sha: string) => `sha256:${sha.slice(0, 12)}`;
+  const ran = loop.reviewer;
+  // Each pin: its name, whether it is the same, and how the ran and the pinned values read.
+  const compared: readonly [string, boolean, string, string][] = [
+    [
+      'agent',
+      ran.agent === pins.agent.name && ran.version === pins.agent.version,
+      `${ran.agent} ${ran.version}`,
+      `${pins.agent.name} ${pins.agent.version}`,
+    ],
+    ['model', ran.model === pins.model, ran.model, pins.model],
+    ['effort', ran.effort === pins.effort, ran.effort, pins.effort],
+    ['prompt', loop.promptSha256 === pins.promptSha256, short(loop.promptSha256), short(pins.promptSha256)],
+    [
+      'fixer prompt',
+      loop.fixerPromptSha256 === pins.fixerPromptSha256,
+      short(loop.fixerPromptSha256),
+      short(pins.fixerPromptSha256),
+    ],
+    ['max_rounds', loop.maxRounds === pins.maxRounds, String(loop.maxRounds), String(pins.maxRounds)],
+  ];
+  const differs = compared.find(([, same]) => !same);
+  return differs === undefined ? undefined : `${differs[0]} ${differs[2]}, the campaign pins ${differs[3]}`;
 }
 
 /** A harness as a campaign or a profile pins it: a version (a release, or a commit), and optionally its full commit. */

@@ -110,6 +110,19 @@ export async function dryRunCommand(
       io,
     );
 
+  // The review loop's sessions are capped apart from the run's cost (REQ-RUN-08 as amended in 1.58): its worst case,
+  // every round's reviewer and every fixer but the last round's (no fix follows it) at their cost cap, is said beside
+  // the run's (task-151's review), rounded to the cent.
+  const loopBound =
+    profile.review_loop === undefined
+      ? undefined
+      : Number(
+          ((2 * profile.review_loop.max_rounds - 1) * profile.review_loop.caps.session_cost_eur).toFixed(2),
+        );
+  const loopBoundText =
+    loopBound === undefined
+      ? ''
+      : `, and its review loop's up to ${loopBound} EUR (${profile.review_loop?.max_rounds} rounds)`;
   const spending = checkSpending(profile, {
     allowSpending: args.allowSpending,
     builds: checked.value.arms.flatMap((loaded) => (loaded.requires === undefined ? [] : [loaded.requires])),
@@ -117,7 +130,7 @@ export async function dryRunCommand(
       path: 'dry run',
       message:
         `agent '${profile.agent.name}' spends real money, up to the run's cap of ` +
-        `${profile.caps.run_cost_eur} EUR; pass ${SPENDING_FLAG} to run it`,
+        `${profile.caps.run_cost_eur} EUR${loopBoundText}; pass ${SPENDING_FLAG} to run it`,
     },
   });
   if (!spending.ok) return report(spending.issues, io);
@@ -148,8 +161,10 @@ export async function dryRunCommand(
   });
   io.stdout(
     latest === undefined
-      ? `dry run ${what}: no dry run yet; this one may spend up to its cap, ${profile.caps.run_cost_eur} EUR\n`
-      : `dry run ${what}: the latest dry run cost ${money(latest.costUsd, rate)} (${relative(root, latest.dir)})\n`,
+      ? `dry run ${what}: no dry run yet; this one may spend up to its cap, ${profile.caps.run_cost_eur} EUR` +
+          `${loopBoundText}\n`
+      : `dry run ${what}: the latest dry run cost ${money(latest.costUsd, rate)} (${relative(root, latest.dir)})` +
+          `${loopBound === undefined ? '' : `, its steps only${loopBoundText}`}\n`,
   );
 
   let summary;

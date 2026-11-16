@@ -2,8 +2,8 @@ import { relative } from 'node:path';
 
 import { baseArmOf, fail, ok } from '../core/index.js';
 import type { Issue, Result, Scenario } from '../core/index.js';
-import { findDryRuns, harnessKey } from '../results/index.js';
-import type { DryRunRecord } from '../results/index.js';
+import { findDryRuns, findLoopDryRuns, harnessKey } from '../results/index.js';
+import type { DryRunKey, DryRunRecord, LoopDryRun, LoopPins } from '../results/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
 
@@ -26,7 +26,12 @@ export interface EstimateLine {
   /** Whether the high figure is the one dry run's plus {@link ESTIMATE_MARGIN} (task-081). */
   readonly margin: boolean;
   /** The dry runs it is priced at, newest first. */
-  readonly dryRuns: readonly DryRunRecord[];
+  readonly dryRuns: readonly (DryRunRecord | LoopDryRun)[];
+  /**
+   * `review` for the key's review loop (REQ-CLI-02 as amended in 1.58, task-151), priced at its dry runs' loops; absent
+   * for the key's steps, as in every estimate before it.
+   */
+  readonly kind?: 'review';
   /** Where the newest dry run ran with something other than the campaign pins (task-022 Design). */
   readonly notes: readonly string[];
 }
@@ -77,12 +82,13 @@ export function estimateCampaign(
   const { campaign } = checked;
   const lines: EstimateLine[] = [];
   const issues: Issue[] = [];
+  const loop = loopPinsOf(checked);
   for (const key of campaignKeys(checked)) {
     const { scenario, arm, model } = key;
     const repetitions = left === undefined ? key.repetitions : (left.get(keyName(key)) ?? 0);
     if (repetitions === 0) continue;
     const effort = campaign.spec.agent.effort?.[model];
-    const lookup = findDryRuns(campaign.resultsRoot, {
+    const dryRunKey: DryRunKey = {
       id: scenario.id,
       version: scenario.version,
       hash: scenario.hash,
@@ -94,7 +100,8 @@ export function estimateCampaign(
         ? {}
         : { armDigest: campaign.spec.arm_digests[arm] }),
       ...harnessKey(checked.campaign.spec.harnesses, checked.arms, arm),
-    });
+    };
+    const lookup = findDryRuns(campaign.resultsRoot, dryRunKey);
     const [newest] = lookup.records;
     const name = `${scenario.id}@${scenario.version}`;
     if (newest === undefined) {
@@ -127,6 +134,34 @@ export function estimateCampaign(
       dryRuns: lookup.records,
       notes: provenance(checked, arm, newest),
     });
+    if (loop === undefined) continue;
+    // The key's review loop (REQ-CLI-02 as amended in 1.58, task-151): its own line, by the same rule.
+    const loops = findLoopDryRuns(campaign.resultsRoot, dryRunKey, loop);
+    const [newestLoop] = loops.records;
+    if (newestLoop === undefined) {
+      issues.push({
+        path: `scenarios[${key.index}]`,
+        message:
+          `review/${name}/${arm}/${model} has no completed dry run with the campaign's review loop: run bench ` +
+          `scenario dry-run ${name} --arm ${arm} --model ${model} with a profile that pins it first` +
+          (loops.skipped === undefined ? '' : ` (${loops.skipped})`),
+      });
+      continue;
+    }
+    lines.push({
+      ...priced(
+        loops.records.map((record) => record.costUsd),
+        repetitions,
+      ),
+      scenario: scenario.id,
+      version: scenario.version,
+      arm,
+      model,
+      repetitions,
+      dryRuns: loops.records,
+      notes: [],
+      kind: 'review',
+    });
   }
   if (issues.length > 0) return fail(issues);
   const rate = campaign.spec.currency.usd_to_eur;
@@ -140,6 +175,38 @@ export function estimateCampaign(
     highEur: highUsd * rate,
     rate,
   });
+}
+
+/** The low, mean and high of `costs` per run, and times `repetitions`, by the step keys' rule (task-081). */
+function priced(
+  costs: readonly number[],
+  repetitions: number,
+): Pick<EstimateLine, 'unit' | 'lowUsd' | 'meanUsd' | 'highUsd' | 'margin'> {
+  const margin = costs.length === 1;
+  const lowUsd = Math.min(...costs);
+  const meanUsd = costs.reduce((total, cost) => total + cost, 0) / costs.length;
+  const highUsd = margin ? (costs[0] as number) * (1 + ESTIMATE_MARGIN) : Math.max(...costs);
+  return {
+    unit: { lowUsd, meanUsd, highUsd },
+    lowUsd: lowUsd * repetitions,
+    meanUsd: meanUsd * repetitions,
+    highUsd: highUsd * repetitions,
+    margin,
+  };
+}
+
+/** The campaign's review loop pins a dry run's loop is matched by, or none without `review_loop`. */
+function loopPinsOf({ campaign }: CheckedCampaign): LoopPins | undefined {
+  const loop = campaign.spec.review_loop;
+  if (loop === undefined) return undefined;
+  return {
+    agent: { name: loop.agent.name, version: loop.agent.version },
+    model: loop.model,
+    effort: loop.effort,
+    promptSha256: loop.prompt.sha256,
+    fixerPromptSha256: loop.fixer_prompt.sha256,
+    maxRounds: loop.max_rounds,
+  };
 }
 
 /** Every key the campaign file describes, in its order: the default model, then each slice. */
@@ -208,7 +275,11 @@ function usd(value: number): string {
  */
 export function formatEstimate(estimate: Estimate, root: string): string[] {
   return [
-    ...estimate.lines.map((line) => {
+    // The step lines first, then the loops' (REQ-CLI-02 as amended in 1.58): the loops printed apart (task-151).
+    ...[
+      ...estimate.lines.filter((line) => line.kind !== 'review'),
+      ...estimate.lines.filter((line) => line.kind === 'review'),
+    ].map((line) => {
       const { unit } = line;
       const runs = line.dryRuns.length;
       const source = [
@@ -218,10 +289,11 @@ export function formatEstimate(estimate: Estimate, root: string): string[] {
       const priced = line.margin
         ? `${usd(unit.lowUsd)} + ${ESTIMATE_MARGIN * 100} % margin = ${usd(unit.highUsd)}`
         : `low ${unit.lowUsd.toFixed(4)}, mean ${unit.meanUsd.toFixed(4)}, high ${usd(unit.highUsd)}`;
-      return (
-        `${line.scenario}@${line.version} ${line.arm} ${line.model}: ${priced} × ${line.repetitions} = ` +
-        `${usd(line.highUsd)} (${source})`
-      );
+      const name =
+        line.kind === 'review'
+          ? `review/${line.scenario}@${line.version}/${line.arm}/${line.model}`
+          : `${line.scenario}@${line.version} ${line.arm} ${line.model}`;
+      return `${name}: ${priced} × ${line.repetitions} = ` + `${usd(line.highUsd)} (${source})`;
     }),
     `estimate: low ${estimate.lowUsd.toFixed(4)}, mean ${estimate.meanUsd.toFixed(4)}, high ${usd(estimate.highUsd)}; ` +
       `high ${estimate.highEur.toFixed(4)} EUR at ${estimate.rate} EUR/USD, API-equivalent`,

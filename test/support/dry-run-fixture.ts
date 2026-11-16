@@ -5,6 +5,8 @@ import { stringify } from 'yaml';
 import { nextExecution } from '../../src/results/index.js';
 import { campaignKeys, checkCampaign } from '../../src/runner/index.js';
 
+import { writeReviewLoop } from './loop-records.js';
+
 /** A dry-run profile (task-021) for the fake agent, with a currency rate that shows in the output. */
 export function dryRunProfileYaml(): Record<string, unknown> {
   return {
@@ -98,7 +100,7 @@ export function priceCampaign(file: string, usd = 0, dryRuns = 1): void {
   let execution = nextExecution(resultsRoot, 'dry-runs');
   for (const { scenario, arm, model } of campaignKeys(checked.value)) {
     for (let made = 0; made < dryRuns; made += 1, execution += 1) {
-      writeStoredDryRun(repoRoot, execution, {
+      const dir = writeStoredDryRun(repoRoot, execution, {
         id: scenario.id,
         version: scenario.version,
         hash: scenario.hash,
@@ -108,6 +110,22 @@ export function priceCampaign(file: string, usd = 0, dryRuns = 1): void {
         agent: { name: spec.agent.name, version: spec.agent.version },
         ...(spec.agent.effort?.[model] === undefined ? {} : { effort: spec.agent.effort[model] }),
       });
+      // A campaign with a review loop is estimated with each key's loop too (task-151): a loop of no cost.
+      const loop = spec.review_loop;
+      if (loop !== undefined) {
+        writeReviewLoop(join(dir, 'runs', `${scenario.id}@${scenario.version}`, arm, model, 'r1'), {
+          outcome: 'clean',
+          model: loop.model,
+          maxRounds: loop.max_rounds,
+          pins: {
+            agent: loop.agent,
+            effort: loop.effort,
+            prompt: loop.prompt.sha256,
+            fixerPrompt: loop.fixer_prompt.sha256,
+          },
+          rounds: [{ findings: [], reviewerEur: 0 }],
+        });
+      }
     }
   }
 }
