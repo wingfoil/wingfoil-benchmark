@@ -85,3 +85,26 @@ rounds.
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
+
+- 2026-11-16: backlog → in-progress on main; worktree `../WingFoil2-Benchmark-wt/t151`, branched from task-150's
+  approved branch (this task reads its `readLoop`), main merged in for this task's own record.
+- **Red first** (`41e546c1`): `campaign.feature`'s "A dry run measures the loop" with its test (a real
+  `scenario dry-run` with the fake agent and a reviewer double, T3 standing in for S2 1.1, then `campaign estimate`);
+  `test/unit/runner/estimate-loop.test.ts` (the loop keys, the margin and resume, a bound, stopped loops, each pin,
+  no loop, a campaign without one); `test/bin/review-loop-figures.test.ts`. The loop records' fixture gains the
+  reviewer's pins.
+- **The work** (`87a27826`):
+  - `src/results/review.ts`: `readLoop` returns both prompts' SHA-256.
+  - `src/results/dry-runs.ts`: `findLoopDryRuns` (the step key's dry runs, then each one's loop: its pins compared,
+    a stopped loop left out, its cost in USD from the sessions, bounds included) and `LoopPins`.
+  - `src/runner/estimate.ts`: a `review/<scenario>@<version>/<arm>/<model>` line after each key's line when the
+    campaign pins a loop, priced by the same rule (`priced`); its issue names the dry runs skipped; the totals, so the
+    guard, count it.
+  - `scenarios/dry-run.yaml`: choice 2's loop with the proposed caps; its test (`test/unit/scenario/dry-run.test.ts`)
+    written after the profile, as characterization: the pins, and the prompts against their SHA-256 and the scan on
+    S1, S2, S3 and S8 at 1.1.
+  - `scripts/review-loop-figures.mjs` (on `dist/`, as `step-a-reading.mjs`).
+  - `test/support/dry-run-fixture.ts`: `priceCampaign` prices a loop too; two task-149 tests of `campaign run` with a
+    loop needed it once the estimate priced loops.
+- Checks so far: `test/unit/runner`, `test/unit/cli`, `test/unit/results`, `test/unit/scenario` and
+  `test/acceptance/campaign.test.ts` whole green (1107 tests); the figures script's bin test green.
