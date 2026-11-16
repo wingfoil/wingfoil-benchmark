@@ -2,7 +2,7 @@
 id: task-150-w19-the-review-loop-s-metrics-and-its-pages-task-c
 type: task
 title: "W19: the review loop's metrics and its pages (task C)"
-status: backlog
+status: in-progress
 release: v0.3
 wave: W19
 features: [F4.9]
