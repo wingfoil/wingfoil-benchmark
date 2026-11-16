@@ -178,3 +178,9 @@ feature file with its test red first (`test/acceptance/scoring.test.ts`, `test/a
   - **Nits:** `unquoteC` walks by code point and keeps a lone trailing backslash (fixed, an unescaped emoji tested);
     the method page says "not found" for a prompt missing from the working tree (fixed); the round-1 tests that
     cover existing behaviour rather than a fix are kept as coverage.
+- **Round 3** (a third fresh agent, on round 2's fixes, `89e9e918..9bad1903`): no blocker, one should-fix, two nits,
+  all on tests; the four fixes correct, `aggregate.test.ts` whole green.
+  - **Should-fix, fixed:** "no loop ran" had no test: a site whose wingfoil run recorded `no loop` now shows it, and
+    no zero figures.
+  - **Nits, fixed:** a prompt missing from the working tree is refused as "not found", tested; a lone trailing
+    backslash in a quoted path, tested.

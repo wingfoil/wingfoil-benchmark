@@ -871,7 +871,13 @@ describe('results.feature, the review loop (task-150, F4.9)', { timeout: 120_000
    * prompt on disk after its SHA-256 was pinned.
    */
   async function loopSite(
-    options: { reviewer?: string; prompt?: string; committed?: boolean; slice?: boolean } = {},
+    options: {
+      reviewer?: string;
+      prompt?: string | null;
+      committed?: boolean;
+      slice?: boolean;
+      noLoop?: boolean;
+    } = {},
   ) {
     const { root, executionDir } = await siteExecution();
     mkdirSync(join(root, 'review'), { recursive: true });
@@ -898,7 +904,8 @@ describe('results.feature, the review loop (task-150, F4.9)', { timeout: 120_000
       gitIn(root, 'add', 'review');
       gitIn(root, 'commit', '--quiet', '-m', 'the review prompts');
     }
-    if (options.prompt !== undefined) writeFileSync(join(root, 'review', 'prompt.md'), options.prompt);
+    if (options.prompt === null) rmSync(join(root, 'review', 'prompt.md'));
+    else if (options.prompt !== undefined) writeFileSync(join(root, 'review', 'prompt.md'), options.prompt);
     const run = (arm: string) => join(executionDir, 'runs', 'TC@1.0', arm, 'fake-model', 'r1');
     writeReviewLoop(run('baseline'), {
       outcome: 'clean',
@@ -914,7 +921,12 @@ describe('results.feature, the review loop (task-150, F4.9)', { timeout: 120_000
         { findings: [loopFinding('nit', 'README.md', 3, 'A typo in the usage')] },
       ],
     });
-    writeReviewLoop(run('wingfoil'), { ...notCleanAt5(), model: pins.model });
+    writeReviewLoop(
+      run('wingfoil'),
+      options.noLoop === true
+        ? { outcome: 'no loop', reason: 'failed', model: pins.model }
+        : { ...notCleanAt5(), model: pins.model },
+    );
     if (options.slice === true) {
       // TC's baseline run again, as a run of another model: a slice (T14), with a loop that closed in round 1.
       const slice = join(executionDir, 'runs', 'TC@1.0', 'baseline', 'other-model', 'r1');
@@ -1023,6 +1035,24 @@ describe('results.feature, the review loop (task-150, F4.9)', { timeout: 120_000
     expect(changed.build.code).toBe(1);
     expect(changed.build.stderr).toContain('review/prompt.md');
     expect(changed.build.stderr).toContain('differs from the SHA-256 the campaign pinned');
+  });
+
+  it('says no loop ran for an arm whose runs all recorded no loop, and names a prompt missing from the tree', async () => {
+    const { build, files } = await loopSite({ noLoop: true });
+    expect(build.code, build.stderr).toBe(0);
+    const category = files['abcdef012345/1/category-c.html'] ?? '';
+    const block = category.slice(category.indexOf('id="review-loop-TC@1.0"'));
+    const v3 = block.slice(block.indexOf('M-V3:'));
+    const wingfoil = v3.slice(v3.indexOf('<li>wingfoil'), v3.indexOf('</li>', v3.indexOf('<li>wingfoil')));
+    expect(wingfoil).toContain('<div class="value detail">no loop ran</div>');
+    expect(wingfoil).not.toContain('tokens 0 in');
+
+    const missing = await loopSite({ prompt: null });
+    expect(missing.build.code).toBe(1);
+    expect(missing.build.stderr).toContain('review/prompt.md');
+    expect(missing.build.stderr).toContain(
+      'not found in the working tree, and no commit of the repository holds',
+    );
   });
 
   it('quotes a prompt the working tree has since changed from the commit that holds its pin', async () => {
