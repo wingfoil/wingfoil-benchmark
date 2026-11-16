@@ -70,7 +70,8 @@ digests pinned), which carries no review loop. W19's loop dry runs therefore run
    recorded `agent.version`), as the loop's pins already require; otherwise the estimate names the dry run skipped
    and why. A dry run stored without an agent version counts, as one stored without an arm digest does.
 5. **Then, on the approver's spending consent** (task-151's criterion 7, run after this task's merge): S1, S2, S3 and
-   S8 at 1.1 in `baseline` and `wingfoil` on `claude-sonnet-5-5` with `--profile campaigns/v0-3-review-loop.dry-run.yaml`,
+   S8 at 1.1 in `baseline` and `wingfoil` on `claude-sonnet-5-5` with
+   `--profile campaigns/v0-3-review-loop.dry-run.yaml`,
    their upper bounds given first.
 6. Checks: prettier, tsc, `scripts/pre-review.sh main`; an independent read-only review (dl-020); the full suites on
    the approver's go.
