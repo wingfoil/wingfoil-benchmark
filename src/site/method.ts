@@ -14,7 +14,7 @@ import { CONFIGURED_SUFFIX } from '../scenario/index.js';
 
 import { configuringSection } from './configuring.js';
 import { renderMarkdown } from './markdown.js';
-import { recordedArm, recordedManual } from './recorded.js';
+import { recordedArm, recordedFile, recordedManual } from './recorded.js';
 import type { RecordedArm } from './recorded.js';
 import type { SiteModel } from './model.js';
 import { escapeHtml, materialPage, methodShell } from './render.js';
@@ -131,7 +131,7 @@ export async function methodPages(
   if (!configuring.ok) return configuring;
   for (const [name, page] of configuring.value.material) material.set(name, page);
 
-  const review = reviewLoopSection(root, parsed.value, model);
+  const review = await reviewLoopSection(root, parsed.value, model, history);
   if (!review.ok) return review;
   const executionHtml = executionSection(executionDir, model, parsed.value, manuals) + review.value;
   const links = [...material.keys()]
@@ -598,9 +598,16 @@ function executionSection(
 /**
  * The review loop the campaign pinned (REQ-RES-02 as amended in 1.58, task-150): the reviewer, its model and effort,
  * the round cap and the session caps, the closing rule, what the reviewer's copy lacks, both prompts quoted in full with
- * their SHA-256, and what the loops cost. Nothing without the pin. A prompt that differs from its pin is refused.
+ * their SHA-256, and what the loops cost. Nothing without the pin. A prompt is the working tree's when it has the pinned
+ * SHA-256, otherwise the newest commit's that has it (as the configuring prompt, task-146), so that a later revision of
+ * the prompt does not stop an earlier execution's build; refused when no commit holds it.
  */
-function reviewLoopSection(root: string, campaign: CampaignFile, model: SiteModel): Result<string> {
+async function reviewLoopSection(
+  root: string,
+  campaign: CampaignFile,
+  model: SiteModel,
+  history: HistoryPort,
+): Promise<Result<string>> {
   const loop = campaign.review_loop;
   if (loop === undefined) return ok('');
   const issues: Issue[] = [];
@@ -610,22 +617,20 @@ function reviewLoopSection(root: string, campaign: CampaignFile, model: SiteMode
     ['The fixer’s prompt', loop.fixer_prompt],
   ] as const;
   for (const [label, pin] of pinned) {
-    const path = join(root, pin.file);
-    if (!existsSync(path)) {
-      issues.push({ path: pin.file, message: 'not found: the campaign pinned it for its review loop' });
-      continue;
-    }
-    const bytes = readFileSync(path);
-    const hash = sha256(bytes);
-    if (hash !== pin.sha256) {
+    const text = await recordedFile(root, pin.file, pin.sha256, history);
+    if (text === undefined) {
+      const path = join(root, pin.file);
+      const present = existsSync(path) ? `(sha256:${sha256(readFileSync(path))}) ` : '';
       issues.push({
         path: pin.file,
-        message: `(sha256:${hash}) differs from the SHA-256 the campaign pinned (sha256:${pin.sha256})`,
+        message:
+          `${present}differs from the SHA-256 the campaign pinned (sha256:${pin.sha256}), ` +
+          'and no commit of the repository holds it',
       });
       continue;
     }
     prompts.push(
-      `<h4>${e(label)}</h4>\n<p><code>${e(pin.file)}</code>, sha256:${hash}</p>\n<pre>${e(bytes.toString('utf8'))}</pre>\n`,
+      `<h4>${e(label)}</h4>\n<p><code>${e(pin.file)}</code>, sha256:${pin.sha256}</p>\n<pre>${e(text)}</pre>\n`,
     );
   }
   if (issues.length > 0) return fail(issues);
@@ -644,7 +649,8 @@ function reviewLoopSection(root: string, campaign: CampaignFile, model: SiteMode
       'a round with nits only, or no finding, closes the loop as clean; a loop that has not closed by the round cap is ' +
       'not clean, and is never counted as the cap. A loop never changes what the run’s steps left, nor their scores.</p>\n' +
       '<p>The reviewer reads a copy of the code in a container of its own: two commits, the seed and the final code, ' +
-      'without every path the setup added (the harness’s files, its manual and its records), the names reserved to ' +
+      'without every path the setup added (the harness’s files, its manual and the records it installed), the names ' +
+      'reserved to ' +
       'the harnesses, the step prompts, the oracle and the run’s history. A harness can still leave traces in the code ' +
       'itself, such as a task id in a comment (T17).</p>\n<table>\n<tbody>\n' +
       row('Reviewer', `${e(loop.agent.name)} ${e(loop.agent.version)}`) +

@@ -600,7 +600,7 @@ export function categoryPage(model: SiteModel, row: CategoryRow): string {
       slices
         .map((group) => {
           const value = group.metrics.m_q1.final.m_q1;
-          return `<li>${armHtml(model, group.arm)}, ${e(group.model)}: M-Q1 ${e(tallies(value.values))} (n = ${group.n})</li>\n`;
+          return `<li>${armHtml(model, group.arm)}, ${e(group.model)}: M-Q1 ${e(tallies(value.values))} (n = ${group.n})${sliceReviewHtml(model, group)}</li>\n`;
         })
         .join('') +
       '</ul>\n';
@@ -655,8 +655,7 @@ function reviewHtml(model: SiteModel, scenario: ScenarioRow, name: string): stri
   const review = scenario.review as NonNullable<ScenarioRow['review']>;
   let html = `<h3 id="review-loop-${e(name)}">Review loop</h3>\n`;
   for (const reviewer of review.reviewers) {
-    const kin = reviewer === model.model ? 'the runs’ own model' : 'another model than the runs’';
-    html += `<p class="reviewer">reviewed by ${e(reviewer)}, ${kin} (T16)</p>\n`;
+    html += `<p class="reviewer">${kinText(reviewer, scenario.groups[0]?.model ?? model.model)}</p>\n`;
   }
   for (const metric of review.metrics) {
     html += `<h4>${metric.entry.id}: ${e(metric.entry.label)} (${metric.entry.better} is better)</h4>\n<ul>\n`;
@@ -669,6 +668,42 @@ function reviewHtml(model: SiteModel, scenario: ScenarioRow, name: string): stri
     html += '</ul>\n';
   }
   return html;
+}
+
+/** T16's mark: the reviewer's model against the model of the runs it reviewed, escaped. */
+function kinText(reviewer: string, runsModel: string): string {
+  const kin = reviewer === runsModel ? 'the runs’ own model' : 'another model than the runs’';
+  return `reviewed by ${e(reviewer)}, ${kin} (T16)`;
+}
+
+/**
+ * A slice's review loop (task-150's review), beside its M-Q1: M-V1 to M-V3 as figures, never compared (T14), marked by
+ * the reviewer's model against the slice's (T16), with a link to each of its runs' loop pages.
+ */
+function sliceReviewHtml(model: SiteModel, group: Group): string {
+  const mV = group.metrics.m_v;
+  if (mV === undefined) return '';
+  const mean = (values: readonly number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
+  const clean = mV.rounds_to_clean;
+  const shares = mV.fix_induced.values.map((value) => value.fix_induced / value.findings);
+  const cost = mV.cost.total.cost_eur.values;
+  const figures = [
+    clean.n === 0 ? 'M-V1 no clean loop' : `M-V1 median ${clean.median ?? ''} (n = ${clean.n})`,
+    shares.length === 0
+      ? 'M-V2 undefined'
+      : `M-V2 ${formatFigure('M-V2', mean(shares))} (n = ${shares.length})`,
+    cost.length === 0 ? 'M-V3 no loop ran' : `M-V3 ${formatFigure('M-V3', mean(cost))} (n = ${cost.length})`,
+    ...(mV.not_clean.length === 0 ? [] : [`${mV.not_clean.length} not clean at ${mV.max_rounds}`]),
+    ...mV.no_value.map((entry) => `${entry.runs.length} ${entry.outcome}`),
+  ];
+  const loops = (model.reviewLoops ?? []).filter((loop) => group.runs.includes(loop.run));
+  const reviewers = [...new Set(loops.map((loop) => loop.reviewer.model))].sort();
+  const links = loops.map((loop) => `<a href="${e(runPagePath(loop.run))}">${e(shortRun(loop.run))}</a>`);
+  return (
+    `; review loop: ${e(figures.join(', '))}` +
+    reviewers.map((reviewer) => `; ${kinText(reviewer, group.model)}`).join('') +
+    (links.length === 0 ? '' : `; loops: ${links.join(', ')}`)
+  );
 }
 
 /** What an arm's review metric leaves out, from its group's `m_v`; nothing for an arm with no loop. */
@@ -693,6 +728,19 @@ function reviewDetail(metric: MetricId, group: Group | undefined): string {
       `reviewer ${formatFigure('M-V3', mean(mV.cost.reviewer.cost_eur.values))}, ` +
         `fixer ${formatFigure('M-V3', mean(mV.cost.fixer.cost_eur.values))}`,
     );
+    // M-V3 is the loop's M-K1 and M-K2 (REQ-SCO-16): its tokens, time, turns and interventions, as means.
+    const total = mV.cost.total;
+    const round = (value: number) => String(Math.round(value));
+    parts.push(
+      `tokens ${round(mean(total.tokens_input.values))} in, ${round(mean(total.tokens_output.values))} out, ` +
+        `${round(mean(total.tokens_cache_creation.values))} cache written, ` +
+        `${round(mean(total.tokens_cache_read.values))} cache read; ` +
+        `${round(mean(total.wall_time_ms.values) / 1000)} s, ${round(mean(total.turns.values))} turns, ` +
+        `${round(mean(total.interventions.values))} interventions`,
+    );
+    if (total.bound.length > 0) {
+      parts.push(`a bound, not a report, for ${total.bound.map(shortRun).join(', ')}`);
+    }
   }
   return parts.length === 0 ? '' : `<div class="value detail">${e(parts.join('; '))}</div>`;
 }

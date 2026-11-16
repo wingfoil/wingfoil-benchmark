@@ -1532,6 +1532,9 @@ function controlMetric(entry: MapEntry, harness: Group, control: Group): Control
     ...(controlFigures.withheld === undefined ? [] : [`${control.arm} has ${controlFigures.withheld}`]),
   ];
   if (withheld.length > 0) return [{ metric: entry.id, note: `not compared: ${withheld.join('; ')}` }];
+  // A side with no run's figure (M-V2 when every loop closed in round 1, any M-V of `no loop` runs) is not measured:
+  // a comparison with n = 0 would state an outcome from nothing (task-150's review).
+  if (harnessFigures.values.length === 0 || controlFigures.values.length === 0) return [];
   // M-E1 with a run that did not reach a directive check's step is not comparable, in the site's words.
   const lost = [
     ...(harnessFigures.unreached ?? []).map((entry) => ({ ...entry, arm: harness.arm })),

@@ -1,6 +1,6 @@
 // The review loop's metrics in the aggregate (task-150, REQ-SCO-16): the fix's lines, the outcomes without a value,
 // the loops' records, the reviewer's bound, the comparisons, and nothing changed for an execution without loops.
-import { readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -58,6 +58,22 @@ describe("a fix's lines (fixLines, REQ-SCO-16's M-V2)", () => {
       '--- a/src/old.ts\n+++ b/src/renamed.ts\n@@ -1,3 +1,3 @@\n same\n-was\n+is\n same\n' +
       'diff --git a/logo.png b/logo.png\nBinary files a/logo.png and b/logo.png differ\n';
     expect(fixLines(patch)).toEqual(new Map([['src/renamed.ts', [2]]]));
+  });
+
+  it('reads a path git quoted, its octal bytes as UTF-8 and its escapes', () => {
+    const patch =
+      'diff --git "a/src/caf\\303\\251.ts" "b/src/caf\\303\\251.ts"\n--- "a/src/caf\\303\\251.ts"\n' +
+      '+++ "b/src/caf\\303\\251.ts"\n@@ -1 +1 @@\n-a\n+b\n' +
+      'diff --git "a/a\\tb.ts" "b/a\\tb.ts"\n--- "a/a\\tb.ts"\n+++ "b/a\\tb.ts"\n@@ -3 +3 @@\n-x\n+y\n' +
+      'diff --git a/with space.ts b/with space.ts\n--- a/with space.ts\t\n+++ b/with space.ts\t\n@@ -2 +2 @@\n-p\n+q\n' +
+      '\\ No newline at end of file\n';
+    expect(fixLines(patch)).toEqual(
+      new Map([
+        ['src/café.ts', [1]],
+        ['a\tb.ts', [3]],
+        ['with space.ts', [2]],
+      ]),
+    );
   });
 
   it('counts every hunk of a file, each from its own start', () => {
@@ -133,6 +149,52 @@ describe("the loop's metrics in the aggregate (task-150, REQ-SCO-16)", () => {
     expect(cost?.reviewer.cost_eur.values).toEqual([0.4]);
     expect(cost?.reviewer.bound).toEqual([nameOf('baseline')]);
     expect(cost?.total.bound).toEqual([nameOf('baseline')]);
+  });
+
+  it('keeps a reported cost above its bound, names the session bound all the same, and converts a fixer’s bound', () => {
+    const dir = execution([{ arm: 'baseline', steps: ONE_STEP }], PINS);
+    const run = runDir(dir, 'baseline');
+    writeReviewLoop(run, {
+      outcome: 'failed',
+      reason: "round 1's fixer was killed at its time cap",
+      rounds: [
+        {
+          findings: [loopFinding('blocker', 'src/a.ts', 3)],
+          reviewerEur: 0.3,
+          reviewerBoundEur: 0.2,
+          fix: { patch: patchChanging('src/a.ts', 1, 2), eur: 0.01 },
+        },
+      ],
+    });
+    // The fixer was killed: its bound, 0.5 USD, above the 0.02 USD it reported, converted at 0.5 EUR per USD.
+    const usage = { inputTokens: 1, outputTokens: 1, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 };
+    writeFileSync(
+      join(run, 'review', '1', 'fixer-usage.json'),
+      JSON.stringify({
+        usage: { ...usage, costUsd: 0.02, costEur: 0.01, turns: 1, durationMs: 10 },
+        cost_bound_usd: 0.5,
+        interventions: 1,
+        outcome: 'failed',
+      }),
+    );
+    const cost = groupOf(aggregated(dir), 'baseline').metrics.m_v?.cost;
+    expect(cost?.reviewer.cost_eur.values).toEqual([0.3]);
+    expect(cost?.reviewer.bound).toEqual([nameOf('baseline')]);
+    expect(cost?.fixer.cost_eur.values).toEqual([0.25]);
+    expect(cost?.fixer.cost_usd.values).toEqual([0.5]);
+    expect(cost?.fixer.interventions.values).toEqual([1]);
+    expect(cost?.fixer.bound).toEqual([nameOf('baseline')]);
+  });
+
+  it('counts a round directory loop.json does not list in M-V3, as a session that ran', () => {
+    const dir = execution([{ arm: 'baseline', steps: ONE_STEP }], PINS);
+    const run = runDir(dir, 'baseline');
+    writeReviewLoop(run, cleanAt(1));
+    // A second round whose reviewer ran and was refused before it could be listed: its usage still counts.
+    writeReviewLoop(join(dir, 'scratch'), { outcome: 'failed', rounds: [{ findings: null, reviewerEur: 0.07 }] });
+    mkdirSync(join(run, 'review', '2'), { recursive: true });
+    copyFileSync(join(dir, 'scratch', 'review', '1', 'reviewer-usage.json'), join(run, 'review', '2', 'reviewer-usage.json'));
+    expect(groupOf(aggregated(dir), 'baseline').metrics.m_v?.cost.reviewer.cost_eur.values).toEqual([0.08]);
   });
 
   it('names the runs of a group with loops that recorded none', () => {
@@ -230,7 +292,21 @@ describe("the loop's metrics compared (task-150, REQ-SCO-16, REQ-SCO-14)", () =>
     const metrics = aggregate.controls?.[0]?.metrics ?? [];
     const v1 = metrics.find((metric) => metric.metric === 'M-V1');
     expect(v1).toMatchObject({ outcome: 'better', delta: -1.5, certainty: 'preliminary' });
-    expect(metrics.map((metric) => metric.metric)).toEqual(expect.arrayContaining(['M-V1', 'M-V2', 'M-V3']));
+    expect(metrics.map((metric) => metric.metric)).toEqual(expect.arrayContaining(['M-V1', 'M-V3']));
+    // The harness's loops all closed in round 1: it has no M-V2, so no comparison of it with n = 0 (task-150's
+    // review), and nothing in the comparisons is null.
+    expect(metrics.map((metric) => metric.metric)).not.toContain('M-V2');
+    expect(JSON.stringify(aggregate.controls)).not.toContain('null');
+  });
+
+  it('compares nothing with a docs control whose runs ran no loop', () => {
+    const aggregate = compared({
+      wingfoil: [cleanAt(2)],
+      'wingfoil-docs': [{ outcome: 'no loop', reason: 'failed' }],
+    });
+    const ids = (aggregate.controls?.[0]?.metrics ?? []).map((metric) => metric.metric);
+    expect(ids.filter((id) => id.startsWith('M-V'))).toEqual([]);
+    expect(JSON.stringify(aggregate.controls)).not.toContain('null');
   });
 
   it("says why M-V1 is not compared with a docs control when a side's loop has no value", () => {

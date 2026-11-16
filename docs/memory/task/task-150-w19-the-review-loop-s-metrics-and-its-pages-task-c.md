@@ -143,3 +143,26 @@ feature file with its test red first (`test/acceptance/scoring.test.ts`, `test/a
   4. **T16's mark** stands in each scenario's review block, beside the reviewer's model: the block compares the arms
      of the campaign's model; the slices and the parity page, which compare across models, show no M-V.
   5. **The method page's spending** says what the loops cost, apart from the runs' cost.
+
+## Review
+
+- **Round 1** (a fresh read-only agent in a clone under `mktemp`, on `4f039538`, 2026-11-16): one blocker, three
+  should-fix, four nits. It re-aggregated the fourteen committed executions with main's code and the branch's:
+  byte-identical.
+  - **Blocker, fixed:** a docs-control comparison of an M-V with no figure on a side (M-V2 when every loop closed in
+    round 1; any M-V of `no loop` runs) stored a comparison with n = 0 and `null` bounds, which the site refuses.
+    `controlMetric` now compares nothing when a side has no figure; tests for both cases, no `null` in the controls.
+  - **Should-fix, fixed:** a path git quotes (`"b/caf\303\251.ts"`) is decoded, octal bytes as UTF-8 and C escapes;
+    a unit case with a non-ASCII path, a tab and a space.
+  - **Should-fix, fixed:** the method page reads a prompt changed since its pin from the newest commit that holds the
+    pinned SHA-256 (`recordedFile`, as the configuring prompt), and refuses only when none does; a test with a later
+    prompt in the working tree.
+  - **Should-fix, for the gate:** deviations 1 and 4 remove parts of criterion 7. Deviation 4 is now closed: a slice
+    group with loops shows M-V1 to M-V3 beside its M-Q1, never compared, marked by the reviewer's model against the
+    slice's (T16), with links to its runs' pages (whose back link is the landing page); a test with a slice. Deviation
+    1 stays, for the approver: nothing marks an execution as running hold-out content.
+  - **Nits:** the result pages show M-V3's tokens, time, turns and interventions and its bound runs (fixed); the method
+    page says "the records it installed" (fixed); T16's mark compares with the groups' model (fixed); untested paths
+    now tested (a reported cost above its bound, a fixer's bound converted, a round directory `loop.json` does not
+    list, the method page's spending). Kept: `loop.json`'s prompt digests are not compared with the campaign's pin,
+    which task-149's runner already checks before it runs a loop.

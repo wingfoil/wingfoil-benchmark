@@ -196,7 +196,17 @@ const groupShape = z.object({
         cost: z.object({
           reviewer: z.object({ cost_eur: number }),
           fixer: z.object({ cost_eur: number }),
-          total: z.object({ cost_eur: number }),
+          total: z.object({
+            cost_eur: number,
+            tokens_input: number,
+            tokens_output: number,
+            tokens_cache_creation: number,
+            tokens_cache_read: number,
+            wall_time_ms: number,
+            turns: number,
+            interventions: number,
+            bound: z.array(z.string()),
+          }),
         }),
       })
       .optional(),

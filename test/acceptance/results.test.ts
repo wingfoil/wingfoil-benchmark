@@ -2,10 +2,12 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   appendFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -28,6 +30,7 @@ import {
   benchPublish,
   benchSite,
   completeExecution,
+  gitIn,
   probeSaying,
   publishableSite,
   sha256Of,
@@ -867,7 +870,9 @@ describe('results.feature, the review loop (task-150, F4.9)', { timeout: 120_000
    * wingfoil run `not clean at 5`, both reviewed by `reviewer`; re-aggregated, then built. `prompt` replaces the review
    * prompt on disk after its SHA-256 was pinned.
    */
-  async function loopSite(options: { reviewer?: string; prompt?: string } = {}) {
+  async function loopSite(
+    options: { reviewer?: string; prompt?: string; committed?: boolean; slice?: boolean } = {},
+  ) {
     const { root, executionDir } = await siteExecution();
     mkdirSync(join(root, 'review'), { recursive: true });
     writeFileSync(join(root, 'review', 'prompt.md'), REVIEW);
@@ -885,6 +890,14 @@ describe('results.feature, the review loop (task-150, F4.9)', { timeout: 120_000
       caps: { session_time_s: 600, session_tokens: 1000000, session_cost_eur: 2, fixer_interventions: 5 },
     };
     appendFileSync(join(executionDir, 'campaign.yaml'), stringify({ review_loop: pins }));
+    if (options.committed === true) {
+      // The repository's history holds the pinned prompts before the working tree changes them.
+      gitIn(root, 'init', '--quiet');
+      gitIn(root, 'config', 'user.name', 'Fixture Maintainer');
+      gitIn(root, 'config', 'user.email', 'maintainer@example.test');
+      gitIn(root, 'add', 'review');
+      gitIn(root, 'commit', '--quiet', '-m', 'the review prompts');
+    }
     if (options.prompt !== undefined) writeFileSync(join(root, 'review', 'prompt.md'), options.prompt);
     const run = (arm: string) => join(executionDir, 'runs', 'TC@1.0', arm, 'fake-model', 'r1');
     writeReviewLoop(run('baseline'), {
@@ -902,6 +915,16 @@ describe('results.feature, the review loop (task-150, F4.9)', { timeout: 120_000
       ],
     });
     writeReviewLoop(run('wingfoil'), { ...notCleanAt5(), model: pins.model });
+    if (options.slice === true) {
+      // TC's baseline run again, as a run of another model: a slice (T14), with a loop that closed in round 1.
+      const slice = join(executionDir, 'runs', 'TC@1.0', 'baseline', 'other-model', 'r1');
+      cpSync(run('baseline'), slice, { recursive: true });
+      rmSync(join(slice, 'review'), { recursive: true });
+      const file = join(slice, 'run.json');
+      const record = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+      writeFileSync(file, JSON.stringify({ ...record, model: 'other-model' }));
+      writeReviewLoop(slice, { outcome: 'clean', model: pins.model, rounds: [{ findings: [] }] });
+    }
     const aggregate = aggregateExecution(executionDir);
     if (!aggregate.ok) throw new Error(JSON.stringify(aggregate.issues));
     writeAggregate(executionDir, aggregate.value);
@@ -937,6 +960,8 @@ describe('results.feature, the review loop (task-150, F4.9)', { timeout: 120_000
     expect(section).toContain('<th scope="row">Round cap</th><td>5 rounds</td>');
     expect(section).toContain('every path the setup added');
     expect(section).toContain('the run’s history');
+    // ... and what the loops cost, apart from the runs: 0.04 EUR for the baseline's, 0.13 EUR for wingfoil's
+    expect(section).toContain('2 review loops cost 0.1700 EUR in all, apart from the runs’ cost.');
   });
 
   it("@F4.9 A run's page shows its rounds", async () => {
@@ -994,5 +1019,27 @@ describe('results.feature, the review loop (task-150, F4.9)', { timeout: 120_000
     expect(changed.build.code).toBe(1);
     expect(changed.build.stderr).toContain('review/prompt.md');
     expect(changed.build.stderr).toContain('differs from the SHA-256 the campaign pinned');
+  });
+
+  it('quotes a prompt the working tree has since changed from the commit that holds its pin', async () => {
+    const later = await loopSite({ committed: true, prompt: '# Review\n\nA later prompt.\n' });
+    expect(later.build.code, later.build.stderr).toBe(0);
+    const method = later.files['abcdef012345/1/method.html'] ?? '';
+    expect(method).toContain('Read the change &amp; report &lt;findings&gt; as JSON.');
+    expect(method).not.toContain('A later prompt.');
+  });
+
+  it("shows a slice's loop apart, marked against the slice's model, with its run's page", async () => {
+    const { build, files } = await loopSite({ slice: true });
+    expect(build.code, build.stderr).toBe(0);
+    const category = files['abcdef012345/1/category-c.html'] ?? '';
+    const slices = category.slice(category.indexOf('Other models (slices)'));
+    expect(slices).toContain('review loop: M-V1 median 1 (n = 1), M-V2 undefined, M-V3 0.0100 EUR (n = 1)');
+    expect(slices).toContain('reviewed by fake-model, another model than the runs’ (T16)');
+    expect(slices).toContain('<a href="runs/TC@1.0/baseline/other-model/r1/index.html">r1</a>');
+    // The slice's run is in no category's comparisons: its page leads back to the landing page.
+    const page = files['abcdef012345/1/runs/TC@1.0/baseline/other-model/r1/index.html'] ?? '';
+    expect(page).toContain('href="../../../../../index.html"');
+    expect(page).toContain('<p id="outcome">Outcome: <strong>clean</strong> at round 1.</p>');
   });
 });

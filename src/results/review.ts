@@ -245,15 +245,35 @@ function roundNumbers(reviewDir: string): number[] {
 function headerPath(text: string): string | null {
   const raw = text.replace(/\t.*$/, '');
   if (raw === '/dev/null') return null;
-  let path = raw;
-  if (raw.startsWith('"') && raw.endsWith('"')) {
-    try {
-      path = JSON.parse(raw) as string;
-    } catch {
-      path = raw.slice(1, -1);
-    }
-  }
+  const path = raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"') ? unquoteC(raw.slice(1, -1)) : raw;
   return path.startsWith('b/') ? path.slice(2) : path;
+}
+
+const C_ESCAPES: Readonly<Record<string, number>> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 };
+
+/**
+ * A path git quoted C-style (`core.quotePath`, task-150's review): its escapes and octal bytes read back, the bytes
+ * decoded as UTF-8, so that `"b/caf\303\251.ts"` is `b/café.ts`.
+ */
+function unquoteC(text: string): string {
+  const bytes: number[] = [];
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i] as string;
+    if (char !== '\\') {
+      bytes.push(...Buffer.from(char, 'utf8'));
+      continue;
+    }
+    const octal = /^[0-7]{3}/.exec(text.slice(i + 1));
+    if (octal !== null) {
+      bytes.push(parseInt(octal[0], 8));
+      i += 3;
+      continue;
+    }
+    const next = text[i + 1] ?? '';
+    bytes.push(C_ESCAPES[next] ?? next.charCodeAt(0));
+    i += 1;
+  }
+  return Buffer.from(bytes).toString('utf8');
 }
 
 /**
