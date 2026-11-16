@@ -23,8 +23,16 @@ export {
 export type { ExecutionRecord, StopReason } from './execution.js';
 export { recordedHashes, runsOfVersion, versionChange } from './recorded.js';
 export type { RecordedHash } from './recorded.js';
-export { DRY_RUNS, findDryRun, findDryRuns, harnessKey, latestDryRun } from './dry-runs.js';
-export type { DryRunKey, DryRunRecord, DryRunsLookup, HarnessPin } from './dry-runs.js';
+export { DRY_RUNS, findDryRun, findDryRuns, findLoopDryRuns, harnessKey, latestDryRun } from './dry-runs.js';
+export type {
+  DryRunKey,
+  DryRunRecord,
+  DryRunsLookup,
+  HarnessPin,
+  LoopDryRun,
+  LoopDryRunsLookup,
+  LoopPins,
+} from './dry-runs.js';
 export { JUDGEMENTS_FILE, readJudgements } from './judgements.js';
 export type { Judgement } from './judgements.js';
 export { executionRate, executionRuns, readStepCommits, readStepUsage, readStoredRun } from './runs.js';

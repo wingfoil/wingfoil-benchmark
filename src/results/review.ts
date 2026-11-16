@@ -25,6 +25,8 @@ const loopSchema = z.object({
     model: z.string(),
     effort: z.string(),
   }),
+  prompt_sha256: z.string(),
+  fixer_prompt_sha256: z.string(),
   max_rounds: z.number().int(),
   outcome: z.string(),
   reason: z.string().optional(),
@@ -91,6 +93,9 @@ export interface StoredRound {
 /** A run's stored loop, and what each of its sessions cost. */
 export interface StoredLoop {
   readonly reviewer: { readonly agent: string; readonly version: string; readonly model: string; readonly effort: string };
+  /** Both prompts' SHA-256, as the loop ran them: pins a dry run's loop is matched by (task-151). */
+  readonly promptSha256: string;
+  readonly fixerPromptSha256: string;
   readonly maxRounds: number;
   readonly outcome: string;
   readonly reason?: string;
@@ -197,9 +202,11 @@ export function readLoop(runDir: string, rate: () => Result<number>): Result<Sto
     if (existsSync(patch)) fixLinesOf.set(n, fixLines(readFileSync(patch, 'utf8')));
   }
   if (issues.length > 0) return fail(issues);
-  const { reviewer, max_rounds, outcome, reason } = loop.value;
+  const { reviewer, max_rounds, outcome, reason, prompt_sha256, fixer_prompt_sha256 } = loop.value;
   return ok({
     reviewer: { agent: reviewer.agent.name, version: reviewer.agent.version, model: reviewer.model, effort: reviewer.effort },
+    promptSha256: prompt_sha256,
+    fixerPromptSha256: fixer_prompt_sha256,
     maxRounds: max_rounds,
     outcome,
     ...(reason === undefined ? {} : { reason }),
