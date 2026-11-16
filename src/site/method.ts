@@ -620,12 +620,12 @@ async function reviewLoopSection(
     const text = await recordedFile(root, pin.file, pin.sha256, history);
     if (text === undefined) {
       const path = join(root, pin.file);
-      const present = existsSync(path) ? `(sha256:${sha256(readFileSync(path))}) ` : '';
       issues.push({
         path: pin.file,
-        message:
-          `${present}differs from the SHA-256 the campaign pinned (sha256:${pin.sha256}), ` +
-          'and no commit of the repository holds it',
+        message: existsSync(path)
+          ? `(sha256:${sha256(readFileSync(path))}) differs from the SHA-256 the campaign pinned ` +
+            `(sha256:${pin.sha256}), and no commit of the repository holds it`
+          : `not found in the working tree, and no commit of the repository holds sha256:${pin.sha256}`,
       });
       continue;
     }

@@ -66,12 +66,14 @@ describe("a fix's lines (fixLines, REQ-SCO-16's M-V2)", () => {
       '+++ "b/src/caf\\303\\251.ts"\n@@ -1 +1 @@\n-a\n+b\n' +
       'diff --git "a/a\\tb.ts" "b/a\\tb.ts"\n--- "a/a\\tb.ts"\n+++ "b/a\\tb.ts"\n@@ -3 +3 @@\n-x\n+y\n' +
       'diff --git a/with space.ts b/with space.ts\n--- a/with space.ts\t\n+++ b/with space.ts\t\n@@ -2 +2 @@\n-p\n+q\n' +
-      '\\ No newline at end of file\n';
+      '\\ No newline at end of file\n' +
+      'diff --git "a/x\\t😀.ts" "b/x\\t😀.ts"\n--- "a/x\\t😀.ts"\n+++ "b/x\\t😀.ts"\n@@ -5 +5 @@\n-m\n+n\n';
     expect(fixLines(patch)).toEqual(
       new Map([
         ['src/café.ts', [1]],
         ['a\tb.ts', [3]],
         ['with space.ts', [2]],
+        ['x\t😀.ts', [5]],
       ]),
     );
   });

@@ -997,6 +997,10 @@ describe('results.feature, the review loop (task-150, F4.9)', { timeout: 120_000
     expect(block).toContain('M-V1: rounds to clean');
     expect(block).toContain('M-V2: fix-induced findings');
     expect(block).toContain('M-V3: cost of the review loop');
+    // M-V3 is the loop's M-K1 and M-K2: the baseline's three sessions, two reviews and a fix
+    expect(block).toContain(
+      'tokens 300 in, 60 out, 0 cache written, 30 cache read; 4 s, 8 turns, 0 interventions',
+    );
     expect(block).toContain('reviewed by fake-model, the runs’ own model (T16)');
     // A side with a loop not clean is not compared on M-V1, and says why.
     expect(block).toContain('not compared: wingfoil has 1 loop not clean at 5');

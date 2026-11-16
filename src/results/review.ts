@@ -257,20 +257,24 @@ const C_ESCAPES: Readonly<Record<string, number>> = { a: 7, b: 8, t: 9, n: 10, v
  */
 function unquoteC(text: string): string {
   const bytes: number[] = [];
-  for (let i = 0; i < text.length; i += 1) {
-    const char = text[i] as string;
+  // By code point, so that a character outside the BMP that git left unescaped stays whole.
+  const chars = [...text];
+  for (let i = 0; i < chars.length; i += 1) {
+    const char = chars[i] as string;
     if (char !== '\\') {
       bytes.push(...Buffer.from(char, 'utf8'));
       continue;
     }
-    const octal = /^[0-7]{3}/.exec(text.slice(i + 1));
+    const octal = /^[0-7]{3}/.exec(chars.slice(i + 1, i + 4).join(''));
     if (octal !== null) {
-      bytes.push(parseInt(octal[0], 8));
+      bytes.push(parseInt(octal[0], 8) & 0xff);
       i += 3;
       continue;
     }
-    const next = text[i + 1] ?? '';
-    bytes.push(C_ESCAPES[next] ?? next.charCodeAt(0));
+    const next = chars[i + 1];
+    // A lone trailing backslash, which git never writes, is kept as one.
+    if (next === undefined) bytes.push(92);
+    else bytes.push(...(C_ESCAPES[next] === undefined ? Buffer.from(next, 'utf8') : [C_ESCAPES[next]]));
     i += 1;
   }
   return Buffer.from(bytes).toString('utf8');

@@ -166,3 +166,15 @@ feature file with its test red first (`test/acceptance/scoring.test.ts`, `test/a
     now tested (a reported cost above its bound, a fixer's bound converted, a round directory `loop.json` does not
     list, the method page's spending). Kept: `loop.json`'s prompt digests are not compared with the campaign's pin,
     which task-149's runner already checks before it runs a loop.
+- **Round 2** (a second fresh agent, on round 1's fixes, `4f039538..89e9e918`): one blocker, one should-fix, three
+  nits.
+  - **Blocker, fixed:** round 1's empty-side guard ran before M-E1's unreached check, so a docs-control pair whose
+    side reached no directive step lost its "not comparable" note (an existing test of `aggregate.test.ts` failed;
+    the pre-review's tests do not select it). The guard now runs after the note, just before the comparison. Checked
+    with `test/unit/results` and `test/unit/site` whole (431 tests green), and by aggregating the fourteen committed
+    executions with main's `src` and the branch's: identical.
+  - **Should-fix, fixed:** M-V3's detail read zeros for an arm whose runs all recorded `no loop`; it says "no loop
+    ran". The tokens, time and turns line is tested.
+  - **Nits:** `unquoteC` walks by code point and keeps a lone trailing backslash (fixed, an unescaped emoji tested);
+    the method page says "not found" for a prompt missing from the working tree (fixed); the round-1 tests that
+    cover existing behaviour rather than a fix are kept as coverage.

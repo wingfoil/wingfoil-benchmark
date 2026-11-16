@@ -722,6 +722,8 @@ function reviewDetail(metric: MetricId, group: Group | undefined): string {
       parts.push(`undefined for ${runs(mV.fix_induced_undefined.length)}, with no finding after round 1`);
     }
   } else if (metric === 'M-V3') {
+    // An arm whose runs all recorded `no loop` ran no session: no figure, rather than zeros (task-150's review).
+    if (mV.cost.total.cost_eur.values.length === 0) return '<div class="value detail">no loop ran</div>';
     const mean = (values: readonly number[]) =>
       values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
     parts.push(
