@@ -137,3 +137,7 @@ is not built here.
   `DryRunRecord.agent` is set only when the record names both; REQ-CLI-05 gains its 1.59 note; `npm ci` re-run and
   recorded. Nits kept: the refusal of criterion 3 is checked by hand, as task-151's dry-run bounds were; the red span
   of the acceptance test above stays in history.
+- **Review round 2** (the same agent, at `22ce5e8a`): nits only. Each round-1 fix confirmed, no reader of
+  `DryRunRecord.agent` broken, the 13 estimates unchanged again. Kept: a record holding a version without an agent's
+  name is matched by its version alone (no stored dry run lacks the name; the spec does not cover it).
+- **Pre-review green at `22ce5e8a`**; prettier on every file, tsc and eslint clean; 939 targeted tests green.
