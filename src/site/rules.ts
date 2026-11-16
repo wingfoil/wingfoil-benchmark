@@ -7,7 +7,15 @@ import type { Comparison, MetricId, Reported } from '../results/index.js';
  * category map and the comparison rules themselves are `results`' (task-068), re-exported here.
  */
 
-export { CATEGORY_MAP, certaintyOf, compare, readMetric, reported, summarize } from '../results/index.js';
+export {
+  CATEGORY_MAP,
+  certaintyOf,
+  compare,
+  readMetric,
+  reported,
+  REVIEW_METRICS,
+  summarize,
+} from '../results/index.js';
 export type {
   Better,
   Certainty,
@@ -63,12 +71,15 @@ export function notCoveredSentence(categories: readonly string[]): string {
   return `${listed(categories)} ${categories.length === 1 ? 'is' : 'are'} not covered in this campaign.`;
 }
 
-const SHARES: readonly MetricId[] = ['M-Q1', 'M-F1'];
+const SHARES: readonly MetricId[] = ['M-Q1', 'M-F1', 'M-V2'];
+
+/** The metrics in EUR: a run's cost, and its review loop's (task-150). */
+const EUROS: readonly MetricId[] = ['M-K1', 'M-V3'];
 
 /** A figure of `id`, in its unit: a share to one decimal place, EUR to four, a count as it is. */
 export function formatFigure(id: MetricId, value: number): string {
   if (SHARES.includes(id)) return `${(value * 100).toFixed(1)}%`;
-  if (id === 'M-K1') return `${value.toFixed(4)} EUR`;
+  if (EUROS.includes(id)) return `${value.toFixed(4)} EUR`;
   return String(Math.round(value * 100) / 100);
 }
 
@@ -80,7 +91,7 @@ export function formatDelta(id: MetricId, delta: number): string {
   const sign = delta > 0 ? '+' : delta < 0 ? '−' : '±';
   const size = Math.abs(delta);
   if (SHARES.includes(id)) return `${sign}${fixed(size * 100, 1)} pp`;
-  if (id === 'M-K1') return `${sign}${fixed(size, 4)} EUR`;
+  if (EUROS.includes(id)) return `${sign}${fixed(size, 4)} EUR`;
   // A count to two places, without trailing zeros; one that would show as zero keeps its digits.
   const shown = Number(size.toFixed(2));
   return `${sign}${shown === 0 && size !== 0 ? fixed(size, 2) : String(shown)}`;

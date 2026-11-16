@@ -2,7 +2,7 @@
 id: task-150-w19-the-review-loop-s-metrics-and-its-pages-task-c
 type: task
 title: "W19: the review loop's metrics and its pages (task C)"
-status: in-progress
+status: approved
 release: v0.3
 wave: W19
 features: [F4.9]
@@ -111,3 +111,81 @@ feature file with its test red first (`test/acceptance/scoring.test.ts`, `test/a
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
+
+- 2026-11-16: backlog → in-progress on main; worktree `../WingFoil2-Benchmark-wt/t150`.
+- **Red first** (`3b9ce2da`): the four `scoring.feature` and two `results.feature` scenarios (F4.9 added to both
+  files' traces; no version bump, as the scenarios earlier tasks added) with their tests;
+  `test/unit/results/review.test.ts` (the fix's lines, the outcomes without a value, the loops' records, the
+  reviewer's bound, a loop record that does not parse, the aggregate unchanged without loops, the comparisons);
+  `test/support/loop-records.ts` writes a loop as task-149's runner records it. All red for the absent code. Two
+  expectations of mine were wrong and corrected after: a field read as `cost.total.runs` (the runs are each figure's),
+  and M-V2 over two runs of which one has no finding after round 1.
+- **The work** (`c9492fa4`):
+  - `src/results/review.ts` (new): `readLoop` (zod over `loop.json`, each listed round's `findings.json`, and every
+    round directory's `reviewer-usage.json`, `fixer-usage.json` and `fix.patch`, so that a session that ran and ended
+    the loop still counts in M-V3), `fixLines`, `runReviewMetrics`.
+  - `src/results/aggregate.ts`: `Group.metrics.m_v` and `review_loops`, both appended last and absent without a loop;
+    the docs-control comparisons read `REVIEW_METRICS` after the category map's metrics.
+  - `src/results/compare.ts`: `M-V1`–`M-V3` in `MetricId`, `REVIEW_METRICS`, `readMetric`'s three cases, and
+    `Figures.withheld` for M-V1.
+  - `src/site/`: `model.ts` reads `m_v` and `review_loops` and builds each scenario's `review` block (`metricRow` gains
+    the withheld note); `render.ts` the block, the runs' links and `runPage`; `build.ts` writes the run pages;
+    `method.ts` the loop's section; `rules.ts` formats M-V2 as a share and M-V3 in EUR.
+- **Deviations, for the gate:**
+  1. **No hold-out branch.** REQ-RES-02 publishes a loop's findings "only from campaigns that run no hold-out content
+     (REQ-CLI-10)", and REQ-CLI-10 says `campaign run` never reads the hold-out: no execution runs hold-out content, so
+     nothing marks one, and criterion 7's counts-only page and decision 1's counts have no trigger. They are not coded;
+     a later private scenario's loop is the decision of its own that REQ-RES-02 names.
+  2. **M-V2 reads the `+` lines** of the previous fix's hunks, the lines it added or changed, not the hunks' context
+     lines, which the fix did not touch.
+  3. **`no loop` does not withhold M-V1**: no loop ran. It is still named among the outcomes without a value. M-V3
+     reads the loops that ran, `no loop` left out.
+  4. **T16's mark** stands in each scenario's review block, beside the reviewer's model: the block compares the arms
+     of the campaign's model; the slices and the parity page, which compare across models, show no M-V.
+  5. **The method page's spending** says what the loops cost, apart from the runs' cost.
+
+## Review
+
+- **Round 1** (a fresh read-only agent in a clone under `mktemp`, on `4f039538`, 2026-11-16): one blocker, three
+  should-fix, four nits. It re-aggregated the fourteen committed executions with main's code and the branch's:
+  byte-identical.
+  - **Blocker, fixed:** a docs-control comparison of an M-V with no figure on a side (M-V2 when every loop closed in
+    round 1; any M-V of `no loop` runs) stored a comparison with n = 0 and `null` bounds, which the site refuses.
+    `controlMetric` now compares nothing when a side has no figure; tests for both cases, no `null` in the controls.
+  - **Should-fix, fixed:** a path git quotes (`"b/caf\303\251.ts"`) is decoded, octal bytes as UTF-8 and C escapes;
+    a unit case with a non-ASCII path, a tab and a space.
+  - **Should-fix, fixed:** the method page reads a prompt changed since its pin from the newest commit that holds the
+    pinned SHA-256 (`recordedFile`, as the configuring prompt), and refuses only when none does; a test with a later
+    prompt in the working tree.
+  - **Should-fix, for the gate:** deviations 1 and 4 remove parts of criterion 7. Deviation 4 is now closed: a slice
+    group with loops shows M-V1 to M-V3 beside its M-Q1, never compared, marked by the reviewer's model against the
+    slice's (T16), with links to its runs' pages (whose back link is the landing page); a test with a slice. Deviation
+    1 stays, for the approver: nothing marks an execution as running hold-out content.
+  - **Nits:** the result pages show M-V3's tokens, time, turns and interventions and its bound runs (fixed); the method
+    page says "the records it installed" (fixed); T16's mark compares with the groups' model (fixed); untested paths
+    now tested (a reported cost above its bound, a fixer's bound converted, a round directory `loop.json` does not
+    list, the method page's spending). Kept: `loop.json`'s prompt digests are not compared with the campaign's pin,
+    which task-149's runner already checks before it runs a loop.
+- **Round 2** (a second fresh agent, on round 1's fixes, `4f039538..89e9e918`): one blocker, one should-fix, three
+  nits.
+  - **Blocker, fixed:** round 1's empty-side guard ran before M-E1's unreached check, so a docs-control pair whose
+    side reached no directive step lost its "not comparable" note (an existing test of `aggregate.test.ts` failed;
+    the pre-review's tests do not select it). The guard now runs after the note, just before the comparison. Checked
+    with `test/unit/results` and `test/unit/site` whole (431 tests green), and by aggregating the fourteen committed
+    executions with main's `src` and the branch's: identical.
+  - **Should-fix, fixed:** M-V3's detail read zeros for an arm whose runs all recorded `no loop`; it says "no loop
+    ran". The tokens, time and turns line is tested.
+  - **Nits:** `unquoteC` walks by code point and keeps a lone trailing backslash (fixed, an unescaped emoji tested);
+    the method page says "not found" for a prompt missing from the working tree (fixed); the round-1 tests that
+    cover existing behaviour rather than a fix are kept as coverage.
+- **Round 3** (a third fresh agent, on round 2's fixes, `89e9e918..9bad1903`): no blocker, one should-fix, two nits,
+  all on tests; the four fixes correct, `aggregate.test.ts` whole green.
+  - **Should-fix, fixed:** "no loop ran" had no test: a site whose wingfoil run recorded `no loop` now shows it, and
+    no zero figures.
+  - **Nits, fixed:** a prompt missing from the working tree is refused as "not found", tested; a lone trailing
+    backslash in a quoted path, tested.
+- **Round 4** (a fourth fresh agent, on round 3's tests, `a4253bc2`): no blocker, no should-fix; each test fails with
+  its fix removed (checked in its clone). Three nits kept: one test holds two behaviours, a negative assertion that
+  rests on the positive one before it, and a made-up patch header for a backslash git never writes.
+
+Pre-review green at `779629c0`.

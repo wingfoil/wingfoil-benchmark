@@ -56,8 +56,11 @@ export type {
   MRAcross,
   MRAggregate,
   MRRun,
+  LoopCostAggregate,
   MRSide,
+  MVAggregate,
   RecordedPin,
+  ReviewLoopEntry,
   Similarity,
   SnapshotAggregate,
   StepAggregate,
@@ -70,7 +73,17 @@ export { findingNote, METRICS } from './finding.js';
 export { packTranscripts, RELEASES, TRANSCRIPTS_ASSET } from './transcripts.js';
 export type { KnownSecret, TranscriptPack } from './transcripts.js';
 export type { FindingNote, FindingRequest, FindingShape, Metric } from './finding.js';
-export { CATEGORY_MAP, certaintyOf, compare, readMetric, reported, summarize } from './compare.js';
+export {
+  CATEGORY_MAP,
+  certaintyOf,
+  compare,
+  readMetric,
+  reported,
+  REVIEW_METRICS,
+  summarize,
+} from './compare.js';
+export { fixLines, readLoop, REVIEW_DIR, runReviewMetrics } from './review.js';
+export type { LoopFinding, RunReviewMetrics, SessionFigures, StoredLoop, StoredRound } from './review.js';
 export type {
   Better,
   Certainty,

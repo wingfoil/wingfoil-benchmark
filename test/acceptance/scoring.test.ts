@@ -7,10 +7,18 @@ import { main } from '../../src/cli/index.js';
 import { gitCli, systemProcess } from '../../src/core/index.js';
 import type { ContentCheck } from '../../src/core/index.js';
 import { loadScenario } from '../../src/scenario/index.js';
-import { breakEvenEntry, mK3Of, mRAcross } from '../../src/results/index.js';
-import type { BreakEvenRun } from '../../src/results/index.js';
+import { aggregateExecution, breakEvenEntry, mK3Of, mRAcross } from '../../src/results/index.js';
+import type { BreakEvenRun, Group } from '../../src/results/index.js';
 import { filesUnder, interfaceInContainer, measuredFiles, scoreChecks } from '../../src/scoring/index.js';
+import { CAMPAIGN, execution as aggregateFixture } from '../support/aggregate-fixture.js';
 import { localScoringDocker } from '../support/local-scoring.js';
+import {
+  cleanAt,
+  loopFinding,
+  notCleanAt5,
+  patchChanging,
+  writeReviewLoop,
+} from '../support/loop-records.js';
 import { repoPath } from '../support/paths.js';
 import { referenceFiles, referenceRun } from '../support/reference.js';
 import { CANCEL, EXECUTION, scoringDocker, storedRun } from '../support/score-fixture.js';
@@ -896,5 +904,136 @@ describe("the scoring's path helpers (task-139, bug-034)", () => {
     symlinkSync(join(outside, 'secret.ts'), join(snapshot, 'src', 'link.ts'));
     symlinkSync(outside, join(snapshot, 'linked'));
     expect(filesUnder(snapshot).filter((path) => /link/.test(path))).toEqual([]);
+  });
+});
+
+/** The pins of a loop's execution: the campaign's model and the rate a fixer's bound converts at. */
+const LOOP_PINS = 'models:\n  default: model-a\ncurrency:\n  usd_to_eur: 0.5\n';
+
+/** A run of the aggregate fixture's execution `dir`, by arm and repetition, and its name in the aggregate. */
+function loopRun(dir: string, arm: string, r: number): { dir: string; name: string } {
+  return {
+    dir: join(dir, 'runs', 'T3@1.0', arm, 'model-a', `r${r}`),
+    name: `${CAMPAIGN}/1/runs/T3@1.0/${arm}/model-a/r${r}`,
+  };
+}
+
+/** The group of `arm` in the aggregate of `dir`, which must aggregate. */
+function loopGroup(dir: string, arm = 'baseline'): Group {
+  const aggregate = aggregateExecution(dir);
+  if (!aggregate.ok) throw new Error(JSON.stringify(aggregate.issues));
+  const group = aggregate.value.groups.find((candidate) => candidate.arm === arm);
+  if (group === undefined) throw new Error(`no group of ${arm}`);
+  return group;
+}
+
+const ONE_STEP = [[{ id: 'orders', passed: 1, total: 1 }]];
+
+describe('scoring.feature, the review loop (task-150, F4.9)', () => {
+  it('@F4.9 Rounds to clean are read from the loop', () => {
+    // Given runs whose loops closed as "clean" at rounds 1, 2 and 3, and one "not clean at 5"
+    const dir = aggregateFixture(
+      [1, 2, 3, 4].map((r) => ({ arm: 'baseline', r, steps: ONE_STEP })),
+      LOOP_PINS,
+    );
+    [cleanAt(1), cleanAt(2), cleanAt(3), notCleanAt5()].forEach((spec, index) =>
+      writeReviewLoop(loopRun(dir, 'baseline', index + 1).dir, spec),
+    );
+
+    // When the execution is aggregated
+    const mV = loopGroup(dir).metrics.m_v;
+
+    // Then M-V1 summarizes 1, 2 and 3, and names the loop not clean at 5 apart
+    const names = [1, 2, 3].map((r) => loopRun(dir, 'baseline', r).name);
+    expect(mV?.rounds_to_clean).toEqual({ n: 3, runs: names, values: [1, 2, 3], min: 1, max: 3, median: 2 });
+    expect(mV?.not_clean).toEqual([loopRun(dir, 'baseline', 4).name]);
+    expect(mV?.no_value).toEqual([]);
+  });
+
+  it('@F4.9 A finding on a line the previous fix changed is fix-induced', () => {
+    // Given round 1's fix changed lines 10 to 14 of "src/cart.ts"
+    // And round 2 reports findings on "src/cart.ts" line 12, "src/cart.ts" line 40 and one with no line
+    const dir = aggregateFixture([{ arm: 'baseline', steps: ONE_STEP }], LOOP_PINS);
+    const run = loopRun(dir, 'baseline', 1);
+    writeReviewLoop(run.dir, {
+      outcome: 'clean',
+      rounds: [
+        {
+          findings: [loopFinding('should-fix', 'src/cart.ts', 30)],
+          fix: { patch: patchChanging('src/cart.ts', 10, 14) },
+        },
+        {
+          findings: [
+            loopFinding('nit', 'src/cart.ts', 12),
+            loopFinding('nit', 'src/cart.ts', 40),
+            loopFinding('nit', 'README.md', null),
+          ],
+        },
+      ],
+    });
+
+    // When M-V2 is read
+    const mV = loopGroup(dir).metrics.m_v;
+
+    // Then one of the three findings is fix-induced, a share of 1/3
+    expect(mV?.fix_induced).toEqual({ n: 1, runs: [run.name], values: [{ fix_induced: 1, findings: 3 }] });
+    expect(mV?.fix_induced_undefined).toEqual([]);
+  });
+
+  it('@F4.9 No finding after round 1 leaves M-V2 undefined', () => {
+    // Given a loop whose round 1 reports a should-fix and round 2 none
+    const dir = aggregateFixture(
+      [1, 2].map((r) => ({ arm: 'baseline', r, steps: ONE_STEP })),
+      LOOP_PINS,
+    );
+    const quiet = loopRun(dir, 'baseline', 1);
+    writeReviewLoop(quiet.dir, {
+      outcome: 'clean',
+      rounds: [
+        {
+          findings: [loopFinding('should-fix', 'src/cart.ts', 30)],
+          fix: { patch: patchChanging('src/cart.ts', 10, 14) },
+        },
+        { findings: [] },
+      ],
+    });
+    // ... beside a run whose round 2 reports a finding, so that the summary has a value to leave the first out of
+    const other = loopRun(dir, 'baseline', 2);
+    writeReviewLoop(other.dir, cleanAt(2));
+
+    // When M-V2 is read
+    const mV = loopGroup(dir).metrics.m_v;
+
+    // Then it is undefined for that run, and the run is left out of M-V2's summary
+    expect(mV?.fix_induced_undefined).toEqual([quiet.name]);
+    expect(mV?.fix_induced).toEqual({ n: 1, runs: [other.name], values: [{ fix_induced: 0, findings: 1 }] });
+  });
+
+  it("@F4.9 The loop's cost is apart from the run's", () => {
+    // Given a run whose steps cost 0.50 EUR and whose loop cost 0.20 EUR
+    const dir = aggregateFixture([{ arm: 'baseline', steps: ONE_STEP, costEur: 0.5 }], LOOP_PINS);
+    const run = loopRun(dir, 'baseline', 1);
+    writeReviewLoop(run.dir, {
+      outcome: 'clean',
+      rounds: [
+        {
+          findings: [loopFinding('blocker', 'src/cart.ts', 30)],
+          reviewerEur: 0.03,
+          fix: { patch: patchChanging('src/cart.ts', 10, 14), eur: 0.15 },
+        },
+        { findings: [], reviewerEur: 0.02 },
+      ],
+    });
+
+    // When the execution is aggregated
+    const group = loopGroup(dir);
+
+    // Then M-K1 is 0.50 EUR, and M-V3 is 0.20 EUR, the reviewer's and the fixer's apart
+    expect(group.metrics.cost.cost_eur.values).toEqual([0.5]);
+    const cost = group.metrics.m_v?.cost;
+    expect(cost?.reviewer.cost_eur.values).toEqual([0.05]);
+    expect(cost?.fixer.cost_eur.values).toEqual([0.15]);
+    expect(cost?.total.cost_eur.values).toEqual([0.2]);
+    expect(cost?.fixer.interventions.values).toEqual([0]);
   });
 });

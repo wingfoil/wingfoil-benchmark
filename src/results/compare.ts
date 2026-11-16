@@ -8,7 +8,7 @@ import type { Group, Tally } from './aggregate.js';
  */
 
 /** The metrics the category map reads. */
-export type MetricId = 'M-Q1' | 'M-K1' | 'M-D3' | 'M-E1' | 'M-F1';
+export type MetricId = 'M-Q1' | 'M-K1' | 'M-D3' | 'M-E1' | 'M-F1' | 'M-V1' | 'M-V2' | 'M-V3';
 
 /** Which way a metric is better. */
 export type Better = 'higher' | 'lower';
@@ -46,6 +46,16 @@ export const CATEGORY_MAP: Readonly<Record<MappedCategory, readonly MapEntry[]>>
 };
 
 /**
+ * The review loop's metrics (REQ-SCO-16, task-150): compared with the baseline and the docs control by the same rule,
+ * beside the categories and never in a category's row, so that no headline reads them.
+ */
+export const REVIEW_METRICS: readonly MapEntry[] = [
+  { id: 'M-V1', label: 'rounds to clean', better: 'lower' },
+  { id: 'M-V2', label: 'fix-induced findings', better: 'lower' },
+  { id: 'M-V3', label: 'cost of the review loop', better: 'lower' },
+];
+
+/**
  * Each run's figure of one metric, in the order of `runs`; and, for M-E1, the runs that did not reach a
  * step a directive check scores, which make the metric not comparable (the approver's choice of
  * 2026-10-01, task-045's review).
@@ -55,6 +65,11 @@ export interface Figures {
   readonly values: readonly number[];
   /** A run with no `step` is one no directive check step lists: scored before the check existed. */
   readonly unreached?: readonly { readonly run: string; readonly step?: number }[];
+  /**
+   * Why the figures are not compared (M-V1, task-150): the group's loops without a value, counted; a comparison of the
+   * clean loops alone would favour the side whose hard runs never close.
+   */
+  readonly withheld?: string;
 }
 
 /** M-E1's check kinds (REQ-SCO-05 and -06, task-037): the directives; the findings read them too (task-118). */
@@ -90,6 +105,21 @@ export interface Comparison {
   readonly other: Summary;
 }
 
+/**
+ * The loops of a group that make M-V1 not comparable (task-150): those not clean by the cap, and every other loop
+ * without a value, counted by outcome; `no loop` is no loop, so not counted. Undefined when every loop closed.
+ */
+function withheldText(mV: NonNullable<Group['metrics']['m_v']>): string | undefined {
+  const loops = (count: number) => `${count} loop${count === 1 ? '' : 's'}`;
+  const parts = [
+    ...(mV.not_clean.length === 0 ? [] : [`${loops(mV.not_clean.length)} not clean at ${mV.max_rounds}`]),
+    ...mV.no_value
+      .filter((entry) => entry.outcome !== 'no loop')
+      .map((entry) => `${loops(entry.runs.length)} ${entry.outcome}`),
+  ];
+  return parts.length === 0 ? undefined : parts.join(', ');
+}
+
 /** A tally as a share; 0 of 0 is 0, as a final not reached counts as nothing passed. */
 function share(tally: Tally): number {
   return tally.total === 0 ? 0 : tally.passed / tally.total;
@@ -106,6 +136,23 @@ export function readMetric(id: MetricId, group: Group): Figures | undefined {
     case 'M-Q1': {
       const value = metrics.m_q1.final.m_q1;
       return { runs: value.runs, values: value.values.map(share) };
+    }
+    case 'M-V1': {
+      const mV = metrics.m_v;
+      if (mV === undefined) return undefined;
+      const withheld = withheldText(mV);
+      const value = mV.rounds_to_clean;
+      return { runs: value.runs, values: value.values, ...(withheld === undefined ? {} : { withheld }) };
+    }
+    case 'M-V2': {
+      const value = metrics.m_v?.fix_induced;
+      return value === undefined
+        ? undefined
+        : { runs: value.runs, values: value.values.map((v) => v.fix_induced / v.findings) };
+    }
+    case 'M-V3': {
+      const value = metrics.m_v?.cost.total.cost_eur;
+      return value === undefined ? undefined : { runs: value.runs, values: value.values };
     }
     case 'M-K1':
       return { runs: metrics.cost.cost_eur.runs, values: metrics.cost.cost_eur.values };

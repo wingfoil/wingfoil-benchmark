@@ -1,5 +1,6 @@
 # Acceptance — Results and reporting (v0.1, v0.3)
 # Traces to: F5.1, F5.3, F5.4, F5.5, F5.6, F5.8 · J1, J2 steps 7–8, J4 · vision (losses published equally) · experiment design §4.6
+# · F4.9 (v0.3, task-150: the review loop on the method page, the result pages and a run's page)
 # Version: 1.1 · Status: Approved (1.0, 2026-09-22); 1.1 (v0.3, task-104, 2026-10-25) for review
 
 Feature: Stored results, run detail, finding notes and the published site
@@ -141,3 +142,14 @@ Feature: Stored results, run detail, finding notes and the published site
     Then the method page names the agent, the model and the caps, and quotes the prompt with its SHA-256
     And lists the configuration's files and the session's patch against the setup's workspace
     And lists the configuration files its docs control did not render
+
+  @F4.9
+  Scenario: The method page states the review loop
+    When the site is built for an execution whose campaign pins a review loop
+    Then the method page names the reviewer, its model and effort, quotes its prompt with its SHA-256
+    And states the closing rule, the round cap and what the reviewer's copy lacks
+
+  @F4.9
+  Scenario: A run's page shows its rounds
+    When the site is built for a run whose loop closed at round 2
+    Then the run's page lists both rounds, each finding's severity, file, line and title, and the outcome "clean"

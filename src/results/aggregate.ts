@@ -5,12 +5,14 @@ import { z } from 'zod';
 import { canonicalJson, fail, ok, parseWith, readYamlFile } from '../core/index.js';
 import type { Issue, Result } from '../core/index.js';
 
-import { CATEGORY_MAP, compare, readMetric, reported } from './compare.js';
+import { CATEGORY_MAP, compare, readMetric, reported, REVIEW_METRICS } from './compare.js';
 import type { Certainty, MapEntry, MetricId, Outcome, Reported } from './compare.js';
 import { plannedRuns } from './execution.js';
 import { paritySection } from './parity.js';
 import type { ParityRun, ParitySection } from './parity.js';
-import { executionRuns, readStoredRun } from './runs.js';
+import { addFigures, CLEAN, readLoop, runReviewMetrics } from './review.js';
+import type { SessionFigures, StoredLoop, StoredRound } from './review.js';
+import { executionRate, executionRuns, readStoredRun } from './runs.js';
 
 /** Where an execution's aggregate is stored, beside its runs (REQ-FMT-06). */
 export const AGGREGATE_FILE = 'aggregate.json';
@@ -118,7 +120,54 @@ export interface Group {
     readonly m_q2?: MQ2Aggregate;
     /** M-R1–M-R3 (REQ-SCO-07 as amended in 1.17, task-042): a value only from two runs sharing their pins. */
     readonly m_r: MRAggregate;
+    /** M-V1–M-V3 (REQ-SCO-16, task-150), when a run of the group recorded a review loop; absent otherwise. */
+    readonly m_v?: MVAggregate;
   };
+}
+
+/** A loop's sessions' M-K1 and M-K2 across a group (REQ-SCO-16's M-V3), and the runs whose cost is a bound. */
+export interface LoopCostAggregate {
+  readonly cost_eur: Value<number>;
+  readonly cost_usd: Value<number>;
+  readonly tokens_input: Value<number>;
+  readonly tokens_output: Value<number>;
+  readonly tokens_cache_creation: Value<number>;
+  readonly tokens_cache_read: Value<number>;
+  readonly wall_time_ms: Value<number>;
+  readonly turns: Value<number>;
+  readonly interventions: Value<number>;
+  readonly bound: readonly string[];
+}
+
+/**
+ * M-V1–M-V3 across a group (REQ-SCO-16, experiment design 1.13 §4.7, task-150), from each run's `review/`. M-V1 over
+ * the loops that closed `clean`, with their median; those not clean by the cap named apart, never valued as the cap;
+ * every other outcome named by outcome. M-V2 over the runs with a finding after round 1. M-V3 over the loops that ran.
+ */
+export interface MVAggregate {
+  readonly max_rounds: number;
+  readonly rounds_to_clean: Value<number> & { readonly median?: number };
+  readonly not_clean: readonly string[];
+  readonly no_value: readonly { readonly outcome: string; readonly runs: readonly string[] }[];
+  readonly fix_induced: Value<{ readonly fix_induced: number; readonly findings: number }>;
+  readonly fix_induced_undefined: readonly string[];
+  readonly cost: {
+    readonly reviewer: LoopCostAggregate;
+    readonly fixer: LoopCostAggregate;
+    readonly total: LoopCostAggregate;
+  };
+  /** The group's runs that recorded no loop, beside runs that did; absent when there is none. */
+  readonly not_recorded?: readonly string[];
+}
+
+/** One run's loop as the site shows it (REQ-RES-02 as amended in 1.58): its rounds' findings, never their why. */
+export interface ReviewLoopEntry {
+  readonly run: string;
+  readonly outcome: string;
+  readonly reason?: string;
+  readonly reviewer: { readonly agent: string; readonly version: string; readonly model: string; readonly effort: string };
+  readonly max_rounds: number;
+  readonly rounds: readonly StoredRound[];
 }
 
 /** The pins M-R compares, each recorded per run: every other pin is the execution's own (task-042). */
@@ -239,6 +288,8 @@ export interface AggregateFile {
    * declared final while it was stopped. Absent when every planned run ran, or the plan cannot be read.
    */
   readonly not_run?: readonly string[];
+  /** Each run's review loop (REQ-SCO-16, task-150), in run order; absent when no run recorded one. */
+  readonly review_loops?: readonly ReviewLoopEntry[];
 }
 
 /** One side of a control comparison: its `n`, the mean of its runs' figures and their range. */
@@ -478,6 +529,8 @@ interface ScoredRun {
   /** What the configuration the run read cost (REQ-SCO-08 as amended in 1.50, task-142). */
   readonly configuredEur?: number;
   readonly score: Score;
+  /** The run's review loop (task-150), when it recorded one. */
+  readonly loop?: StoredLoop;
 }
 
 /**
@@ -527,7 +580,108 @@ export function aggregateExecution(executionDir: string): Result<AggregateFile> 
     controls: controlComparisons(grouped, groups, model),
     ...(parity === undefined ? {} : { parity }),
     ...(notRun.length === 0 ? {} : { not_run: notRun }),
+    ...reviewLoopsOf(grouped.flat()),
   });
+}
+
+/** Each run's loop, for the run's page (REQ-RES-02 as amended in 1.58); nothing when no run recorded one. */
+function reviewLoopsOf(runs: readonly ScoredRun[]): { review_loops?: ReviewLoopEntry[] } {
+  const entries = runs.flatMap((run): ReviewLoopEntry[] =>
+    run.loop === undefined
+      ? []
+      : [
+          {
+            run: run.name,
+            outcome: run.loop.outcome,
+            ...(run.loop.reason === undefined ? {} : { reason: run.loop.reason }),
+            reviewer: run.loop.reviewer,
+            max_rounds: run.loop.maxRounds,
+            rounds: run.loop.rounds,
+          },
+        ],
+  );
+  return entries.length === 0 ? {} : { review_loops: entries };
+}
+
+/** The outcomes without an M-V1 value, in the order the pages name them (REQ-FMT-06 as amended in 1.58). */
+const NO_VALUE_ORDER = ['failed', 'no fix', 'interrupted', 'quota exhausted', 'no loop'];
+
+/** M-V1–M-V3 of a group (REQ-SCO-16, task-150), when a run of it recorded a loop. */
+function mVOf(runs: readonly ScoredRun[]): Pick<Group['metrics'], 'm_v'> {
+  const looped = runs.flatMap((run) => (run.loop === undefined ? [] : [{ run, loop: run.loop }]));
+  if (looped.length === 0) return {};
+  const byNumber = (a: number, b: number) => a - b;
+  const measured = looped.map(({ run, loop }) => ({ run: run.name, loop, metrics: runReviewMetrics(loop) }));
+  const clean = measured.flatMap(({ run, metrics }) =>
+    metrics.roundsToClean === undefined ? [] : [{ run, value: metrics.roundsToClean }],
+  );
+  const notClean = measured.filter(({ loop }) => loop.outcome.startsWith('not clean at ')).map(({ run }) => run);
+  const others = measured.filter(
+    ({ loop }) => loop.outcome !== CLEAN && !loop.outcome.startsWith('not clean at '),
+  );
+  const rank = (outcome: string) => {
+    const index = NO_VALUE_ORDER.indexOf(outcome);
+    return index === -1 ? NO_VALUE_ORDER.length : index;
+  };
+  const outcomes = [...new Set(others.map(({ loop }) => loop.outcome))].sort(
+    (a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0),
+  );
+  const induced = measured.flatMap(({ run, metrics }) =>
+    metrics.fixInduced === undefined ? [] : [{ run, value: metrics.fixInduced }],
+  );
+  const share = (value: { fix_induced: number; findings: number }) => value.fix_induced / value.findings;
+  const costs = measured.flatMap(({ run, metrics }) => (metrics.cost === undefined ? [] : [{ run, ...metrics.cost }]));
+  const loopCost = (pick: (cost: (typeof costs)[number]) => SessionFigures): LoopCostAggregate => {
+    const of = (figure: (f: SessionFigures) => number) =>
+      valueOf(
+        costs.map((cost) => ({ run: cost.run, value: figure(pick(cost)) })),
+        byNumber,
+      );
+    return {
+      cost_eur: of((f) => f.cost_eur),
+      cost_usd: of((f) => f.cost_usd),
+      tokens_input: of((f) => f.tokens.input),
+      tokens_output: of((f) => f.tokens.output),
+      tokens_cache_creation: of((f) => f.tokens.cache_creation),
+      tokens_cache_read: of((f) => f.tokens.cache_read),
+      wall_time_ms: of((f) => f.wall_time_ms),
+      turns: of((f) => f.turns),
+      interventions: of((f) => f.interventions),
+      bound: costs.filter((cost) => pick(cost).bounded).map((cost) => cost.run),
+    };
+  };
+  const roundsToClean = valueOf(clean, byNumber);
+  const notRecorded = runs.filter((run) => run.loop === undefined).map((run) => run.name);
+  const median = medianOf(clean.map(({ value }) => value));
+  return {
+    m_v: {
+      max_rounds: Math.max(...looped.map(({ loop }) => loop.maxRounds)),
+      rounds_to_clean: median === undefined ? roundsToClean : { ...roundsToClean, median },
+      not_clean: notClean,
+      no_value: outcomes.map((outcome) => ({
+        outcome,
+        runs: others.filter(({ loop }) => loop.outcome === outcome).map(({ run }) => run),
+      })),
+      fix_induced: valueOf(induced, (a, b) => share(a) - share(b)),
+      fix_induced_undefined: measured.filter(({ metrics }) => metrics.fixInduced === undefined).map(({ run }) => run),
+      cost: {
+        reviewer: loopCost((cost) => cost.reviewer),
+        fixer: loopCost((cost) => cost.fixer),
+        total: loopCost((cost) => addFigures(cost.reviewer, cost.fixer)),
+      },
+      ...(notRecorded.length === 0 ? {} : { not_recorded: notRecorded }),
+    },
+  };
+}
+
+/** The median of `values`: the middle one, or the mean of the middle two; none of none. */
+function medianOf(values: readonly number[]): number | undefined {
+  if (values.length === 0) return undefined;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? (sorted[middle] as number)
+    : ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
 }
 
 /**
@@ -578,6 +732,8 @@ function readScored(executionDir: string, runDir: string, campaign: string, exec
   if (parsed.value.scenario_hash !== run.value.scenarioHash) {
     return fail([{ path: label, message: 'scores another version of the scenario than the run ran' }]);
   }
+  const loop = readLoop(runDir, () => executionRate(executionDir));
+  if (!loop.ok) return fail(loop.issues.map((issue) => ({ ...issue, path: `${at}/${issue.path}` })));
   return ok({
     name: `${campaign}/${execution}/${at}`,
     scenario: run.value.scenario,
@@ -588,6 +744,7 @@ function readScored(executionDir: string, runDir: string, campaign: string, exec
     ...(run.value.docsOf === undefined ? {} : { docsOf: run.value.docsOf }),
     ...(run.value.configuredEur === undefined ? {} : { configuredEur: run.value.configuredEur }),
     score: parsed.value,
+    ...(loop.value === undefined ? {} : { loop: loop.value }),
   });
 }
 
@@ -628,6 +785,7 @@ function aggregateGroup(runs: readonly ScoredRun[]): Group {
       checks: checksOf(runs),
       ...continuityOf(runs),
       m_r: mROf(runs),
+      ...mVOf(runs),
     },
   };
 }
@@ -1313,9 +1471,13 @@ function valueOf<T>(entries: readonly { run: string; value: T }[], compare: (a: 
 }
 
 /** The category map's metrics, once each, in the map's order (C, D, E, F). */
-const CONTROL_METRICS: readonly MapEntry[] = Object.values(CATEGORY_MAP)
-  .flat()
-  .filter((entry, index, all) => all.findIndex((other) => other.id === entry.id) === index);
+const CONTROL_METRICS: readonly MapEntry[] = [
+  ...Object.values(CATEGORY_MAP)
+    .flat()
+    .filter((entry, index, all) => all.findIndex((other) => other.id === entry.id) === index),
+  // The review loop's metrics (REQ-SCO-16, task-150): compared with the docs control when both sides measure them.
+  ...REVIEW_METRICS,
+];
 
 /**
  * REQ-SCO-14 (task-068): each docs control's group whose runs record `docs_of`, against the group of that harness arm
@@ -1364,6 +1526,12 @@ function controlMetric(entry: MapEntry, harness: Group, control: Group): Control
   const harnessFigures = readMetric(entry.id, harness);
   const controlFigures = readMetric(entry.id, control);
   if (harnessFigures === undefined || controlFigures === undefined) return [];
+  // M-V1 with a loop that has no value on either side is not compared (task-150): the counts are named instead.
+  const withheld = [
+    ...(harnessFigures.withheld === undefined ? [] : [`${harness.arm} has ${harnessFigures.withheld}`]),
+    ...(controlFigures.withheld === undefined ? [] : [`${control.arm} has ${controlFigures.withheld}`]),
+  ];
+  if (withheld.length > 0) return [{ metric: entry.id, note: `not compared: ${withheld.join('; ')}` }];
   // M-E1 with a run that did not reach a directive check's step is not comparable, in the site's words.
   const lost = [
     ...(harnessFigures.unreached ?? []).map((entry) => ({ ...entry, arm: harness.arm })),
@@ -1381,6 +1549,10 @@ function controlMetric(entry: MapEntry, harness: Group, control: Group): Control
       .join('; ');
     return [{ metric: entry.id, note: `not comparable: ${why}` }];
   }
+  // A side with no run's figure (M-V2 when every loop closed in round 1, any M-V of `no loop` runs) is not measured:
+  // a comparison with n = 0 would state an outcome from nothing (task-150's review); after M-E1's
+  // note, which names its unreached runs even when none reached.
+  if (harnessFigures.values.length === 0 || controlFigures.values.length === 0) return [];
   const result = compare(entry.better, controlFigures, harnessFigures);
   const side = ({ n, mean, min, max }: { n: number; mean: number; min: number; max: number }): ControlSide => ({
     n,

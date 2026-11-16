@@ -11,10 +11,19 @@ import type {
   ControlMetric,
   Group,
   ParitySection,
+  ReviewLoopEntry,
 } from '../results/index.js';
 import { loadScenario } from '../scenario/index.js';
 
-import { CATEGORY_MAP, certaintyOf, compare, harnessLabel, readMetric, summarize } from './rules.js';
+import {
+  CATEGORY_MAP,
+  certaintyOf,
+  compare,
+  harnessLabel,
+  readMetric,
+  REVIEW_METRICS,
+  summarize,
+} from './rules.js';
 import type { Comparison, Figures, MapEntry, RecordedHarness, Summary } from './rules.js';
 
 const BASELINE = 'baseline';
@@ -78,6 +87,14 @@ export interface ScenarioRow {
   readonly scenario: ScenarioInfo;
   readonly metrics: readonly MetricRow[];
   readonly groups: readonly Group[];
+  /** M-V1–M-V3 in every arm (REQ-RES-02 as amended in 1.58, task-150), when a run of the scenario had a loop. */
+  readonly review?: ReviewBlock;
+}
+
+/** The review loop's metrics of one scenario, and the models its runs were reviewed by (T16). */
+export interface ReviewBlock {
+  readonly metrics: readonly MetricRow[];
+  readonly reviewers: readonly string[];
 }
 
 /** One category A–G: covered when a scenario of the execution has it as its primary category. */
@@ -114,6 +131,8 @@ export interface SiteModel {
   readonly primaryOf?: Readonly<Record<string, Category>>;
   /** The weak model with a harness against the strong model without it (REQ-RES-12, task-121), when measured. */
   readonly parity?: ParitySection;
+  /** Each run's review loop (REQ-RES-02 as amended in 1.58, task-150): a page each. */
+  readonly reviewLoops?: readonly ReviewLoopEntry[];
 }
 
 const runRecord = z.object({
@@ -165,7 +184,58 @@ const groupShape = z.object({
       .optional(),
     m_d3: z.object({ value: number }).optional(),
     m_f1: z.object({ share: tally }).optional(),
+    // Absent without a review loop (task-150): then the scenario's section has no review block.
+    m_v: z
+      .object({
+        max_rounds: z.number(),
+        rounds_to_clean: number.extend({ median: z.number().optional() }),
+        not_clean: z.array(z.string()),
+        no_value: z.array(z.object({ outcome: z.string(), runs: z.array(z.string()) })),
+        fix_induced: valueOf(z.object({ fix_induced: z.number(), findings: z.number() })),
+        fix_induced_undefined: z.array(z.string()),
+        cost: z.object({
+          reviewer: z.object({ cost_eur: number }),
+          fixer: z.object({ cost_eur: number }),
+          total: z.object({
+            cost_eur: number,
+            tokens_input: number,
+            tokens_output: number,
+            tokens_cache_creation: number,
+            tokens_cache_read: number,
+            wall_time_ms: number,
+            turns: number,
+            interventions: number,
+            bound: z.array(z.string()),
+          }),
+        }),
+      })
+      .optional(),
   }),
+});
+
+/** A run's loop as the run's page reads it (task-150): every field it prints. */
+const reviewLoopShape = z.object({
+  run: z.string(),
+  outcome: z.string(),
+  reason: z.string().optional(),
+  reviewer: z.object({ agent: z.string(), version: z.string(), model: z.string(), effort: z.string() }),
+  max_rounds: z.number(),
+  rounds: z.array(
+    z.object({
+      n: z.number(),
+      fixed: z.boolean(),
+      findings: z
+        .array(
+          z.object({
+            severity: z.enum(['blocker', 'should-fix', 'nit']),
+            file: z.string(),
+            line: z.number().nullable(),
+            title: z.string(),
+          }),
+        )
+        .nullable(),
+    }),
+  ),
 });
 
 /** One side of a control comparison (task-068): every figure the page prints. */
@@ -273,6 +343,8 @@ const aggregateShape = z.object({
     .optional(),
   // The planned runs never started, of a final execution (task-080): each named `<scenario>@<version>/…`.
   not_run: z.array(z.string().regex(/^[^/@]+@[^/]+\/.+/)).optional(),
+  // Absent without a review loop (task-150): then no run has a page.
+  review_loops: z.array(reviewLoopShape).optional(),
 });
 
 function byCodeUnit(a: string, b: string): number {
@@ -404,7 +476,27 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
         );
         return { ...made.row, values };
       });
-      return { scenario: info, metrics, groups: own };
+      // The review loop's metrics (task-150): beside the category's, compared by the same rule, never in a headline.
+      if (!own.some((group) => group.metrics.m_v !== undefined))
+        return { scenario: info, metrics, groups: own };
+      const review = REVIEW_METRICS.map((entry) => {
+        const { row } = metricRow(category, entry, own, arms);
+        const values = row.values.map((value) =>
+          harnessArms.has(value.arm) && own.some((group) => group.arm === value.arm)
+            ? { ...value, against: againstControl(aggregate.controls, info, value.arm, entry) }
+            : value,
+        );
+        return { ...row, values };
+      });
+      const runs = new Set(own.flatMap((group) => group.runs));
+      const reviewers = [
+        ...new Set(
+          (aggregate.review_loops ?? [])
+            .filter((loop) => runs.has(loop.run))
+            .map((loop) => loop.reviewer.model),
+        ),
+      ].sort(byCodeUnit);
+      return { scenario: info, metrics, groups: own, review: { metrics: review, reviewers } };
     });
     const secondary = infos.filter((info) => info.secondary.includes(category));
     return { category, scenarios: rows, secondary };
@@ -426,6 +518,7 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
     ...(aggregate.not_run === undefined ? {} : { notRun: aggregate.not_run }),
     primaryOf: primaryOf.value,
     ...(aggregate.parity === undefined ? {} : { parity: aggregate.parity }),
+    ...(aggregate.review_loops === undefined ? {} : { reviewLoops: aggregate.review_loops }),
   });
 }
 
@@ -461,6 +554,14 @@ export function metricRow(
     const group = groups.find((candidate) => candidate.arm === arm);
     const figures = group === undefined ? undefined : readMetric(entry.id, group);
     if (figures === undefined) return { arm };
+    // M-V1 with a loop without a value (task-150): its figures shown, not compared, and why.
+    if (figures.withheld !== undefined) {
+      return {
+        arm,
+        ...(figures.values.length === 0 ? {} : { summary: summarize(figures) }),
+        note: `not compared: ${arm} has ${figures.withheld}`,
+      };
+    }
     if ((figures.unreached ?? []).length > 0) {
       return { arm, note: `not comparable: ${unreachedText(figures.unreached)}` };
     }
@@ -468,6 +569,9 @@ export function metricRow(
     const summary = summarize(figures);
     if (arm === BASELINE) return { arm, summary };
     if (baseLost) return { arm, summary, note: 'no comparison: the baseline is not comparable' };
+    if (baseFigures?.withheld !== undefined) {
+      return { arm, summary, note: `not compared: ${BASELINE} has ${baseFigures.withheld}` };
+    }
     if (baseFigures === undefined || baseFigures.values.length === 0) return { arm, summary };
     const result = compare(entry.better, baseFigures, figures);
     const comparison: Comparison = { category, metric: entry.id, arm, ...result };
