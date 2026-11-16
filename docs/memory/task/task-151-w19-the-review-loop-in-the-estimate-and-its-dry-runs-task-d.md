@@ -74,8 +74,8 @@ rounds.
   `max_rounds`; the agent's version is in `reviewer.agent.version`. The caps are not part of the match: they bound a
   loop, they do not change what a loop that stayed under them cost.
 - **The profile's caps, proposed:** `session_time_s: 1800` and `session_tokens: 10000000` (the profile's step caps),
-  `session_cost_eur: 2`, `fixer_interventions: 5`. A dry run's worst case is then 5 rounds × (reviewer + fixer) × 2 EUR
-  = 20 EUR above its steps, a bound and not an expectation.
+  `session_cost_eur: 2`, `fixer_interventions: 5`. A dry run's worst case is then 5 reviewers and 4 fixers (none after
+  the last round) × 2 EUR = 18 EUR above its steps, a bound and not an expectation (corrected in review round 2).
 - **Not in this task:** a campaign file gaining `review_loop` (the reference campaign's, step 5 of plan-005); the
   calibration's dry runs in every arm (step 3); the transcripts' packing of loops (REQ-CLI-11).
 - **For the approver's gate:** criterion 3 (stopped loops do not price), the caps above, and criterion 7's eight dry
@@ -136,3 +136,8 @@ rounds.
     "its steps only" line; a `no loop` with a reviewer session, alone, pins the allow-list; a stray blank line and an
     over-long line in `dry-runs.ts`. Noted, not changed here: `.prettierignore`'s `results/` (no leading slash) also
     ignores `src/results/`, older than this task; anchoring it would reformat the folder, a change of its own.
+- **Round 3** (a third fresh agent, on round 2's fixes, `736f76b1..13ddb1d2`): no blocker, no should-fix; the bound
+  checked against the runner (no fixer after the last round, a reviewer's resumes within its session cap), each new
+  test failing with its fix removed. One nit, fixed: Design's figure now reads 18 EUR.
+
+Pre-review green at `13ddb1d2`.
