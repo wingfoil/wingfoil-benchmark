@@ -111,3 +111,35 @@ feature file with its test red first (`test/acceptance/scoring.test.ts`, `test/a
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
+
+- 2026-11-16: backlog → in-progress on main; worktree `../WingFoil2-Benchmark-wt/t150`.
+- **Red first** (`3b9ce2da`): the four `scoring.feature` and two `results.feature` scenarios (F4.9 added to both
+  files' traces; no version bump, as the scenarios earlier tasks added) with their tests;
+  `test/unit/results/review.test.ts` (the fix's lines, the outcomes without a value, the loops' records, the reviewer's bound, a loop record that does
+  not parse, the aggregate unchanged without loops, the comparisons); `test/support/loop-records.ts` writes a loop as
+  task-149's runner records it. All red for the absent code. Two expectations of mine were wrong and corrected after:
+  a field read as `cost.total.runs` (the runs are each figure's), and M-V2 over two runs of which one has no finding
+  after round 1.
+- **The work** (`c9492fa4`):
+  - `src/results/review.ts` (new): `readLoop` (zod over `loop.json`, each listed round's `findings.json`, and every
+    round directory's `reviewer-usage.json`, `fixer-usage.json` and `fix.patch`, so that a session that ran and ended
+    the loop still counts in M-V3), `fixLines`, `runReviewMetrics`.
+  - `src/results/aggregate.ts`: `Group.metrics.m_v` and `review_loops`, both appended last and absent without a loop;
+    the docs-control comparisons read `REVIEW_METRICS` after the category map's metrics.
+  - `src/results/compare.ts`: `M-V1`–`M-V3` in `MetricId`, `REVIEW_METRICS`, `readMetric`'s three cases, and
+    `Figures.withheld` for M-V1.
+  - `src/site/`: `model.ts` reads `m_v` and `review_loops` and builds each scenario's `review` block (`metricRow` gains
+    the withheld note); `render.ts` the block, the runs' links and `runPage`; `build.ts` writes the run pages;
+    `method.ts` the loop's section; `rules.ts` formats M-V2 as a share and M-V3 in EUR.
+- **Deviations, for the gate:**
+  1. **No hold-out branch.** REQ-RES-02 publishes a loop's findings "only from campaigns that run no hold-out content
+     (REQ-CLI-10)", and REQ-CLI-10 says `campaign run` never reads the hold-out: no execution runs hold-out content, so
+     nothing marks one, and criterion 7's counts-only page and decision 1's counts have no trigger. They are not coded;
+     a later private scenario's loop is the decision of its own that REQ-RES-02 names.
+  2. **M-V2 reads the `+` lines** of the previous fix's hunks, the lines it added or changed, not the hunks' context
+     lines, which the fix did not touch.
+  3. **`no loop` does not withhold M-V1**: no loop ran. It is still named among the outcomes without a value. M-V3
+     reads the loops that ran, `no loop` left out.
+  4. **T16's mark** stands in each scenario's review block, beside the reviewer's model: the block compares the arms
+     of the campaign's model; the slices and the parity page, which compare across models, show no M-V.
+  5. **The method page's spending** says what the loops cost, apart from the runs' cost.
