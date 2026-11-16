@@ -1,5 +1,6 @@
 # Acceptance — Scoring (v0.1)
 # Traces to: F4.1–F4.5, F4.7, F4.8 · J2 steps 5–6 · experiment design §4 (M-Q*, M-D*, M-K*, M-F*, M-E1, M-R*)
+# · F4.9 (v0.3, task-150: M-V1–M-V3)
 # Version: 1.0 · Status: Approved (2026-09-22)
 
 Feature: Scoring runs with defined, reproducible metrics
@@ -155,3 +156,28 @@ Feature: Scoring runs with defined, reproducible metrics
     When the execution is aggregated
     Then M-K3 of "wingfoil-configured" and "baseline-docs-configured" on S1 1.1 include 0.50 EUR once
     And M-K3 of "wingfoil" does not
+
+  @F4.9
+  Scenario: Rounds to clean are read from the loop
+    Given runs whose loops closed as "clean" at rounds 1, 2 and 3, and one "not clean at 5"
+    When the execution is aggregated
+    Then M-V1 summarizes 1, 2 and 3, and names the loop not clean at 5 apart
+
+  @F4.9
+  Scenario: A finding on a line the previous fix changed is fix-induced
+    Given round 1's fix changed lines 10 to 14 of "src/cart.ts"
+    And round 2 reports findings on "src/cart.ts" line 12, "src/cart.ts" line 40 and one with no line
+    When M-V2 is read
+    Then one of the three findings is fix-induced, a share of 1/3
+
+  @F4.9
+  Scenario: No finding after round 1 leaves M-V2 undefined
+    Given a loop whose round 1 reports a should-fix and round 2 none
+    When M-V2 is read
+    Then it is undefined for that run, and the run is left out of M-V2's summary
+
+  @F4.9
+  Scenario: The loop's cost is apart from the run's
+    Given a run whose steps cost 0.50 EUR and whose loop cost 0.20 EUR
+    When the execution is aggregated
+    Then M-K1 is 0.50 EUR, and M-V3 is 0.20 EUR, the reviewer's and the fixer's apart

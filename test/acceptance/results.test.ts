@@ -1,5 +1,14 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, relative } from 'node:path';
 import { stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
@@ -8,7 +17,7 @@ import type { AgentPort } from '../../src/agents/index.js';
 import { main } from '../../src/cli/index.js';
 import { armDigest } from '../../src/arms/index.js';
 import { gitCli, systemProcess } from '../../src/core/index.js';
-import { paritySection } from '../../src/results/index.js';
+import { aggregateExecution, paritySection, writeAggregate } from '../../src/results/index.js';
 import type { ParityRun, ParitySection } from '../../src/results/index.js';
 import type { SiteModel } from '../../src/site/model.js';
 import { parityPage } from '../../src/site/parity.js';
@@ -27,6 +36,7 @@ import {
   standInHoldout,
 } from '../support/site-fixture.js';
 import { localScoringDocker } from '../support/local-scoring.js';
+import { loopFinding, notCleanAt5, patchChanging, writeReviewLoop } from '../support/loop-records.js';
 import { repoPath } from '../support/paths.js';
 import { referenceFiles } from '../support/reference.js';
 import {
@@ -844,5 +854,145 @@ describe("the finding's template (REQ-RES-05 as amended in 1.49, task-130)", () 
     const none = await finding('v0.3.1', 'baseline');
     expect(none).toContain('creates: the front matter');
     expect(none).not.toContain('whose template');
+  });
+});
+
+describe('results.feature, the review loop (task-150, F4.9)', { timeout: 120_000 }, () => {
+  const REVIEW = '# Review\n\nRead the change & report <findings> as JSON.\n';
+  const FIX = '# Fix\n\nFix exactly the findings above, then commit.\n';
+  const RUN_PAGE = 'abcdef012345/1/runs/TC@1.0/baseline/fake-model/r1/index.html';
+
+  /**
+   * The site fixture's execution with a review loop pinned: TC's baseline run closed `clean` at round 2 and its
+   * wingfoil run `not clean at 5`, both reviewed by `reviewer`; re-aggregated, then built. `prompt` replaces the review
+   * prompt on disk after its SHA-256 was pinned.
+   */
+  async function loopSite(options: { reviewer?: string; prompt?: string } = {}) {
+    const { root, executionDir } = await siteExecution();
+    mkdirSync(join(root, 'review'), { recursive: true });
+    writeFileSync(join(root, 'review', 'prompt.md'), REVIEW);
+    writeFileSync(join(root, 'review', 'fixer-prompt.md'), FIX);
+    const pins = {
+      agent: { name: 'claude-code', version: '2.1.0' },
+      model: options.reviewer ?? 'fake-model',
+      effort: 'high',
+      prompt: { file: 'review/prompt.md', sha256: sha256Of(join(root, 'review', 'prompt.md')) },
+      fixer_prompt: {
+        file: 'review/fixer-prompt.md',
+        sha256: sha256Of(join(root, 'review', 'fixer-prompt.md')),
+      },
+      max_rounds: 5,
+      caps: { session_time_s: 600, session_tokens: 1000000, session_cost_eur: 2, fixer_interventions: 5 },
+    };
+    appendFileSync(join(executionDir, 'campaign.yaml'), stringify({ review_loop: pins }));
+    if (options.prompt !== undefined) writeFileSync(join(root, 'review', 'prompt.md'), options.prompt);
+    const run = (arm: string) => join(executionDir, 'runs', 'TC@1.0', arm, 'fake-model', 'r1');
+    writeReviewLoop(run('baseline'), {
+      outcome: 'clean',
+      model: pins.model,
+      rounds: [
+        {
+          findings: [
+            loopFinding('blocker', 'src/orders.ts', 12, 'Cancelling skips <the> refund'),
+            loopFinding('should-fix', 'src/orders.ts', null, 'No test for a paid order'),
+          ],
+          fix: { patch: patchChanging('src/orders.ts', 10, 14) },
+        },
+        { findings: [loopFinding('nit', 'README.md', 3, 'A typo in the usage')] },
+      ],
+    });
+    writeReviewLoop(run('wingfoil'), { ...notCleanAt5(), model: pins.model });
+    const aggregate = aggregateExecution(executionDir);
+    if (!aggregate.ok) throw new Error(JSON.stringify(aggregate.issues));
+    writeAggregate(executionDir, aggregate.value);
+    const build = await benchSite(root, 'site', 'build', EXECUTION);
+    const files = existsSync(join(root, 'site')) ? snapshotTree(join(root, 'site')) : {};
+    const text = Object.fromEntries(
+      Object.entries(files).map(([path, bytes]) => [path, Buffer.from(bytes, 'base64').toString('utf8')]),
+    );
+    return { build, files: text };
+  }
+
+  let built: ReturnType<typeof loopSite> | undefined;
+  const site = () => (built ??= loopSite());
+
+  it('@F4.9 The method page states the review loop', async () => {
+    // When the site is built for an execution whose campaign pins a review loop
+    const { build, files } = await site();
+    expect(build.code, build.stderr).toBe(0);
+    const method = files['abcdef012345/1/method.html'] ?? '';
+    const section = method.slice(method.indexOf('id="review-loop"'));
+    expect(method).toContain('id="review-loop"');
+
+    // Then the method page names the reviewer, its model and effort, quotes its prompt with its SHA-256
+    expect(section).toContain('<th scope="row">Reviewer</th><td>claude-code 2.1.0</td>');
+    expect(section).toContain('<th scope="row">Reviewer model</th><td>fake-model, effort high</td>');
+    expect(section).toContain('Read the change &amp; report &lt;findings&gt; as JSON.');
+    expect(section).toContain(createHash('sha256').update(REVIEW).digest('hex'));
+    expect(section).toContain('Fix exactly the findings above, then commit.');
+    expect(section).toContain(createHash('sha256').update(FIX).digest('hex'));
+
+    // And states the closing rule, the round cap and what the reviewer's copy lacks
+    expect(section).toContain('a round with nits only, or no finding, closes the loop as clean');
+    expect(section).toContain('<th scope="row">Round cap</th><td>5 rounds</td>');
+    expect(section).toContain('every path the setup added');
+    expect(section).toContain('the run’s history');
+  });
+
+  it("@F4.9 A run's page shows its rounds", async () => {
+    // When the site is built for a run whose loop closed at round 2
+    const { build, files } = await site();
+    expect(build.code, build.stderr).toBe(0);
+    const page = files[RUN_PAGE] ?? '';
+
+    // Then the run's page lists both rounds, each finding's severity, file, line and title, and the outcome "clean"
+    expect(page).toContain('<h2 id="round-1">Round 1</h2>');
+    expect(page).toContain('<h2 id="round-2">Round 2</h2>');
+    expect(page).toContain(
+      '<li><span class="severity">blocker</span> <code>src/orders.ts:12</code> Cancelling skips &lt;the&gt; refund</li>',
+    );
+    expect(page).toContain(
+      '<li><span class="severity">should-fix</span> <code>src/orders.ts</code> No test for a paid order</li>',
+    );
+    expect(page).toContain(
+      '<li><span class="severity">nit</span> <code>README.md:3</code> A typo in the usage</li>',
+    );
+    expect(page).toContain('<p id="outcome">Outcome: <strong>clean</strong> at round 2.</p>');
+    // ... the stylesheet reached from the run's depth, and the way back to the execution
+    expect(page).toContain('href="../../../../../../../style.css"');
+    expect(page).toContain('href="../../../../../category-c.html"');
+  });
+
+  it("shows M-V1 to M-V3 per arm on the category page, the reviewer's model marked (T16), and links each loop's page", async () => {
+    const { build, files } = await site();
+    expect(build.code, build.stderr).toBe(0);
+    const category = files['abcdef012345/1/category-c.html'] ?? '';
+    const block = category.slice(category.indexOf('id="review-loop-TC@1.0"'));
+    expect(category).toContain('id="review-loop-TC@1.0"');
+    expect(block).toContain('M-V1: rounds to clean');
+    expect(block).toContain('M-V2: fix-induced findings');
+    expect(block).toContain('M-V3: cost of the review loop');
+    expect(block).toContain('reviewed by fake-model, the runs’ own model (T16)');
+    // A side with a loop not clean is not compared on M-V1, and says why.
+    expect(block).toContain('not compared: wingfoil has 1 loop not clean at 5');
+    expect(category).toContain('<a href="runs/TC@1.0/baseline/fake-model/r1/index.html">review loop</a>');
+    // A run with no loop record has no page.
+    expect(Object.keys(files).filter((path) => path.includes('/runs/'))).toEqual([
+      RUN_PAGE,
+      'abcdef012345/1/runs/TC@1.0/wingfoil/fake-model/r1/index.html',
+    ]);
+  });
+
+  it('marks another reviewer model, and refuses a prompt changed since its pin, naming the file', async () => {
+    const other = await loopSite({ reviewer: 'reviewer-model' });
+    expect(other.build.code, other.build.stderr).toBe(0);
+    expect(other.files['abcdef012345/1/category-c.html']).toContain(
+      'reviewed by reviewer-model, another model than the runs’ (T16)',
+    );
+
+    const changed = await loopSite({ prompt: '# Review\n\nAnother prompt.\n' });
+    expect(changed.build.code).toBe(1);
+    expect(changed.build.stderr).toContain('review/prompt.md');
+    expect(changed.build.stderr).toContain('differs from the SHA-256 the campaign pinned');
   });
 });
