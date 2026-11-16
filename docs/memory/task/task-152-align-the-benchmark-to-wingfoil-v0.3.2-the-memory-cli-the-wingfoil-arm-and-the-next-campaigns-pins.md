@@ -2,7 +2,7 @@
 id: task-152-align-the-benchmark-to-wingfoil-v0.3.2-the-memory-cli-the-wingfoil-arm-and-the-next-campaigns-pins
 type: task
 title: "Align the benchmark to WingFoil v0.3.2: the memory CLI, the wingfoil arm and the next campaigns' pins"
-status: in-progress
+status: in-review
 release: v0.3
 wave: maintenance
 features: []
