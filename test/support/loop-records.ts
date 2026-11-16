@@ -29,6 +29,13 @@ export interface LoopSpec {
   /** The reviewer's model; by default `reviewer-model`. */
   readonly model?: string;
   readonly maxRounds?: number;
+  /** The reviewer's agent, its effort and the prompts' SHA-256 the loop records (task-151); task-150's by default. */
+  readonly pins?: {
+    readonly agent?: { readonly name: string; readonly version: string };
+    readonly effort?: string;
+    readonly prompt?: string;
+    readonly fixerPrompt?: string;
+  };
 }
 
 /** A patch whose only hunk replaces lines `from` to `to` of `file` (the new side's numbering). */
@@ -108,12 +115,12 @@ export function writeReviewLoop(runDir: string, spec: LoopSpec): void {
     join(dir, 'loop.json'),
     JSON.stringify({
       reviewer: {
-        agent: { name: 'claude-code', version: '2.1.0' },
+        agent: spec.pins?.agent ?? { name: 'claude-code', version: '2.1.0' },
         model: spec.model ?? 'reviewer-model',
-        effort: 'high',
+        effort: spec.pins?.effort ?? 'high',
       },
-      prompt_sha256: 'a'.repeat(64),
-      fixer_prompt_sha256: 'b'.repeat(64),
+      prompt_sha256: spec.pins?.prompt ?? 'a'.repeat(64),
+      fixer_prompt_sha256: spec.pins?.fixerPrompt ?? 'b'.repeat(64),
       max_rounds: spec.maxRounds ?? 5,
       outcome: spec.outcome,
       ...(spec.reason === undefined ? {} : { reason: spec.reason }),

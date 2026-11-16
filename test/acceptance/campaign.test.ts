@@ -21,8 +21,15 @@ import { executionResumable, nextExecution } from '../../src/results/index.js';
 import { gitCli, systemProcess } from '../../src/core/index.js';
 import { writeArmsNamed } from '../support/arm-fixture.js';
 import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
-import { priceCampaign, writeDryRunProfile } from '../support/dry-run-fixture.js';
+import { dryRunProfileYaml, priceCampaign, writeDryRunProfile } from '../support/dry-run-fixture.js';
 import { repoPath } from '../support/paths.js';
+import {
+  FIXER_PROMPT,
+  findingsMessage,
+  REVIEW_PROMPT,
+  reviewerDouble,
+  reviewLoopYaml,
+} from '../support/review-fixture.js';
 import { doubles } from '../support/runner-doubles.js';
 import type { Doubles } from '../support/runner-doubles.js';
 import { tempDir } from '../support/scenario-fixture.js';
@@ -974,5 +981,72 @@ describe("campaign.feature, the review loop's entry (task-148, F4.9)", () => {
     expect(issuesOf(repo.file)).toEqual([
       { path: 'review/prompt.md', message: "names the harness 'WingFoil'" },
     ]);
+  });
+});
+
+describe('campaign.feature, the review loop in the estimate (task-151, F4.9)', () => {
+  it('@F4.9 A dry run measures the loop', async () => {
+    // Given a dry-run profile that pins a review loop — T3 standing in for S2 1.1
+    const root = tempDir('bench-loop-estimate-');
+    cpSync(repoPath('test/fixtures/scenarios/T3'), join(root, 'scenarios', 'T3'), { recursive: true });
+    copyFileSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
+    writeArmsNamed(root, ['baseline', 'baseline-docs', 'wingfoil']);
+    mkdirSync(join(root, 'review'));
+    writeFileSync(join(root, 'review', 'prompt.md'), REVIEW_PROMPT);
+    writeFileSync(join(root, 'review', 'fixer-prompt.md'), FIXER_PROMPT);
+    const dryRun = async (loop: Record<string, unknown>) => {
+      writeDryRunProfile(root, stringify({ ...dryRunProfileYaml(), review_loop: loop }));
+      const reviewer = reviewerDouble(() => findingsMessage());
+      const code = await main(
+        ['scenario', 'dry-run', 'T3@1.0', '--arm', 'baseline'],
+        { stdout: () => {}, stderr: () => {} },
+        { ...doubles(), reviewerAgent: reviewer },
+        root,
+      );
+      expect(code).toBe(0);
+    };
+
+    // When a dry run of S2 1.1 in "baseline" completes
+    await dryRun(reviewLoopYaml());
+
+    // Then it records its loop
+    const run = join(root, 'results', 'dry-runs', '1', 'runs', 'T3@1.0', 'baseline', 'fake-model', 'r1');
+    expect(existsSync(join(run, 'review', 'loop.json'))).toBe(true);
+
+    // ... and the estimate of a campaign pinning the same loop reads it under "review/S2@1.1/baseline/<model>"
+    mkdirSync(join(root, 'campaigns'));
+    const file = join(root, 'campaigns', 'c.yaml');
+    writeFileSync(
+      file,
+      stringify({
+        ...completeCampaignYaml(),
+        harnesses: {},
+        scenarios: [{ id: 'T3', version: '1.0' }],
+        arms: ['baseline'],
+        repetitions: { T3: 1 },
+        agent: { name: 'fake', version: '1.0.0' },
+        models: { default: 'fake-model' },
+        review_loop: reviewLoopYaml(),
+      }),
+    );
+    let stdout = '';
+    const estimate = () =>
+      main(
+        ['campaign', 'estimate', file],
+        { stdout: (text) => (stdout += text), stderr: () => {} },
+        doubles(),
+      );
+    expect(await estimate()).toBe(0);
+    expect(stdout).toContain('review/T3@1.0/baseline/fake-model: ');
+    expect(stdout).toContain('(1 dry run: results/dry-runs/1)');
+
+    // And a dry run whose loop pins differ from the campaign's is not read
+    await dryRun(reviewLoopYaml({ max_rounds: 3 }));
+    stdout = '';
+    expect(await estimate()).toBe(0);
+    const line =
+      stdout.split('\n').find((text) => text.startsWith('review/T3@1.0/baseline/fake-model: ')) ?? '';
+    expect(line).toContain('(1 dry run: results/dry-runs/1)');
+    expect(line).not.toContain('results/dry-runs/2');
   });
 });

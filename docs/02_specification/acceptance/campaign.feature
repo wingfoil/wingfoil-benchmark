@@ -233,3 +233,11 @@ Feature: Campaign definition, cost estimate and budget guard
     Given "review/prompt.md" names "WingFoil"
     When the campaign is validated
     Then it is refused, naming the prompt and the harness
+
+  # task-151, F4.9 (requirements 1.58): the loop in the estimate
+  @F4.9
+  Scenario: A dry run measures the loop
+    Given a dry-run profile that pins a review loop
+    When a dry run of S2 1.1 in "baseline" completes
+    Then it records its loop, and the estimate reads it under "review/S2@1.1/baseline/<model>", the run's model
+    And a dry run whose loop pins differ from the campaign's is not read
