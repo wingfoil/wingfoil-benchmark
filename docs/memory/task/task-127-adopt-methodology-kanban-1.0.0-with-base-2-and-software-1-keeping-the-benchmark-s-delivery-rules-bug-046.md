@@ -45,6 +45,36 @@ WingFoil is the one under test, pinned per campaign).
 
 <!-- To be written when the task starts, from the README at the tag and the composer's output. -->
 
+## Input: the engine way of working (2026-11-16)
+
+Relayed by the WingFoil coordination session (WFCoord) on 2026-11-16 as the approver's decision on this repository's
+answer about adopting WingFoil 0.3.x's workflow engine; to be confirmed by the approver in this task's gate.
+
+1. task-152 stays a pure pin change (0.3.1 → 0.3.2); the way of working does not change with it.
+2. The way of working is adopted at v0.4's release-planning through this task, when no v0.3 task is open, after every
+   open element's state is mapped (bug-046), with a pilot on one wave whose exit and rollback criteria are written
+   before it starts.
+3. Points to settle here:
+   - **Branches:** Memory verbs are committed on main and only `task/` branches exist, so main is the integration
+     branch and the engine's instance records go there.
+   - **Checker:** the independent read-only reviewer, `scripts/pre-review.sh` and the full suites before every
+     in-review → approved are the checker; with tasks in parallel, a checkpoint check at each task's close
+     (`git merge-tree` across the open lanes, the plan's timed duties).
+   - **Agent identity:** not adopted now; the approver stays the author and the agent is credited by Co-Authored-By
+     (the agent's email added to `dna.yaml`); the author-versus-trailer question waits for WingFoil's v0.4 ruling.
+   - **Standing approvals:** one only, the kanban review's in-review → approved (green full suites at a named commit and
+     a clean independent review), run by the approver. Spending stays a human choice: campaign approve-spend,
+     real-agent checks, validation and dry-run consent never get a standing rule.
+   - **Campaigns:** campaign-cycle may stay hand-run in the pilot; whether it becomes an engine instance is decided
+     here.
+   - **`paths.runs`:** a directory other than the runner's git-ignored `/runs/`, chosen before it is declared.
+   - **Engine limits to plan around:** kanban-delivery runs once per instance (F-044, WingFoil bug-489); a new instance
+     reads step evidence from the whole repository (F-043, WingFoil bug-488).
+   - **From WingFoil's first wave on the engine:** measures from scripts reading git and transcripts, never hand
+     registers (orchestration tokens beside the campaigns' costs); `workflow status` needs a filter or a known-noise
+     list; on WingFoil 0.4 approvals refuse in an agent shell and verbs write the attribution trailers, so gated
+     commands run from a human terminal and trailers are never amended by hand.
+
 ## Execution notes
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
