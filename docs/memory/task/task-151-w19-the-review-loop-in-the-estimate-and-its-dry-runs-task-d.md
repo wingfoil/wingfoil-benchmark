@@ -108,6 +108,12 @@ rounds.
     loop needed it once the estimate priced loops.
 - Checks so far: `test/unit/runner`, `test/unit/cli`, `test/unit/results`, `test/unit/scenario` and
   `test/acceptance/campaign.test.ts` whole green (1107 tests); the figures script's bin test green.
+- **Criterion 7's dry runs come after the merge:** real-agent runs start from the main checkout, which needs this
+  branch's code; so the gate approves criteria 1–6, and after the merge, on the approver's spending consent, the eight
+  dry runs run, their figures go to `docs/calibration/v0.3-review-loop.md` from the script and W19's "Ends with" to
+  `rel-v0-3`, before approved → done. Upper bounds, read by a scratchpad script from each key's latest completed dry
+  run (steps, Sonnet at medium) plus the loop's 18 EUR: 18.19 to 18.66 EUR each, 147.07 EUR for the eight; at the
+  run's cap instead of the latest steps, 23 EUR each, 184 EUR.
 
 ## Review
 
