@@ -1,5 +1,5 @@
 import type { Category } from '../core/index.js';
-import type { Group, Tally } from '../results/index.js';
+import type { Group, ReviewLoopEntry, Tally } from '../results/index.js';
 
 import type { CategoryRow, MetricRow, ScenarioRow, SiteModel } from './model.js';
 import {
@@ -617,6 +617,7 @@ function scenarioSection(model: SiteModel, scenario: ScenarioRow): string {
       html += `<li>${armHtml(model, value.arm)}: ${valueHtml(metric.entry.id, value)}${againstHtml(metric.entry.id, value)}</li>\n`;
     html += '</ul>\n';
   }
+  if (scenario.review !== undefined) html += reviewHtml(model, scenario, name);
   html += '<h3>Each suite on the final snapshot</h3>\n<ul>\n';
   for (const group of scenario.groups) {
     const suites = group.metrics.m_q1.final.suites
@@ -633,14 +634,119 @@ function scenarioSection(model: SiteModel, scenario: ScenarioRow): string {
       const loss = group.losses.find((candidate) => candidate.run === run);
       // A run that ran more than once says so beside it (REQ-RUN-19, task-080).
       const attempts = model.records.find((record) => record.run === run)?.attempts ?? 1;
+      const looped = (model.reviewLoops ?? []).some((loop) => loop.run === run);
       html +=
         `<li><code>${e(run)}</code> — open with <code>bench run show ${e(run)}</code>` +
         `${attempts > 1 ? ` — ${attempts} attempts` : ''}` +
+        `${looped ? ` — <a href="${e(runPagePath(run))}">review loop</a>` : ''}` +
         `${loss === undefined ? '' : ` — loss: ${e(loss.reason)}`}</li>\n`;
     }
   }
   html += '</ul>\n';
   return html;
+}
+
+/**
+ * A scenario's review loop (REQ-RES-02 as amended in 1.58, task-150): the reviewer's model against the runs' own (T16),
+ * then M-V1 to M-V3 in every arm, against the baseline and a harness's docs control, each with what its value leaves
+ * out: M-V1's median and the loops without a value, M-V2's runs without one, M-V3's reviewer and fixer apart.
+ */
+function reviewHtml(model: SiteModel, scenario: ScenarioRow, name: string): string {
+  const review = scenario.review as NonNullable<ScenarioRow['review']>;
+  let html = `<h3 id="review-loop-${e(name)}">Review loop</h3>\n`;
+  for (const reviewer of review.reviewers) {
+    const kin = reviewer === model.model ? 'the runs’ own model' : 'another model than the runs’';
+    html += `<p class="reviewer">reviewed by ${e(reviewer)}, ${kin} (T16)</p>\n`;
+  }
+  for (const metric of review.metrics) {
+    html += `<h4>${metric.entry.id}: ${e(metric.entry.label)} (${metric.entry.better} is better)</h4>\n<ul>\n`;
+    for (const value of metric.values) {
+      const group = scenario.groups.find((candidate) => candidate.arm === value.arm);
+      html +=
+        `<li>${armHtml(model, value.arm)}: ${valueHtml(metric.entry.id, value)}` +
+        `${againstHtml(metric.entry.id, value)}${reviewDetail(metric.entry.id, group)}</li>\n`;
+    }
+    html += '</ul>\n';
+  }
+  return html;
+}
+
+/** What an arm's review metric leaves out, from its group's `m_v`; nothing for an arm with no loop. */
+function reviewDetail(metric: MetricId, group: Group | undefined): string {
+  const mV = group?.metrics.m_v;
+  if (mV === undefined) return '';
+  const runs = (count: number) => `${count} run${count === 1 ? '' : 's'}`;
+  const parts: string[] = [];
+  if (metric === 'M-V1') {
+    const median = mV.rounds_to_clean.median;
+    if (median !== undefined) parts.push(`median ${median}`);
+    if (mV.not_clean.length > 0) parts.push(`${runs(mV.not_clean.length)} not clean at ${mV.max_rounds}`);
+    for (const entry of mV.no_value) parts.push(`${runs(entry.runs.length)} ${entry.outcome}`);
+  } else if (metric === 'M-V2') {
+    if (mV.fix_induced_undefined.length > 0) {
+      parts.push(`undefined for ${runs(mV.fix_induced_undefined.length)}, with no finding after round 1`);
+    }
+  } else if (metric === 'M-V3') {
+    const mean = (values: readonly number[]) =>
+      values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
+    parts.push(
+      `reviewer ${formatFigure('M-V3', mean(mV.cost.reviewer.cost_eur.values))}, ` +
+        `fixer ${formatFigure('M-V3', mean(mV.cost.fixer.cost_eur.values))}`,
+    );
+  }
+  return parts.length === 0 ? '' : `<div class="value detail">${e(parts.join('; '))}</div>`;
+}
+
+/** A run's page under its execution's directory (task-150): `runs/<scenario>@<ver>/<arm>/<model>/r<k>/index.html`. */
+export function runPagePath(run: string): string {
+  return `${run.split('/').slice(2).join('/')}/index.html`;
+}
+
+/** How far a run's page sits below the execution's directory: `runs/`, the scenario, arm, model and repetition. */
+const RUN_DEPTH = 5;
+
+/**
+ * A run's review loop on a page of its own (REQ-RES-02 as amended in 1.58, task-150): the reviewer, the outcome and
+ * its reason, and each round's findings by severity with file, line and title, as the records hold them.
+ */
+export function runPage(model: SiteModel, loop: ReviewLoopEntry): string {
+  const up = '../'.repeat(RUN_DEPTH);
+  const category = model.categories.find((row) =>
+    row.scenarios.some((scenario) => scenario.groups.some((group) => group.runs.includes(loop.run))),
+  )?.category;
+  const back =
+    category === undefined
+      ? `<p><a href="${up}index.html">← ${e(title(model))}</a></p>\n`
+      : `<p><a href="${up}${categoryFile(category)}">← ${e(categoryHeading(category))}</a></p>\n`;
+  const last = loop.rounds.at(-1);
+  const outcome =
+    loop.outcome === 'clean' && last !== undefined
+      ? `Outcome: <strong>clean</strong> at round ${last.n}.`
+      : `Outcome: <strong>${e(loop.outcome)}</strong>${loop.reason === undefined ? '' : `: ${e(loop.reason)}`}.`;
+  let body =
+    back +
+    `<h1>Review loop of <code>${e(loop.run)}</code></h1>\n<table>\n<tbody>\n` +
+    `<tr><th scope="row">Reviewer</th><td>${e(`${loop.reviewer.agent} ${loop.reviewer.version}`)}</td></tr>\n` +
+    `<tr><th scope="row">Reviewer model</th><td>${e(`${loop.reviewer.model}, effort ${loop.reviewer.effort}`)}</td></tr>\n` +
+    `<tr><th scope="row">Round cap</th><td>${loop.max_rounds} rounds</td></tr>\n</tbody>\n</table>\n` +
+    `<p id="outcome">${outcome}</p>\n`;
+  for (const round of loop.rounds) {
+    body += `<h2 id="round-${round.n}">Round ${round.n}</h2>\n`;
+    if (round.findings === null)
+      body += '<p>The reviewer’s session ended the loop before its findings.</p>\n';
+    else if (round.findings.length === 0) body += '<p>No finding.</p>\n';
+    else {
+      body += '<ul>\n';
+      for (const finding of round.findings) {
+        const place = finding.line === null ? finding.file : `${finding.file}:${finding.line}`;
+        body += `<li><span class="severity">${e(finding.severity)}</span> <code>${e(place)}</code> ${e(finding.title)}</li>\n`;
+      }
+      body += '</ul>\n';
+    }
+    if (round.fixed)
+      body += '<p>The arm’s agent fixed its blockers and should-fixes; the next round reviews the fix.</p>\n';
+  }
+  return page(`Review loop of ${loop.run} — ${title(model)}`, body, 2 + RUN_DEPTH);
 }
 
 /** The method page around its rendered text (task-046): a link back to the landing page, then the text. */

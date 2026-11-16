@@ -87,7 +87,7 @@ describe("the loop's metrics in the aggregate (task-150, REQ-SCO-16)", () => {
     expect(mV?.not_clean).toEqual([]);
     expect(mV?.no_value).toEqual(outcomes.map((outcome, index) => ({ outcome, runs: [nameOf('baseline', index + 1)] })));
     // `no loop` has no loop, so no cost: M-V3 reads the four loops that ran.
-    expect(mV?.cost.total.runs).toEqual([1, 2, 3, 4].map((r) => nameOf('baseline', r)));
+    expect(mV?.cost.total.cost_eur.runs).toEqual([1, 2, 3, 4].map((r) => nameOf('baseline', r)));
   });
 
   it("stores each run's loop for the site: outcome, reason, reviewer, and each finding without its why", () => {
@@ -167,15 +167,15 @@ describe("the loop's metrics in the aggregate (task-150, REQ-SCO-16)", () => {
     writeReviewLoop(runDir(dir, 'baseline'), cleanAt(2));
     writeReviewLoop(runDir(dir, 'wingfoil'), notCleanAt5());
     const after = aggregated(dir);
-    const strip = (aggregate: AggregateFile) => {
-      const { review_loops: _loops, ...rest } = aggregate;
-      return {
-        ...rest,
-        groups: rest.groups.map((group) => {
-          const { m_v: _mV, ...metrics } = group.metrics;
-          return { ...group, metrics };
-        }),
+    // The aggregate with the loop's fields taken out: a copy through JSON, its keys deleted.
+    const strip = (aggregate: AggregateFile): unknown => {
+      const copy = JSON.parse(JSON.stringify(aggregate)) as {
+        review_loops?: unknown;
+        groups: { metrics: { m_v?: unknown } }[];
       };
+      delete copy.review_loops;
+      for (const group of copy.groups) delete group.metrics.m_v;
+      return copy;
     };
     expect(strip(after)).toEqual(strip(before));
     expect(JSON.stringify(strip(after))).toBe(JSON.stringify(before));
@@ -206,11 +206,11 @@ describe("the loop's metrics compared (task-150, REQ-SCO-16, REQ-SCO-14)", () =>
     return aggregated(dir);
   }
 
-  it('reads M-V1 to M-V3 as figures, M-V2 as shares', () => {
+  it('reads M-V1 to M-V3 as figures, M-V2 as shares over the runs that have one', () => {
     const aggregate = compared({ baseline: [cleanAt(1), cleanAt(3)] });
     const group = groupOf(aggregate, 'baseline');
     expect(readMetric('M-V1', group)?.values).toEqual([1, 3]);
-    expect(readMetric('M-V2', group)?.values).toEqual([0, 0]);
+    expect(readMetric('M-V2', group)?.values).toEqual([0]);
     expect(readMetric('M-V3', group)?.values.length).toBe(2);
     expect(readMetric('M-V1', group)?.withheld).toBeUndefined();
   });

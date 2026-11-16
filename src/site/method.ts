@@ -131,7 +131,9 @@ export async function methodPages(
   if (!configuring.ok) return configuring;
   for (const [name, page] of configuring.value.material) material.set(name, page);
 
-  const executionHtml = executionSection(executionDir, model, parsed.value, manuals);
+  const review = reviewLoopSection(root, parsed.value, model);
+  if (!review.ok) return review;
+  const executionHtml = executionSection(executionDir, model, parsed.value, manuals) + review.value;
   const links = [...material.keys()]
     .sort()
     .map((name) => `<li><a href="material/${e(name)}">${e(materialTitle(name))}</a></li>\n`)
@@ -590,6 +592,73 @@ function executionSection(
     row('Rate', `${campaign.currency.usd_to_eur} EUR per USD`) +
     '</tbody>\n</table>\n<h3>Spending</h3>\n' +
     `<p id="spending">${spending}</p>\n`
+  );
+}
+
+/**
+ * The review loop the campaign pinned (REQ-RES-02 as amended in 1.58, task-150): the reviewer, its model and effort,
+ * the round cap and the session caps, the closing rule, what the reviewer's copy lacks, both prompts quoted in full with
+ * their SHA-256, and what the loops cost. Nothing without the pin. A prompt that differs from its pin is refused.
+ */
+function reviewLoopSection(root: string, campaign: CampaignFile, model: SiteModel): Result<string> {
+  const loop = campaign.review_loop;
+  if (loop === undefined) return ok('');
+  const issues: Issue[] = [];
+  const prompts: string[] = [];
+  const pinned = [
+    ['The reviewer’s prompt', loop.prompt],
+    ['The fixer’s prompt', loop.fixer_prompt],
+  ] as const;
+  for (const [label, pin] of pinned) {
+    const path = join(root, pin.file);
+    if (!existsSync(path)) {
+      issues.push({ path: pin.file, message: 'not found: the campaign pinned it for its review loop' });
+      continue;
+    }
+    const bytes = readFileSync(path);
+    const hash = sha256(bytes);
+    if (hash !== pin.sha256) {
+      issues.push({
+        path: pin.file,
+        message: `(sha256:${hash}) differs from the SHA-256 the campaign pinned (sha256:${pin.sha256})`,
+      });
+      continue;
+    }
+    prompts.push(
+      `<h4>${e(label)}</h4>\n<p><code>${e(pin.file)}</code>, sha256:${hash}</p>\n<pre>${e(bytes.toString('utf8'))}</pre>\n`,
+    );
+  }
+  if (issues.length > 0) return fail(issues);
+  const groups = [
+    ...model.categories.flatMap((row) => row.scenarios.flatMap((s) => s.groups)),
+    ...model.slices,
+  ];
+  const loops = groups.flatMap((group) => group.metrics.m_v?.cost.total.cost_eur.values ?? []);
+  const cost = loops.reduce((sum, value) => sum + value, 0);
+  const caps = loop.caps;
+  return ok(
+    '<h3 id="review-loop">Review loop</h3>\n' +
+      '<p>After a run’s last step, a reviewer reads the change and reports its findings as blockers, should-fixes ' +
+      'and nits; the arm’s own agent, in the run’s container, fixes the blockers and should-fixes, and the next round ' +
+      'reviews the fix, until a round closes the loop: ' +
+      'a round with nits only, or no finding, closes the loop as clean; a loop that has not closed by the round cap is ' +
+      'not clean, and is never counted as the cap. A loop never changes what the run’s steps left, nor their scores.</p>\n' +
+      '<p>The reviewer reads a copy of the code in a container of its own: two commits, the seed and the final code, ' +
+      'without every path the setup added (the harness’s files, its manual and its records), the names reserved to ' +
+      'the harnesses, the step prompts, the oracle and the run’s history. A harness can still leave traces in the code ' +
+      'itself, such as a task id in a comment (T17).</p>\n<table>\n<tbody>\n' +
+      row('Reviewer', `${e(loop.agent.name)} ${e(loop.agent.version)}`) +
+      row('Reviewer model', `${e(loop.model)}, effort ${e(loop.effort)}`) +
+      row('Round cap', `${loop.max_rounds} rounds`) +
+      row(
+        'Session caps',
+        `${caps.session_time_s} s, ${caps.session_tokens} tokens and ${caps.session_cost_eur} EUR per session; ` +
+          `${caps.fixer_interventions} interventions per fix`,
+      ) +
+      '</tbody>\n</table>\n' +
+      prompts.join('') +
+      `<p id="review-loop-spending">${loops.length} review loop${loops.length === 1 ? '' : 's'} cost ` +
+      `${cost.toFixed(4)} EUR in all, apart from the runs’ cost.</p>\n`,
   );
 }
 

@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { fail, historyCli, ok, systemProcess } from '../core/index.js';
 import type { HistoryPort, Result } from '../core/index.js';
@@ -21,6 +21,8 @@ import {
   PARITY_FILE,
   plainHeadlines,
   profilePage,
+  runPage,
+  runPagePath,
   STYLE,
   title,
 } from './render.js';
@@ -139,6 +141,11 @@ export async function buildSite(
     ['eligibility.html', eligibility.value],
     ...comparisonPages,
     ...[...method.value.material].map(([name, text]): [string, string] => [`material/${name}`, text]),
+    // A page for each run with a review loop (REQ-RES-02 as amended in 1.58, task-150).
+    ...(model.value.reviewLoops ?? []).map((loop): [string, string] => [
+      runPagePath(loop.run),
+      runPage(model.value, loop),
+    ]),
   ];
   const directory = `${SITE}/${model.value.campaign}/${model.value.execution}/`;
   // Every execution built under site/, this one included, with the day each ended (REQ-RES-02 as amended,
@@ -148,7 +155,10 @@ export async function buildSite(
   const target = join(siteDir, model.value.campaign, String(model.value.execution));
   rmSync(target, { recursive: true, force: true });
   mkdirSync(join(target, 'material'), { recursive: true });
-  for (const [name, text] of pages) writeFileSync(join(target, name), text);
+  for (const [name, text] of pages) {
+    mkdirSync(dirname(join(target, name)), { recursive: true });
+    writeFileSync(join(target, name), text);
+  }
   writeFileSync(join(siteDir, 'index.html'), index.value);
   writeFileSync(join(siteDir, 'style.css'), STYLE);
   return ok({ directory, pages: pages.length, headlines: plainHeadlines(model.value) });
