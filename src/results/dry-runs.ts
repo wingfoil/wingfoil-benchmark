@@ -184,8 +184,14 @@ export interface LoopDryRunsLookup {
   readonly skipped?: string;
 }
 
-/** The outcomes of a loop stopped from outside (task-151): its cost is not the loop's own, so it prices nothing. */
-const STOPPED_LOOPS: readonly string[] = ['interrupted', 'quota exhausted'];
+/**
+ * Whether a loop's outcome is that of a loop that ran its course (task-151's criterion 3): `clean`, `not clean at <n>`,
+ * `failed` or `no fix`. A loop stopped from outside (`interrupted`, `quota exhausted`) or that never ran (`no loop`)
+ * prices nothing: its cost is not the loop's own.
+ */
+function ranItsCourse(outcome: string): boolean {
+  return ['clean', 'failed', 'no fix'].includes(outcome) || /^not clean at [1-9][0-9]*$/.test(outcome);
+}
 
 /**
  * Every dry run whose review loop prices `key` (REQ-CLI-02 as amended in 1.58, task-151), newest first: a dry run that
@@ -206,7 +212,10 @@ export function findLoopDryRuns(resultsRoot: string, key: DryRunKey, pins: LoopP
     else {
       const differs = loopPinsDiffer(loop.value, pins);
       if (differs !== undefined) why = `ran the review loop with ${differs}`;
-      else if (STOPPED_LOOPS.includes(loop.value.outcome)) why = `has a loop stopped from outside (${loop.value.outcome})`;
+      else if (!ranItsCourse(loop.value.outcome)) why = `has a loop that did not run its course (${loop.value.outcome})`;
+      // A loop that failed before its first review (an infrastructure error, no reviewer) spent nothing of its own.
+      else if (loop.value.reviewers.length === 0) why = `has a loop whose reviewer never ran (${loop.value.outcome})`;
+
     }
     if (why !== undefined || !loop.ok || loop.value === undefined) {
       if (records.length === 0 && why !== undefined) skipped ??= `dry run ${record.execution} ${why}`;

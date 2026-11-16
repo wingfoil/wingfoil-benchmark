@@ -134,6 +134,10 @@ describe('the command line gives the runner its reviewer (REQ-RUN-15 for the rev
     const loopFile = join(root, 'results', 'dry-runs', '1', 'runs', 'T3@1.0', 'baseline', 'fake-model', 'r1');
     expect(existsSync(join(loopFile, 'review', 'loop.json'))).toBe(true);
     expect(reviewer.requests).toHaveLength(1);
+    // What it may spend, said before anything is built: the run's cap and the loop's worst case (task-151's review).
+    expect(out.stdout).toContain(
+      "no dry run yet; this one may spend up to its cap, 1 EUR, and its review loop's up to 20 EUR (5 rounds)",
+    );
   });
 });
 

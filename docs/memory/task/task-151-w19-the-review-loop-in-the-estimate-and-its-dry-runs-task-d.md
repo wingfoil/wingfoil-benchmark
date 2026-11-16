@@ -52,7 +52,7 @@ rounds.
 5. **The dry-run profile:** `scenarios/dry-run.yaml` gains the `review_loop` entry of choice 2: `claude-code` at the
    profile's agent version, `claude-sonnet-5-5`, `medium`, `review/prompt.md` and `review/fixer-prompt.md` with their
    SHA-256, `max_rounds: 5`, and the caps proposed in Design; `bench scenario check` and the leak scan pass.
-6. **The figures script** (unit, red first): `scripts/review-loop-figures.ts` prints, for every dry run under
+6. **The figures script** (unit, red first): `scripts/review-loop-figures.mjs` prints, for every dry run under
    `results/dry-runs/` with a loop, its key, outcome, rounds, M-V1, M-V2 and M-V3 (reviewer and fixer apart), read with
    task-150's `readLoop` and `runReviewMetrics`; no figure in a note is typed by hand.
 7. **The dry runs, on the approver's spending consent only:** before any session, the upper bound of each dry run is
@@ -108,3 +108,23 @@ rounds.
     loop needed it once the estimate priced loops.
 - Checks so far: `test/unit/runner`, `test/unit/cli`, `test/unit/results`, `test/unit/scenario` and
   `test/acceptance/campaign.test.ts` whole green (1107 tests); the figures script's bin test green.
+
+## Review
+
+- **Round 1** (a fresh read-only agent in a clone under `mktemp`, on `e7ce54b1`, 2026-11-16): no blocker, three
+  should-fix, seven nits.
+  - **Should-fix, fixed:** criterion 3 is now an allow-list (`clean`, `not clean at <n>`, `failed`, `no fix`), and a
+    loop whose reviewer never ran (a `failed` before round 1: an infrastructure error, no reviewer given) prices
+    nothing, its reason named; both tested. Before, a `no loop` or such a `failed` priced a key at 0 USD.
+  - **Should-fix, fixed:** with a profile that pins a loop, `scenario dry-run`'s refusal and its expected-spending line
+    add the loop's worst case (`max_rounds` × 2 sessions × `session_cost_eur`, 20 EUR on the profile) beside the run's
+    cap, and say the latest dry run's cost is its steps only; tested.
+  - **Should-fix, fixed:** a command-line test of the guard: `campaign estimate`'s guard line and `campaign run`'s
+    refusal with steps under the ceiling and the loop over it.
+  - **Nits, fixed:** the loop lines are printed after the step lines; the figures script shows `—` for a loop that never
+    ran (tested); criterion 6 names `.mjs`; the profile's header says it pins a loop the v0.2 reference does not.
+    **Kept:** an unreadable loop record is named only when no dry run prices the key, as `findDryRuns` treats an
+    unreadable `run.json`; the agent's name is matched with its version (stricter); the profile's test is
+    characterization, as said above.
+  - **For the gate:** every dry run on the default profile now runs and pays for a loop; a step-only dry run needs
+    another profile (`--profile`), there is no flag to skip the loop.

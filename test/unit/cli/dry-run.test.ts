@@ -10,6 +10,7 @@ import type { RunOnceRequest } from '../../../src/core/index.js';
 import { writeArmsNamed } from '../../support/arm-fixture.js';
 import { completeCampaignYaml } from '../../support/campaign-fixture.js';
 import { dryRunProfileYaml, writeDryRunProfile } from '../../support/dry-run-fixture.js';
+import { FIXER_PROMPT, REVIEW_PROMPT, reviewLoopYaml } from '../../support/review-fixture.js';
 import { repoPath } from '../../support/paths.js';
 import { doubles } from '../../support/runner-doubles.js';
 import type { Doubles } from '../../support/runner-doubles.js';
@@ -221,6 +222,23 @@ describe('bench scenario dry-run: the checks before anything is built (task-021 
       stderr: expect.stringMatching(/^BENCH_AGENT_TOKEN_FILE: is not set/),
     });
     expect(p.recorded.builds).toEqual([]);
+  });
+
+  it("says the review loop's worst case beside the run's cap when the profile pins a loop (task-151's review)", async () => {
+    const root = repository({
+      ...dryRunProfileYaml(),
+      agent: { name: 'claude-code', version: '2.1.280', effort: { 'fake-model': 'high' } },
+      review_loop: reviewLoopYaml(),
+    });
+    mkdirSync(join(root, 'review'), { recursive: true });
+    writeFileSync(join(root, 'review', 'prompt.md'), REVIEW_PROMPT);
+    writeFileSync(join(root, 'review', 'fixer-prompt.md'), FIXER_PROMPT);
+    expect(await dryRun(root, ['T3@1.0', '--arm', 'baseline'], ports())).toMatchObject({
+      code: 1,
+      stderr:
+        "dry run: agent 'claude-code' spends real money, up to the run's cap of 1 EUR, and its review loop's up to " +
+        '20 EUR (5 rounds); pass --allow-spending to run it\n',
+    });
   });
 
   it('runs a real agent only at an effort the profile pins for its model (dl-015, task-069)', async () => {

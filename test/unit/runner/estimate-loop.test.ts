@@ -5,11 +5,13 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { main } from '../../../src/cli/index.js';
 import { estimateCampaign, formatEstimate } from '../../../src/runner/index.js';
 import { writeStoredDryRun } from '../../support/dry-run-fixture.js';
 import { cleanAt, writeReviewLoop } from '../../support/loop-records.js';
 import type { LoopSpec } from '../../support/loop-records.js';
 import { FIXER_PROMPT, loopCampaign, REVIEW_PROMPT } from '../../support/review-fixture.js';
+import { doubles } from '../../support/runner-doubles.js';
 
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
 
@@ -132,6 +134,25 @@ describe("the review loop's keys in the estimate (REQ-CLI-02 as amended in 1.58)
     expect(issue?.message).toContain(`dry run 1 ran the review loop with ${why}`);
   });
 
+  it('leaves out a loop that never ran, or whose reviewer never ran (task-151 review round 1)', () => {
+    const { checked, dryRun } = setup();
+    dryRun(1, 0.1, cleanAt(1));
+    dryRun(2, 0.1, { outcome: 'no loop', reason: 'no container' });
+    dryRun(3, 0.1, { outcome: 'failed', reason: 'the runner was given no reviewer agent' });
+    const estimate = estimateCampaign(checked);
+    if (!estimate.ok) throw new Error(JSON.stringify(estimate.issues));
+    expect(
+      estimate.value.lines.find((line) => line.kind === 'review')?.dryRuns.map((run) => run.execution),
+    ).toEqual([1]);
+    // Alone, each is named as why the key has no loop dry run.
+    const alone = setup();
+    alone.dryRun(1, 0.1, { outcome: 'failed', reason: 'a git error' });
+    const refused = estimateCampaign(alone.checked);
+    expect(refused.ok ? '' : refused.issues[0]?.message).toContain(
+      'dry run 1 has a loop whose reviewer never ran (failed)',
+    );
+  });
+
   it('says so when a dry run recorded no loop', () => {
     const { checked, dryRun } = setup();
     dryRun(1, 0.1);
@@ -148,5 +169,40 @@ describe("the review loop's keys in the estimate (REQ-CLI-02 as amended in 1.58)
     expect(estimate.value.lines).toHaveLength(1);
     expect(Object.keys(estimate.value.lines[0] ?? {})).not.toContain('kind');
     expect(estimate.value.highUsd).toBeCloseTo(0.1 * 1.35, 9);
+  });
+});
+
+describe("the budget guard counts the loops (REQ-CLI-03 as amended in 1.58, task-151's review)", () => {
+  it('refuses a campaign whose steps fit under the ceiling and whose loops do not', async () => {
+    const { checked, root } = loopCampaign({
+      yaml: (yaml) => {
+        yaml.budget = { warn_eur: 0.5, ceiling_eur: 1 };
+      },
+    });
+    const [scenario] = checked.scenarios;
+    if (scenario === undefined) throw new Error('no scenario');
+    const dir = writeStoredDryRun(root, 1, {
+      id: scenario.id,
+      version: scenario.version,
+      hash: scenario.hash,
+      arm: 'baseline',
+      stepCostsUsd: [0.5],
+    });
+    // The steps: 0.5 USD + 35 % = 0.675 USD, 0.621 EUR at 0.92, under the ceiling; the loop: 1 USD + 35 % = 1.35 USD.
+    writeReviewLoop(join(dir, 'runs', `${scenario.id}@${scenario.version}`, 'baseline', 'fake-model', 'r1'), {
+      outcome: 'clean',
+      model: 'fake-reviewer',
+      pins: PINS,
+      rounds: [{ findings: [], reviewerEur: 0.5 }],
+    });
+    let stdout = '';
+    let stderr = '';
+    const io = { stdout: (text: string) => (stdout += text), stderr: (text: string) => (stderr += text) };
+    const ports = doubles();
+    expect(await main(['campaign', 'estimate', checked.campaign.file], io, ports)).toBe(0);
+    expect(stdout).toContain('budget guard: 0.0000 + 1.8630 = 1.8630 EUR (warn 0.5 EUR, ceiling 1 EUR)');
+    expect(await main(['campaign', 'run', checked.campaign.file], io, ports)).toBe(1);
+    expect(stderr).toContain('the budget guard, 0.0000 + 1.8630 = 1.8630 EUR, is above the ceiling, 1 EUR');
+    expect(ports.recorded.builds).toEqual([]);
   });
 });

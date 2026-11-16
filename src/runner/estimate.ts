@@ -275,7 +275,11 @@ function usd(value: number): string {
  */
 export function formatEstimate(estimate: Estimate, root: string): string[] {
   return [
-    ...estimate.lines.map((line) => {
+    // The step lines first, then the loops' (REQ-CLI-02 as amended in 1.58): the loops printed apart (task-151).
+    ...[
+      ...estimate.lines.filter((line) => line.kind !== 'review'),
+      ...estimate.lines.filter((line) => line.kind === 'review'),
+    ].map((line) => {
       const { unit } = line;
       const runs = line.dryRuns.length;
       const source = [

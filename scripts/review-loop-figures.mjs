@@ -50,8 +50,9 @@ export function figures(root) {
           }
           if (loop.value === undefined) continue;
           const metrics = runReviewMetrics(loop.value);
-          const reviewerEur = money(metrics.cost?.reviewer.cost_eur ?? 0);
-          const fixerEur = money(metrics.cost?.fixer.cost_eur ?? 0);
+          // A loop that never ran (`no loop`) has no cost, shown as none rather than as a free loop.
+          const reviewerEur = metrics.cost === undefined ? null : money(metrics.cost.reviewer.cost_eur);
+          const fixerEur = metrics.cost === undefined ? null : money(metrics.cost.fixer.cost_eur);
           rows.push({
             dryRun: `dry-runs/${execution}`,
             key: `${version}/${arm}/${model}`,
@@ -61,7 +62,7 @@ export function figures(root) {
             mV2: metrics.fixInduced ?? null,
             reviewerEur,
             fixerEur,
-            totalEur: money(reviewerEur + fixerEur),
+            totalEur: reviewerEur === null || fixerEur === null ? null : money(reviewerEur + fixerEur),
           });
         }
       }
@@ -72,7 +73,7 @@ export function figures(root) {
 
 /** The rows as a Markdown table: a loop not clean shows no M-V1, never its cap. */
 export function markdown(rows) {
-  const eur = (value) => value.toFixed(4);
+  const eur = (value) => (value === null ? '—' : value.toFixed(4));
   return [
     '| dry run | key | outcome | rounds | M-V1 | M-V2 | reviewer EUR | fixer EUR | M-V3 EUR |',
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',

@@ -17,9 +17,9 @@ interface Row {
   readonly rounds: number;
   readonly mV1: number | null;
   readonly mV2: { readonly fix_induced: number; readonly findings: number } | null;
-  readonly reviewerEur: number;
-  readonly fixerEur: number;
-  readonly totalEur: number;
+  readonly reviewerEur: number | null;
+  readonly fixerEur: number | null;
+  readonly totalEur: number | null;
 }
 interface Module {
   figures(root: string): Row[];
@@ -62,6 +62,8 @@ describe('scripts/review-loop-figures.mjs (task-151)', { timeout: 600_000 }, () 
       ],
     });
     store(3, 'S1', 'baseline');
+    // A loop that never ran: no cost, shown as none (task-151's review).
+    writeReviewLoop(store(4, 'S3', 'baseline'), { outcome: 'no loop', reason: 'failed' });
     return root;
   }
 
@@ -90,11 +92,23 @@ describe('scripts/review-loop-figures.mjs (task-151)', { timeout: 600_000 }, () 
         fixerEur: 0.08,
         totalEur: 0.13,
       },
+      {
+        dryRun: 'dry-runs/4',
+        key: 'S3@1.1/baseline/fake-model',
+        outcome: 'no loop',
+        rounds: 0,
+        mV1: null,
+        mV2: null,
+        reviewerEur: null,
+        fixerEur: null,
+        totalEur: null,
+      },
     ]);
   });
 
   it('prints the rows as a table, a loop not clean named as such, never as its cap', () => {
     const table = mod.markdown(mod.figures(fixture()));
+    expect(table).toContain('| dry-runs/4 | S3@1.1/baseline/fake-model | no loop | 0 | — | — | — | — | — |');
     expect(table).toContain(
       '| dry-runs/1 | S2@1.1/baseline/fake-model | clean | 2 | 2 | 0/1 | 0.0200 | 0.0200 | 0.0400 |',
     );
