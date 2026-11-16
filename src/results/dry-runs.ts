@@ -32,6 +32,12 @@ export interface DryRunKey {
    * from it): a dry run whose stored profile pinned another version of it does not count (task-095 review round 2).
    */
   readonly harness?: { readonly tool: string; readonly pin: HarnessPin };
+  /**
+   * The agent the campaign pins (REQ-CLI-02 as amended in 1.59, task-152): a dry run that recorded another agent, or
+   * another version of it, is another measure and does not count, as the review loop's pins already require; one that
+   * recorded no version still does, as one stored without an arm digest.
+   */
+  readonly agent?: { readonly name: string; readonly version: string };
 }
 
 /** A stored dry run: where it is, what it cost per step and in total (USD), and what it ran with. */
@@ -126,6 +132,18 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
     if (key.armDigest !== undefined && typeof run.arm_digest === 'string' && !run.arm_digest.startsWith(key.armDigest)) {
       if (records.length === 0) {
         skipped ??= `dry run ${execution} ran arm ${key.arm} at digest ${run.arm_digest.slice(0, 12)}, the campaign pins ${key.armDigest}`;
+      }
+      continue;
+    }
+    const agentName = run.agent?.name;
+    const agentVersion = run.agent?.version;
+    if (
+      key.agent !== undefined &&
+      typeof agentVersion === 'string' &&
+      (agentName !== key.agent.name || agentVersion !== key.agent.version)
+    ) {
+      if (records.length === 0) {
+        skipped ??= `dry run ${execution} ran agent ${String(agentName)} ${agentVersion}, the campaign pins ${key.agent.name} ${key.agent.version}`;
       }
       continue;
     }
