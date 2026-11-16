@@ -2,7 +2,7 @@
 id: task-151-w19-the-review-loop-in-the-estimate-and-its-dry-runs-task-d
 type: task
 title: "W19: the review loop in the estimate, and its dry runs (task D)"
-status: in-review
+status: approved
 release: v0.3
 wave: W19
 features: [F4.9]
