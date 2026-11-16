@@ -130,6 +130,16 @@ describe("findDryRuns: the agent's version (REQ-CLI-02 as amended in 1.59, task-
     dryRun(root, 2, stored([0.2], { agent: { name: 'claude-code' } }));
 
     expect(findDryRuns(root, PINNED).records.map((record) => record.execution)).toEqual([2, 1]);
+    expect(findDryRuns(root, PINNED).records[1]).not.toHaveProperty('agent');
+  });
+
+  it('never counts a dry run of another agent, whether or not it recorded a version', () => {
+    const root = tempDir('bench-results-');
+    dryRun(root, 1, stored([0.1], { agent: { name: 'codex' } }));
+
+    const found = findDryRuns(root, PINNED);
+    expect(found.records).toEqual([]);
+    expect(found.skipped).toBe('dry run 1 ran agent codex, the campaign pins claude-code 2.1.280');
   });
 
   it('matches any agent when the key pins none', () => {
