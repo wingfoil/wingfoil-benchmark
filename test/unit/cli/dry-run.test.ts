@@ -348,7 +348,7 @@ describe('bench scenario dry-run: the run (F3.3, REQ-RES-01, REQ-NFR-06)', () =>
     );
   });
 
-  it("quotes no dry run of another arm digest, nor of another harness pin (bug-024, the estimate's key)", async () => {
+  it("quotes no dry run of another arm digest, harness pin or agent release (bug-024, task-152: the estimate's key)", async () => {
     vi.stubEnv('BENCH_WINGFOIL_REPO', '/clones/wingfoil');
     const root = repository();
     const other = '0a1b2c3';
@@ -372,6 +372,17 @@ describe('bench scenario dry-run: the run (F3.3, REQ-RES-01, REQ-NFR-06)', () =>
     const repinned = await dryRun(root, ['T3@1.0', '--arm', 'baseline-docs'], p());
     expect(repinned.stdout.split('\n')[0]).toBe(
       'dry run T3@1.0 in baseline-docs on fake-model: no dry run yet; this one may spend up to its cap, 1 EUR',
+    );
+
+    // Another agent release (REQ-CLI-02 as amended in 1.59, task-152): the baseline's dry runs ran 1.0.0.
+    writeDryRunProfile(root, {
+      ...dryRunProfileYaml(),
+      harnesses: { wingfoil: { tool: 'wingfoil', version: other } },
+      agent: { name: 'fake', version: '1.0.1' },
+    });
+    const newAgent = await dryRun(root, ['T3@1.0', '--arm', 'baseline'], p());
+    expect(newAgent.stdout.split('\n')[0]).toBe(
+      'dry run T3@1.0 in baseline on fake-model: no dry run yet; this one may spend up to its cap, 1 EUR',
     );
   });
 

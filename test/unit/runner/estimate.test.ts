@@ -198,10 +198,26 @@ describe('estimateCampaign (F1.2, task-022)', () => {
     expect(counted.ok && counted.value.lines[0]?.dryRuns.map((run) => run.execution)).toEqual([1]);
   });
 
-  it('says when a dry run ran another agent or harness than the campaign pins, and still counts it', () => {
+  it('says when a dry run ran another harness commit than the campaign pins, and still counts it', () => {
     const { root, checked } = campaign({
       harnesses: { wingfoil: { tool: 'wingfoil', version: 'abc1234' } },
     });
+    const hash = hashOf(checked);
+    writeStoredDryRun(root, 1, { hash, arm: 'baseline', stepCostsUsd: [1] });
+    writeStoredDryRun(root, 2, { hash, arm: 'wingfoil', stepCostsUsd: [1], harnessCommit: SHA });
+
+    const result = estimateCampaign(checked);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(formatEstimate(result.value, root)[1]).toBe(
+      'T3@1.0 wingfoil fake-model: 1.0000 USD + 35 % margin = 1.3500 USD × 2 = 2.7000 USD ' +
+        '(1 dry run: results/dry-runs/2; wingfoil 3df305e, the campaign pins abc1234)',
+    );
+  });
+
+  it('does not count a dry run of another agent version, and names it (REQ-CLI-02 as amended in 1.59, task-152)', () => {
+    const { root, checked } = campaign({ arms: ['baseline'], harnesses: {} });
     const hash = hashOf(checked);
     writeStoredDryRun(root, 1, {
       hash,
@@ -209,17 +225,13 @@ describe('estimateCampaign (F1.2, task-022)', () => {
       stepCostsUsd: [1],
       agent: { name: 'fake', version: '0.9.0' },
     });
-    writeStoredDryRun(root, 2, { hash, arm: 'wingfoil', stepCostsUsd: [1], harnessCommit: SHA });
 
     const result = estimateCampaign(checked);
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(formatEstimate(result.value, root).slice(0, 2)).toEqual([
-      'T3@1.0 baseline fake-model: 1.0000 USD + 35 % margin = 1.3500 USD × 2 = 2.7000 USD ' +
-        '(1 dry run: results/dry-runs/1; agent fake 0.9.0, the campaign pins 1.0.0)',
-      'T3@1.0 wingfoil fake-model: 1.0000 USD + 35 % margin = 1.3500 USD × 2 = 2.7000 USD ' +
-        '(1 dry run: results/dry-runs/2; wingfoil 3df305e, the campaign pins abc1234)',
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((issue) => issue.message)).toEqual([
+      expect.stringContaining('(dry run 1 ran agent fake 0.9.0, the campaign pins fake 1.0.0)'),
     ]);
   });
 
