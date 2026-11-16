@@ -2,7 +2,7 @@
 id: F-036
 title: "init's commit subject carries an internal plan id"
 kind: defect
-status: captured
+status: resolved
 wingfoil_version: 0.2-pre-3df305e
 answered_by: [bug-409]
 ---

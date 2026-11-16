@@ -25,13 +25,17 @@ feedback source (`svc-020-github-repository-wingfoil-benchmark-the-benchmark-con
 service's full id and the full sha of the commit it read (WingFoil `COLLABORATION.md`, `## Credit`), for example
 `svc-020-github-repository-wingfoil-benchmark-the-benchmark-consumer-project-and-its-feedback-inbox/F-001@<full sha>`.
 
-**Last sync:** 2026-10-27, task-109, at the pin bump to `wingfoil@0.3.1` (`scripts/wingfoil-sync.mjs`, by
-`COLLABORATION.md`'s mapping only). Read at WingFoil `v0.3.1` (`870bd4406f3b9bba5ecde7a5f8198b80c2a98583`):
+**Last sync:** 2026-11-16, task-152, at the pin bump to `wingfoil@0.3.2` (`scripts/wingfoil-sync.mjs`, by
+`COLLABORATION.md`'s mapping only). Read at WingFoil `v0.3.2` (`6de2e13c004bbf419acfa7dc4d98d5a7468cd693`):
 `retro-v0.3`'s `## Consumer feedback` and `rel-v0.3-feedback-triage.md`, which read this inbox at
-`2ff5116fd249b5591d6e110e49feb0ba21c703d2` (F-001 to F-039); `patch-v0.3.1`'s scope changes, which take up no note;
-the citations at WingFoil's `origin/main` (`334a288707c3c817bdc8a1d31b20fb452dc2a5a1`), each citing element one the
-table names. Outcome: 24 `resolved`, 7 `captured`, 4 `needs-info` (F-007, F-009, F-023, F-034: WingFoil's questions
-are in its triage record), 4 `open` (restated with no element), and F-040 to F-044, not yet read, `open`.
+`2ff5116fd249b5591d6e110e49feb0ba21c703d2` (F-001 to F-039); `patch-v0.3.1`'s and `patch-v0.3.2`'s scope changes,
+which take up no note; the citations at WingFoil's `origin/main` (`69b7d0e26ca303939fea1441448ff0752a90e398`). One
+change: F-036 `captured` → `resolved` (bug-409 shipped in v0.3.2). Outcome: 25 `resolved`, 6 `captured`, 4
+`needs-info`, 12 `open` (F-030, F-031, F-035 and F-037 restated with no element; F-040 to F-047 not yet read by a
+retrospective). The sync warned that seven notes are cited at `origin/main` by elements their row does not name
+(F-031, F-033, F-037, F-042, F-043, F-044, F-045): by rule 6 their status waits for a retrospective's row.
+
+Previous sync: 2026-10-27, task-109, at the pin bump to `wingfoil@0.3.1`, read at `v0.3.1` (`870bd440`).
 
 **The four `needs-info` answers** (2026-11-05, task-112): F-007, F-009, F-023 and F-034 each carry, at the end of
 their `## Observed`, an answer reproduced on `wingfoil@0.3.1` in a scratch project with WingFoil alone; their status
@@ -76,7 +80,7 @@ stays `needs-info` until the next sync reads them.
 | [F-033](F-033-agents-guide-sets-no-level-of-process.md) | The agents' guide sets rules but no level of process, and no place for an automated approver | request | resolved | dl-103 |
 | [F-034](F-034-packed-tarball-installs-without-bin-or-lockfile.md) | The packed tarball installs with no executable bin and no lockfile | defect | needs-info | |
 | [F-035](F-035-copied-records-lose-their-approval-provenance.md) | Records copied into a repository lose their approval provenance | gap | open | |
-| [F-036](F-036-init-commit-subject-carries-an-internal-plan-id.md) | init's commit subject carries an internal plan id | defect | captured | bug-409 |
+| [F-036](F-036-init-commit-subject-carries-an-internal-plan-id.md) | init's commit subject carries an internal plan id | defect | resolved | bug-409 |
 | [F-037](F-037-approve-accepts-a-placeholder-reason.md) | approve --reason accepts a placeholder as the recorded reason | request | open | |
 | [F-038](F-038-submit-takes-no-reason.md) | submit takes no --reason | request | captured | dl-201 |
 | [F-039](F-039-directive-assign-cannot-bind-a-directive-globally.md) | directive assign cannot bind a directive globally | gap | captured | bug-410 |
