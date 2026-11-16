@@ -2,7 +2,7 @@
 id: bug-050-the-memory-cli-and-the-campaign-pins-lag-wingfoil-v0.3.2
 type: bug
 title: "The memory CLI and the campaign pins lag WingFoil v0.3.2"
-status: approved
+status: fixed
 fixed_by: task-152-align-the-benchmark-to-wingfoil-v0.3.2-the-memory-cli-the-wingfoil-arm-and-the-next-campaigns-pins
 tags: ["v0.3","wingfoil","config"]
 ---
