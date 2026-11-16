@@ -115,11 +115,11 @@ feature file with its test red first (`test/acceptance/scoring.test.ts`, `test/a
 - 2026-11-16: backlog → in-progress on main; worktree `../WingFoil2-Benchmark-wt/t150`.
 - **Red first** (`3b9ce2da`): the four `scoring.feature` and two `results.feature` scenarios (F4.9 added to both
   files' traces; no version bump, as the scenarios earlier tasks added) with their tests;
-  `test/unit/results/review.test.ts` (the fix's lines, the outcomes without a value, the loops' records, the reviewer's bound, a loop record that does
-  not parse, the aggregate unchanged without loops, the comparisons); `test/support/loop-records.ts` writes a loop as
-  task-149's runner records it. All red for the absent code. Two expectations of mine were wrong and corrected after:
-  a field read as `cost.total.runs` (the runs are each figure's), and M-V2 over two runs of which one has no finding
-  after round 1.
+  `test/unit/results/review.test.ts` (the fix's lines, the outcomes without a value, the loops' records, the
+  reviewer's bound, a loop record that does not parse, the aggregate unchanged without loops, the comparisons);
+  `test/support/loop-records.ts` writes a loop as task-149's runner records it. All red for the absent code. Two
+  expectations of mine were wrong and corrected after: a field read as `cost.total.runs` (the runs are each figure's),
+  and M-V2 over two runs of which one has no finding after round 1.
 - **The work** (`c9492fa4`):
   - `src/results/review.ts` (new): `readLoop` (zod over `loop.json`, each listed round's `findings.json`, and every
     round directory's `reviewer-usage.json`, `fixer-usage.json` and `fix.patch`, so that a session that ran and ended
