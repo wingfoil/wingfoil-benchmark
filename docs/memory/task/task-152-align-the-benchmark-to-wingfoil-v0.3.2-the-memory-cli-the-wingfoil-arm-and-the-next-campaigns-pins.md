@@ -111,8 +111,8 @@ is not built here.
   W-08, W-13, W-14 and W-15 re-run with `--dry-run` on 0.3.2 behave as their entries say (W-08: `park` refused, `not a
   returns state`; W-15: `unknown role 'global'`); version 1.3, *Checked against* `wingfoil@0.3.2` (`6de2e13c`). The
   sync read at `v0.3.2` (the clone read only, its status unchanged) moved F-036 to `resolved` (bug-409 shipped in
-  v0.3.2) and warned of seven notes cited at WingFoil's `origin/main` by elements their row does not name; recorded
-  in the inbox's README.
+  v0.3.2) and warned of twelve notes cited at WingFoil's `origin/main` by elements their row does not name;
+  recorded in the inbox's README. `npm ci` re-run on the branch after the lockfile changed: `--version` still 0.3.2.
 - **Criterion 2:** the branch's diff against main touches nothing under `arms/`, `campaigns/presets/`,
   `eligibility/`, `configuring/`, `scenarios/` or any `configured/` record, and no existing campaign or profile file.
 - **Criterion 3** (`ae5d9d23` red, `fde2c64f`): `campaigns/v0-3-review-loop.dry-run.yaml`, the reference profile's
@@ -127,3 +127,13 @@ is not built here.
   a note; the test that pinned it now pins the skip). REQ-CLI-02 amended in 1.59. Checked on the real records: the
   stored dry runs ran Claude Code 2.1.280 (19), 2.1.300 (147) and Codex 0.162.1 (41), and `campaign estimate` prints
   the same for all 13 campaign files before and after the change.
+- **The acceptance test** (`3a07dd5c`): `@F4.9 A campaign without a review loop is unchanged` also asserted that no
+  dry-run profile under `campaigns/` holds a loop, beyond its scenario's text ("every campaign file of the repository
+  still loads"); it now requires every profile to load and only `v0-3-review-loop.dry-run.yaml` to hold one. Red from
+  `fde2c64f` to `3a07dd5c`: the pre-review's selection did not run it, the wider targeted run did.
+- **Review round 1** (an independent read-only agent, dl-020, at `3a07dd5c`): no blocker. Should-fix, fixed: the sync
+  printed twelve warnings, not seven (my reading had cut its output); the README and these notes list all twelve.
+  Nits fixed: a dry run naming another agent without a version no longer counts (REQ-CLI-02's text says so), and
+  `DryRunRecord.agent` is set only when the record names both; REQ-CLI-05 gains its 1.59 note; `npm ci` re-run and
+  recorded. Nits kept: the refusal of criterion 3 is checked by hand, as task-151's dry-run bounds were; the red span
+  of the acceptance test above stays in history.

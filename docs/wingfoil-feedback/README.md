@@ -32,8 +32,9 @@ service's full id and the full sha of the commit it read (WingFoil `COLLABORATIO
 which take up no note; the citations at WingFoil's `origin/main` (`69b7d0e26ca303939fea1441448ff0752a90e398`). One
 change: F-036 `captured` → `resolved` (bug-409 shipped in v0.3.2). Outcome: 25 `resolved`, 6 `captured`, 4
 `needs-info`, 12 `open` (F-030, F-031, F-035 and F-037 restated with no element; F-040 to F-047 not yet read by a
-retrospective). The sync warned that seven notes are cited at `origin/main` by elements their row does not name
-(F-031, F-033, F-037, F-042, F-043, F-044, F-045): by rule 6 their status waits for a retrospective's row.
+retrospective). The sync warned that twelve notes are cited at `origin/main` by elements their row does not name
+(F-009, F-023, F-030, F-031, F-033, F-035, F-037, F-042, F-043, F-044, F-045, F-046): by rule 6 their status waits
+for a retrospective's row.
 
 Previous sync: 2026-10-27, task-109, at the pin bump to `wingfoil@0.3.1`, read at `v0.3.1` (`870bd440`).
 

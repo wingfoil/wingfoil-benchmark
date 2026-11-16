@@ -47,7 +47,8 @@ export interface DryRunRecord {
   readonly dir: string;
   readonly costUsd: number;
   readonly stepCostsUsd: readonly number[];
-  readonly agent: { readonly name: string; readonly version: string };
+  /** The agent it ran, when its record names both the agent and its version. */
+  readonly agent?: { readonly name: string; readonly version: string };
   /** The harness commit the arm ran, for an arm that requires one. */
   readonly harnessCommit?: string;
 }
@@ -135,15 +136,17 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
       }
       continue;
     }
-    const agentName = run.agent?.name;
-    const agentVersion = run.agent?.version;
+    const agentName = typeof run.agent?.name === 'string' ? run.agent.name : undefined;
+    const agentVersion = typeof run.agent?.version === 'string' ? run.agent.version : undefined;
+    // Another agent never counts; another version of it only when the record names one (one stored without counts).
     if (
       key.agent !== undefined &&
-      typeof agentVersion === 'string' &&
-      (agentName !== key.agent.name || agentVersion !== key.agent.version)
+      ((agentName !== undefined && agentName !== key.agent.name) ||
+        (agentVersion !== undefined && agentVersion !== key.agent.version))
     ) {
       if (records.length === 0) {
-        skipped ??= `dry run ${execution} ran agent ${String(agentName)} ${agentVersion}, the campaign pins ${key.agent.name} ${key.agent.version}`;
+        const ran = [agentName, agentVersion].filter((part) => part !== undefined).join(' ');
+        skipped ??= `dry run ${execution} ran agent ${ran}, the campaign pins ${key.agent.name} ${key.agent.version}`;
       }
       continue;
     }
@@ -167,7 +170,9 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
       dir,
       costUsd: stepCostsUsd.reduce((total, cost) => total + cost, 0),
       stepCostsUsd,
-      agent: { name: String(run.agent?.name), version: String(run.agent?.version) },
+      ...(agentName !== undefined && agentVersion !== undefined
+        ? { agent: { name: agentName, version: agentVersion } }
+        : {}),
       ...(typeof commit === 'string' ? { harnessCommit: commit } : {}),
     });
   }
