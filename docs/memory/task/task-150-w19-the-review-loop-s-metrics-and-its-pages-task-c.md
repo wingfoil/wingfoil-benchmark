@@ -184,3 +184,6 @@ feature file with its test red first (`test/acceptance/scoring.test.ts`, `test/a
     no zero figures.
   - **Nits, fixed:** a prompt missing from the working tree is refused as "not found", tested; a lone trailing
     backslash in a quoted path, tested.
+- **Round 4** (a fourth fresh agent, on round 3's tests, `a4253bc2`): no blocker, no should-fix; each test fails with
+  its fix removed (checked in its clone). Three nits kept: one test holds two behaviours, a negative assertion that
+  rests on the positive one before it, and a made-up patch header for a backslash git never writes.
