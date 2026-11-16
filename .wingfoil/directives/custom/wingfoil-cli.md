@@ -9,10 +9,11 @@ tags: [custom, wingfoil, cli, governance]
 
 # Directive — Using the pinned WingFoil CLI
 
-**Version:** 1.2 · **Date:** 2026-11-05 (1.2: W-19's retrospective evidence dropped, `release-cycle` 7 ending
-that phase at the approver's approval — dl-030, task-113; 1.1: rule 8 for a published pin; entries re-checked, W-04,
-W-05, W-06, W-10, W-11 and W-12 removed as fixed, W-18 and W-19 added — task-109) · **Checked against:**
-`wingfoil@0.3.1` (`870bd440`)
+**Version:** 1.3 · **Date:** 2026-11-16 (1.3: pin bumped to 0.3.2, every entry re-checked and none fixed by its
+changelog, W-03, W-07, W-08, W-13, W-14 and W-15 also re-run with `--dry-run` — task-152; 1.2: W-19's retrospective
+evidence dropped, `release-cycle` 7 ending that phase at the approver's approval — dl-030, task-113; 1.1: rule 8 for a
+published pin; entries re-checked, W-04, W-05, W-06, W-10, W-11 and W-12 removed as fixed, W-18 and W-19 added —
+task-109) · **Checked against:** `wingfoil@0.3.2` (`6de2e13c`)
 
 Global. Applies to every role, human or agent, that runs the WingFoil CLI in this repository.
 
@@ -39,7 +40,7 @@ Global. Applies to every role, human or agent, that runs the WingFoil CLI in thi
    repository. Friction they show is still a note, with that build as `wingfoil_version`; a note never carries a
    run's results, which stay in the benchmark's own records.
 
-## Known behaviours (0.3.1)
+## Known behaviours (0.3.2)
 
 | # | Behaviour | How to work with it | Note | WingFoil element |
 |---|-----------|---------------------|------|------------------|

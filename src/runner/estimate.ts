@@ -100,6 +100,8 @@ export function estimateCampaign(
         ? {}
         : { armDigest: campaign.spec.arm_digests[arm] }),
       ...harnessKey(checked.campaign.spec.harnesses, checked.arms, arm),
+      // A dry run of another agent release is another measure (REQ-CLI-02 as amended in 1.59, task-152).
+      agent: { name: campaign.spec.agent.name, version: campaign.spec.agent.version },
     };
     const lookup = findDryRuns(campaign.resultsRoot, dryRunKey);
     const [newest] = lookup.records;
@@ -237,17 +239,13 @@ export function campaignKeys({ campaign, scenarios }: CheckedCampaign): Campaign
 }
 
 /**
- * What the dry run ran with that the campaign does not pin: another agent version, or a harness commit
- * the campaign's commit pin does not name. A harness pinned by a released version cannot be compared
- * with a commit, and is not flagged.
+ * What the dry run ran with that the campaign does not pin: a harness commit the campaign's commit pin does not name.
+ * A harness pinned by a released version cannot be compared with a commit, and is not flagged. Another agent or agent
+ * version is no longer a note: such a dry run does not count (REQ-CLI-02 as amended in 1.59, task-152).
  */
 function provenance({ campaign, arms }: CheckedCampaign, arm: string, dryRun: DryRunRecord): string[] {
   const notes: string[] = [];
-  const { agent, harnesses } = campaign.spec;
-  if (dryRun.agent.name !== agent.name || dryRun.agent.version !== agent.version) {
-    const pinned = dryRun.agent.name === agent.name ? agent.version : `${agent.name} ${agent.version}`;
-    notes.push(`agent ${dryRun.agent.name} ${dryRun.agent.version}, the campaign pins ${pinned}`);
-  }
+  const { harnesses } = campaign.spec;
   // A configured arm's pin is its base arm's entry (REQ-FMT-01 as amended in 1.50).
   const definition = arms.find((candidate) => candidate.name === arm);
   const harness = harnesses[definition === undefined ? arm : baseArmOf(definition)];

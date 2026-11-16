@@ -32,6 +32,12 @@ export interface DryRunKey {
    * from it): a dry run whose stored profile pinned another version of it does not count (task-095 review round 2).
    */
   readonly harness?: { readonly tool: string; readonly pin: HarnessPin };
+  /**
+   * The agent the campaign pins (REQ-CLI-02 as amended in 1.59, task-152): a dry run that recorded another agent, or
+   * another version of it, is another measure and does not count, as the review loop's pins already require; one that
+   * recorded no version still does, as one stored without an arm digest.
+   */
+  readonly agent?: { readonly name: string; readonly version: string };
 }
 
 /** A stored dry run: where it is, what it cost per step and in total (USD), and what it ran with. */
@@ -41,7 +47,8 @@ export interface DryRunRecord {
   readonly dir: string;
   readonly costUsd: number;
   readonly stepCostsUsd: readonly number[];
-  readonly agent: { readonly name: string; readonly version: string };
+  /** The agent it ran, when its record names both the agent and its version. */
+  readonly agent?: { readonly name: string; readonly version: string };
   /** The harness commit the arm ran, for an arm that requires one. */
   readonly harnessCommit?: string;
 }
@@ -129,6 +136,20 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
       }
       continue;
     }
+    const agentName = typeof run.agent?.name === 'string' ? run.agent.name : undefined;
+    const agentVersion = typeof run.agent?.version === 'string' ? run.agent.version : undefined;
+    // Another agent never counts; another version of it only when the record names one (one stored without counts).
+    if (
+      key.agent !== undefined &&
+      ((agentName !== undefined && agentName !== key.agent.name) ||
+        (agentVersion !== undefined && agentVersion !== key.agent.version))
+    ) {
+      if (records.length === 0) {
+        const ran = [agentName, agentVersion].filter((part) => part !== undefined).join(' ');
+        skipped ??= `dry run ${execution} ran agent ${ran}, the campaign pins ${key.agent.name} ${key.agent.version}`;
+      }
+      continue;
+    }
     const ranOn = key.harness === undefined ? undefined : profileHarnessPin(dir, key.harness.tool);
     if (key.harness !== undefined && ranOn !== undefined && !samePin(ranOn, key.harness.pin)) {
       if (records.length === 0) {
@@ -149,7 +170,9 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
       dir,
       costUsd: stepCostsUsd.reduce((total, cost) => total + cost, 0),
       stepCostsUsd,
-      agent: { name: String(run.agent?.name), version: String(run.agent?.version) },
+      ...(agentName !== undefined && agentVersion !== undefined
+        ? { agent: { name: agentName, version: agentVersion } }
+        : {}),
       ...(typeof commit === 'string' ? { harnessCommit: commit } : {}),
     });
   }

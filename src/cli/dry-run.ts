@@ -158,6 +158,7 @@ export async function dryRunCommand(
     // a campaign without `arm_digests`, the dry run always knows it, and quotes only a dry run of that arm.
     armDigest: armDigest(arm.from?.root ?? root, arm.name),
     ...harnessKey(profile.harnesses, arms, arm.name),
+    agent: { name: profile.agent.name, version: profile.agent.version },
   });
   io.stdout(
     latest === undefined

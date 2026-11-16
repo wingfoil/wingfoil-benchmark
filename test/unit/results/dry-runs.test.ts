@@ -107,3 +107,44 @@ describe('findDryRuns (REQ-CLI-02 as amended in 1.26, task-081)', () => {
     expect(findDryRuns(root, KEY).records).toEqual([]);
   });
 });
+
+describe("findDryRuns: the agent's version (REQ-CLI-02 as amended in 1.59, task-152)", () => {
+  const PINNED = { ...KEY, agent: { name: 'claude-code', version: '2.1.280' } };
+
+  it('counts only a dry run of the agent and version the key pins, and names the newest one skipped', () => {
+    const root = tempDir('bench-results-');
+    dryRun(root, 1, stored([0.1]));
+    dryRun(root, 2, stored([0.2], { agent: { name: 'claude-code', version: '2.1.300' } }));
+    dryRun(root, 3, stored([0.3], { agent: { name: 'codex', version: '2.1.280' } }));
+
+    expect(findDryRuns(root, PINNED).records.map((record) => record.execution)).toEqual([1]);
+
+    const none = findDryRuns(root, { ...KEY, agent: { name: 'claude-code', version: '2.1.325' } });
+    expect(none.records).toEqual([]);
+    expect(none.skipped).toBe('dry run 3 ran agent codex 2.1.280, the campaign pins claude-code 2.1.325');
+  });
+
+  it('counts a dry run stored without an agent version, as one stored without an arm digest', () => {
+    const root = tempDir('bench-results-');
+    dryRun(root, 1, stored([0.1], { agent: undefined }));
+    dryRun(root, 2, stored([0.2], { agent: { name: 'claude-code' } }));
+
+    expect(findDryRuns(root, PINNED).records.map((record) => record.execution)).toEqual([2, 1]);
+    expect(findDryRuns(root, PINNED).records[1]).not.toHaveProperty('agent');
+  });
+
+  it('never counts a dry run of another agent, whether or not it recorded a version', () => {
+    const root = tempDir('bench-results-');
+    dryRun(root, 1, stored([0.1], { agent: { name: 'codex' } }));
+
+    const found = findDryRuns(root, PINNED);
+    expect(found.records).toEqual([]);
+    expect(found.skipped).toBe('dry run 1 ran agent codex, the campaign pins claude-code 2.1.280');
+  });
+
+  it('matches any agent when the key pins none', () => {
+    const root = tempDir('bench-results-');
+    dryRun(root, 1, stored([0.1], { agent: { name: 'claude-code', version: '2.1.300' } }));
+    expect(findDryRuns(root, KEY).records.map((record) => record.execution)).toEqual([1]);
+  });
+});
