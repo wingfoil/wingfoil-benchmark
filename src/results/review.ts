@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 
 import { fail, findingsSchema, ok, parseWith } from '../core/index.js';
-import type { Issue, Result } from '../core/index.js';
+import type { InterventionKind, Issue, Result } from '../core/index.js';
 
 /**
  * A run's review loop as task-149's runner records it under `review/` (REQ-FMT-06 as amended in 1.58), read for
@@ -51,10 +51,19 @@ const usageSchema = z.object({
   durationMs: z.number(),
 });
 const reviewerUsageSchema = usageSchema.extend({ cost_bound_eur: z.number().optional() });
+/** Every kind an intervention has: a kind added to the runner's type fails to compile here until it is read. */
+const INTERVENTION_KINDS: Readonly<Record<InterventionKind, true>> = { approval: true, question: true };
 const fixerUsageSchema = z.object({
   usage: usageSchema,
   cost_bound_usd: z.number().optional(),
-  interventions: z.number().int(),
+  // The runner's list of the approver's replies (bug-051): counted by its length, as a step's are.
+  interventions: z.array(
+    z.object({
+      step: z.number().int(),
+      kind: z.enum(Object.keys(INTERVENTION_KINDS) as [InterventionKind, ...InterventionKind[]]),
+      reply: z.string(),
+    }),
+  ),
 });
 
 /** One session's M-K1 and M-K2 (experiment design §4.2), counted at its bound when it reported no cost. */
@@ -195,7 +204,7 @@ export function readLoop(runDir: string, rate: () => Result<number>): Result<Sto
           if (!r.ok) return r;
           eur = bound * r.value;
         }
-        fixers.push(figures(u, eur, over ? bound : u.costUsd, bound !== undefined, interventions));
+        fixers.push(figures(u, eur, over ? bound : u.costUsd, bound !== undefined, interventions.length));
       }
     }
     const patch = join(runDir, REVIEW_DIR, String(n), 'fix.patch');

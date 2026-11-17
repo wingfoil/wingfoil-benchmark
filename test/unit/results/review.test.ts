@@ -8,6 +8,7 @@ import { aggregateExecution, fixLines, readMetric } from '../../../src/results/i
 import type { AggregateFile, Group } from '../../../src/results/index.js';
 import { CAMPAIGN, execution } from '../../support/aggregate-fixture.js';
 import type { RunSpec } from '../../support/aggregate-fixture.js';
+import { fixerUsageRecord } from '../../../src/runner/review-loop.js';
 import { cleanAt, loopFinding, notCleanAt5, patchChanging, writeReviewLoop } from '../../support/loop-records.js';
 
 const PINS = 'models:\n  default: model-a\ncurrency:\n  usd_to_eur: 0.5\n';
@@ -178,7 +179,7 @@ describe("the loop's metrics in the aggregate (task-150, REQ-SCO-16)", () => {
       JSON.stringify({
         usage: { ...usage, costUsd: 0.02, costEur: 0.01, turns: 1, durationMs: 10 },
         cost_bound_usd: 0.5,
-        interventions: 1,
+        interventions: [{ step: 2, kind: 'approval', reply: 'Approved. Proceed.' }],
         outcome: 'failed',
       }),
     );
@@ -321,5 +322,68 @@ describe("the loop's metrics compared (task-150, REQ-SCO-16, REQ-SCO-14)", () =>
     });
     const v1 = aggregate.controls?.[0]?.metrics.find((metric) => metric.metric === 'M-V1');
     expect(v1).toEqual({ metric: 'M-V1', note: 'not compared: wingfoil has 1 loop not clean at 5' });
+  });
+});
+
+// bug-051: the runner wrote the fixer's interventions as a list and the reader required a number, and no test fed one
+// to the other. These write the round with the runner's own writer.
+describe("a fixer round as the runner records it (bug-051, REQ-FMT-06's fixer's usage and interventions)", () => {
+  const usage = {
+    inputTokens: 10,
+    outputTokens: 1446,
+    cacheCreationInputTokens: 11110,
+    cacheReadInputTokens: 92718,
+    costUsd: 0.04,
+    costEur: 0.02,
+    turns: 5,
+    durationMs: 17253,
+  };
+
+  function loopWithFix(dir: string): string {
+    const run = runDir(dir, 'baseline');
+    writeReviewLoop(run, {
+      outcome: 'no fix',
+      reason: "round 1's fix changed nothing the reviewer reads",
+      rounds: [{ findings: [loopFinding('should-fix', 'src/a.ts', 3)], fix: { patch: patchChanging('src/a.ts', 1, 2) } }],
+    });
+    return run;
+  }
+
+  it("reads the runner's record of a fixer round and counts its interventions, the list's length", () => {
+    const dir = execution([{ arm: 'baseline', steps: ONE_STEP }], PINS);
+    const run = loopWithFix(dir);
+    const interventions = [
+      { step: 2, kind: 'approval' as const, reply: 'Approved. Proceed.' },
+      { step: 2, kind: 'question' as const, reply: 'Use your best judgement.' },
+    ];
+    writeFileSync(
+      join(run, 'review', '1', 'fixer-usage.json'),
+      fixerUsageRecord({ usage, interventions, outcome: 'completed' }, []),
+    );
+    const cost = groupOf(aggregated(dir), 'baseline').metrics.m_v?.cost;
+    expect(cost?.fixer.interventions.values).toEqual([2]);
+    expect(cost?.fixer.cost_eur.values).toEqual([0.02]);
+  });
+
+  it('reads a fixer round with no intervention, as `dry-runs/213` stored it', () => {
+    const dir = execution([{ arm: 'baseline', steps: ONE_STEP }], PINS);
+    const run = loopWithFix(dir);
+    writeFileSync(
+      join(run, 'review', '1', 'fixer-usage.json'),
+      fixerUsageRecord({ usage, interventions: [], outcome: 'completed' }, []),
+    );
+    expect(groupOf(aggregated(dir), 'baseline').metrics.m_v?.cost.fixer.interventions.values).toEqual([0]);
+  });
+
+  it('refuses a count where the list belongs, naming the file: no runner ever wrote one', () => {
+    const dir = execution([{ arm: 'baseline', steps: ONE_STEP }], PINS);
+    const run = loopWithFix(dir);
+    writeFileSync(
+      join(run, 'review', '1', 'fixer-usage.json'),
+      JSON.stringify({ usage, interventions: 1, outcome: 'completed' }),
+    );
+    const aggregate = aggregateExecution(dir);
+    expect(aggregate.ok).toBe(false);
+    if (!aggregate.ok) expect(JSON.stringify(aggregate.issues)).toContain('review/1/fixer-usage.json');
   });
 });

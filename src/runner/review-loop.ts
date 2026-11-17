@@ -541,6 +541,28 @@ type FixResult =
   | { readonly end: Omit<LoopSummary, 'costEur'>; readonly costEur: number };
 
 /**
+ * A fixer round's `fixer-usage.json` (REQ-FMT-06 as amended in 1.58): the session's usage, its bound when it reported
+ * none, its interventions as the list of the approver's replies (a step's are counted by that list's length), its
+ * outcome, and its error scrubbed of credentials. `readLoop` reads it back (bug-051).
+ */
+export function fixerUsageRecord(
+  result: Pick<StepResult, 'usage' | 'costBoundUsd' | 'interventions' | 'outcome' | 'error'>,
+  secrets: readonly string[],
+): string {
+  return `${JSON.stringify(
+    {
+      usage: result.usage,
+      ...(result.costBoundUsd === undefined ? {} : { cost_bound_usd: result.costBoundUsd }),
+      interventions: result.interventions,
+      outcome: result.outcome,
+      ...(result.error === undefined ? {} : { error: scrub(result.error, secrets) }),
+    },
+    undefined,
+    2,
+  )}\n`;
+}
+
+/**
  * One fixer session (REQ-RUN-21): the run's own agent and model in the run's container and workspace, with the arm's
  * MCP configuration and the approver policy as a step after the last, under the loop's caps; its interventions capped
  * by `fixer_interventions`.
@@ -590,20 +612,7 @@ async function fixRound(n: number, input: FixInput, options: RunnerOptions): Pro
     };
   }
   const costEur = spentEur([result], pins);
-  writeFileSync(
-    join(roundDir, 'fixer-usage.json'),
-    `${JSON.stringify(
-      {
-        usage: result.usage,
-        ...(result.costBoundUsd === undefined ? {} : { cost_bound_usd: result.costBoundUsd }),
-        interventions: result.interventions,
-        outcome: result.outcome,
-        ...(result.error === undefined ? {} : { error: scrub(result.error, secretsNow(options)) }),
-      },
-      undefined,
-      2,
-    )}\n`,
-  );
+  writeFileSync(join(roundDir, 'fixer-usage.json'), fixerUsageRecord(result, secretsNow(options)));
   const ended = (summary: Omit<LoopSummary, 'costEur'>): FixResult => ({ end: summary, costEur });
   switch (result.outcome) {
     case 'completed':
