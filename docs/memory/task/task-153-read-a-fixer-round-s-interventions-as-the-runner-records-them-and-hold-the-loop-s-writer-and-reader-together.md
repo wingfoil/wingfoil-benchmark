@@ -50,3 +50,19 @@ from the figures script on dry runs 208–215, so this task comes before W19 clo
 - `scripts/review-loop-figures.mjs` reads through `readLoop`, so it needs no change.
 
 ## Execution notes
+
+2026-11-17, branch `task/task-153-…`:
+
+- **Red first:** 11 of 22 tests in `test/unit/results/review.test.ts` failed before the change. The writer was not
+  exported, the reader refused the list, and a count was accepted.
+- **Change:** the runner's record is built by `fixerUsageRecord` (`src/runner/review-loop.ts`), which `fixRound` and
+  the tests both use. `readLoop` reads `interventions` as a list of `{step, kind, reply}` and counts its length. The
+  kinds are read from a `Record<InterventionKind, true>`, so a kind added to the runner fails to compile there. The
+  loop-records fixture writes the list. No requirement text changes.
+- **Criterion 3, on the stored dry runs (read only):** with this branch's `dist`, `findLoopDryRuns` counts
+  `dry-runs/213` for S3@1.1 `wingfoil` (outcome `no fix`, 0.2002 USD). With main's, it skips it as "has a loop record
+  that cannot be read". `node scripts/review-loop-figures.mjs --markdown <main>` reads dry runs 208–215: seven clean at
+  round 1, and 213 `no fix` at round 2 with M-V2 2/2 and M-V3 0.1785 EUR.
+- **Checks:** prettier, eslint and tsc are clean. `scripts/pre-review.sh main` is green (2 files, 49 tests). The
+  files that read or write a loop record are also green: 7 files, 141 tests, `--maxWorkers=2`, plus
+  `test/bin/review-loop-figures.test.ts` (3 tests).
