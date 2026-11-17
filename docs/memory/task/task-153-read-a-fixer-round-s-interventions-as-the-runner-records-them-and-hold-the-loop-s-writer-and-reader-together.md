@@ -79,3 +79,5 @@ from the figures script on dry runs 208–215, so this task comes before W19 clo
     the approver: no element filed.
   - The fixture's non-zero `fix.interventions` path is unused, since the runner-writer test covers the count.
     Cosmetic, left as is.
+- **Full suites green at `700b4b3d`** (LINT, TEST, BUILD, BIN, DOCKER at 0, 2026-11-17). Approved at `700b4b3d` and
+  merged into main at `2ab676b9`. From main, the figures script prints the same table on dry runs 208–215.
