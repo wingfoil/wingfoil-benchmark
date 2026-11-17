@@ -3,29 +3,103 @@ id: task-154-calibration-v0.3-plan-005-step-3-the-1.1-dry-runs-scored-the-refere
 type: task
 title: "Calibration v0.3 (plan-005 step 3): the 1.1 dry runs scored, the reference campaign with its loop and Haiku slice, the revised budget and the hypotheses"
 status: draft
-release: ""           # e.g. v0.1
-wave: ""              # e.g. W1
-features: []          # e.g. [F1.1, F3.1]
-acceptance: []        # e.g. [campaign.feature, scenarios.feature]
-requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
-fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
+release: v0.3
+wave: calibration
+features: [F4.9, F7.5]
+acceptance: []
+requirements: [REQ-CLI-02, REQ-CLI-05, REQ-FMT-01, REQ-RUN-21, REQ-RES-01]
+fixes: []
 tags: ["v0.3","calibration","campaign"]
 ---
 
 ## Context
 
-<!-- Why this task, which wave it belongs to, and what "done" means for the wave's "Ends with". -->
+This is plan-005 step 3, `release-cycle` › calibration, role scenario-author. Its deliverable is
+`docs/calibration/v0.3.md`: dry runs of S1, S2, S3 and S8 at 1.1 in every arm, the measured costs, the revised budget,
+and the hypotheses restated (H1, H2 and H8 on the engine). The gate: the approver approves the revised budget and
+every real-agent run. Delivery (step 2) ended when W19 closed on 2026-11-17.
+
+What is settled before it:
+
+- **The dry runs at 1.1:** every arm on Sonnet 5.5 (`dry-runs/155`–`207`, task-144, `v0.3.md` §5), and the review
+  loop on `baseline` and `wingfoil` (`208`–`215`, task-151, `v0.3-review-loop.md`). The measured pins are frozen
+  (task-152): WingFoil v0.3.1, Claude Code 2.1.300 at medium, approver policy v5.
+- **The approver's choices for the reference campaign (in chat, 2026-11-17):**
+  - all thirteen arms, the six configured ones included;
+  - repetitions S1 × 3 and S2, S3, S8 × 1, as campaign-002 (dl-023's repetition campaigns stay possible later);
+  - the review loop in the reference campaign;
+  - one model slice, Haiku 5.5 on S1 and S3 in `baseline` and `wingfoil` (dl-031's weak-model aim), and no Opus slice.
+- `presets/reference.yaml` still holds v0.2's pins; its comment says v0.3's calibration revises them. No campaign
+  file extends it today.
+- **Not done yet:** the 1.1 dry runs are not scored (§5 says so). `v0.3-ledger.md` has no line for `208`–`215`,
+  which task-151 missed.
+
+**Done** means:
+
+- the dry runs are stored, scored and in the ledger;
+- `campaigns/presets/reference.yaml` holds v0.3's pins, and `campaigns/v0-3-reference.yaml` validates with every key
+  priced, its loops included;
+- `docs/calibration/v0.3.md` 1.0 has the estimate, the revised budget and the hypotheses on 1.1, and the approver has
+  approved the budget;
+- rel-v0-3's Release checklist records the calibration.
 
 ## Acceptance criteria
 
-<!-- One line per criterion (Gherkin scenario or requirement), each classified as red-first
-     (new behaviour: a failing test precedes the code) or characterization (existing behaviour). -->
+<!-- A calibration: no Gherkin scenario planned. A defect found becomes a bug, and a code fix goes through its own
+     red test. -->
+
+1. **The ledger** (characterization): `v0.3-ledger.md` gains a line for each of `dry-runs/208`–`215` (task-151's,
+   with the steps' and the loop's cost and the secret scan), and one for every dry run this task runs.
+2. **The scores** (characterization): `bench score` with the hold-out (`BENCH_HOLDOUT_PATH`, read only) on every
+   measured 1.1 dry run, `155`–`215` (`160` superseded by `204`) and this task's. Each gets its `score.json`, and the
+   content checks are v2.
+3. **The preset and the campaign file** (characterization, a test of the files):
+   - `campaigns/presets/reference.yaml` takes v0.3's pins: WingFoil v0.3.1, the scenarios at 1.1, the thirteen arms
+     and their digests as `campaigns/v0-3-reference.dry-run.yaml` pins them, approver policy v5, the Haiku slice
+     above, task-151's `review_loop`, and S1 × 3 with the other scenarios × 1.
+   - `campaigns/v0-3-reference.yaml` extends it and writes only the budget (and the caps or rate, if they differ).
+   - The file has no placeholder left. `bench campaign validate` passes, and `bench campaign estimate` prices every
+     key's steps and loop from the stored dry runs.
+4. **The loop's and the slice's dry runs, on the approver's spending consent only:**
+   - the review loop on S1, S2, S3 and S8 at 1.1 in the eleven arms that have none yet (44 dry runs, Sonnet 5.5);
+   - the Haiku slice with its loop on S1 and S3 in `baseline` and `wingfoil` (4 dry runs, `--model
+     claude-haiku-5-5`);
+   - all on `campaigns/v0-3-review-loop.dry-run.yaml` (or a profile with the same pins), from the main checkout,
+     behind the load gate.
+
+   The upper bound of each dry run and of the whole stage is given in chat before any session.
+5. **`docs/calibration/v0.3.md` 1.0:**
+   - §6 holds the estimate (`bench campaign estimate`, unedited) and the revised budget and caps for the approver:
+     `warn_eur`, `ceiling_eur`, `caps`, `fail_fast` and `currency`, each with its reason, as v0.2.md §8 did;
+   - the hypotheses are restated on the 1.1 versions, H1–H11 as v0.2.md §9, M-F1 and S2's checks read with content
+     checks v2, with the configured arms and the loop where a hypothesis reads them;
+   - every table is generated by a script, and no figure is typed by hand.
+6. **rel-v0-3:** the Release checklist names the calibration's elements once the budget is approved.
+7. **Checks:** prettier on every file, tsc, `scripts/pre-review.sh main` and the campaign files' tests. An independent
+   read-only review (dl-020). The full suites on the approver's go.
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+- **Stages:**
+  - **A, no spending:** criteria 1, 2 and 3. The campaign file is drafted with its budget open, and the estimate then
+    names the keys that have no loop.
+  - **B, spending:** criterion 4. It needs the approver's consent and ceiling. Expected cost, from the measured dry
+    runs: about 21 EUR of steps and 3 EUR of loops for the 44 Sonnet dry runs, and about 0.7 EUR for Haiku's 4, so
+    about 25 EUR. The proposed ceiling is 35 EUR.
+  - **C, no spending:** criteria 5 and 6, then the approver's budget gate.
+- **The launching script (scratchpad):**
+  - it runs from the main checkout behind the load gate;
+  - it stops before a dry run when the spend so far plus that run's 3 EUR cap would pass the ceiling;
+  - it stops after two failed dry runs, or after any dry run whose steps cost more than 2.4 EUR or whose loop cost
+    more than 2 EUR.
+
+  A loop's own bound is 18 EUR, so a single pathological loop could pass the ceiling by at most that. The approver
+  weighs this when giving the ceiling.
+- **The preset:** no campaign file extends `reference` today (checked 2026-11-17), so revising it changes no stored
+  campaign's id. The resolved v0.3 campaign is a new id.
+- **Reused:** the reading scripts `scripts/dry-run-reading.mjs` and `scripts/review-loop-figures.mjs`, and the
+  ledger's line format.
+- **The rate:** `currency.usd_to_eur` stays 0.8917, campaign-008's and the dry runs', so that 1.0 and 1.1 costs
+  compare. A new ECB rate is the approver's choice at the budget gate.
 
 ## Execution notes
-
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
