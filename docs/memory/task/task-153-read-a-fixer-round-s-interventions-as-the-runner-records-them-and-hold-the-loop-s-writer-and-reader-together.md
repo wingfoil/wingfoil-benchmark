@@ -66,3 +66,16 @@ from the figures script on dry runs 208–215, so this task comes before W19 clo
 - **Checks:** prettier, eslint and tsc are clean. `scripts/pre-review.sh main` is green (2 files, 49 tests). The
   files that read or write a loop record are also green: 7 files, 141 tests, `--maxWorkers=2`, plus
   `test/bin/review-loop-figures.test.ts` (3 tests).
+- **Independent review (dl-020), 2026-11-17:** a fresh read-only agent worked in its own `mktemp` copy and found no
+  blocker and no should-fix. It confirmed criteria 1–3:
+  - with main's reader put back, 11 of 22 tests fail, the 3 new ones included;
+  - `readLoop` reads dry runs 208–215;
+  - 213's M-V3 is 0.1785 EUR, equal to its `loop.json` `cost_eur`.
+
+  It compared every field of `loop.json`, `findings.json`, `reviewer-usage.json` and `fixer-usage.json` with the
+  runner's writers and found no other mismatch. Main's reflog was unchanged afterwards. Two nits:
+  - `reviewer-usage.json` and `loop.json` are still written inline, and only the fixture mirrors them, so the drift
+    behind bug-051 stays possible for those two files. They agree today. Extracting their writers as here is left to
+    the approver: no element filed.
+  - The fixture's non-zero `fix.interventions` path is unused, since the runner-writer test covers the count.
+    Cosmetic, left as is.
