@@ -2,7 +2,7 @@
 id: task-153-read-a-fixer-round-s-interventions-as-the-runner-records-them-and-hold-the-loop-s-writer-and-reader-together
 type: task
 title: "Read a fixer round's interventions as the runner records them, and hold the loop's writer and reader together"
-status: in-progress
+status: in-review
 release: v0.3
 wave: W19
 features: [F4.9]
