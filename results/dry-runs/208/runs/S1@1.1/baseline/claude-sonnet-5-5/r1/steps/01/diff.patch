@@ -1,0 +1,119 @@
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..4274d378660d1c4fc7727d399f8b554f9afbecf5
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,56 @@
++export type JsonValue =
++  | null
++  | boolean
++  | number
++  | string
++  | JsonValue[]
++  | { [key: string]: JsonValue };
++
++/** Splits a JSON Pointer (RFC 6901 string form) into its unescaped reference tokens. */
++function parsePointer(pointer: string): string[] {
++  if (typeof pointer !== "string") {
++    throw new TypeError("JSON Pointer must be a string");
++  }
++  if (pointer === "") return [];
++  if (pointer[0] !== "/") {
++    throw new Error(`Invalid JSON Pointer: must be empty or start with "/": ${JSON.stringify(pointer)}`);
++  }
++  return pointer
++    .slice(1)
++    .split("/")
++    .map((token) => {
++      if (/~(?![01])/.test(token)) {
++        throw new Error(`Invalid JSON Pointer: "~" must be followed by 0 or 1: ${JSON.stringify(pointer)}`);
++      }
++      // "~1" must be decoded before "~0" so that "~01" becomes "~1", not "/".
++      return token.replace(/~1/g, "/").replace(/~0/g, "~");
++    });
++}
++
++/**
++ * Returns the value of `document` that `pointer` refers to (RFC 6901).
++ * Throws if the pointer is syntactically invalid or does not resolve to a value.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  let current: unknown = document;
++  for (const token of parsePointer(pointer)) {
++    if (Array.isArray(current)) {
++      if (!/^(0|[1-9][0-9]*)$/.test(token)) {
++        throw new Error(`Pointer does not resolve: ${JSON.stringify(token)} is not a valid array index`);
++      }
++      const index = Number(token);
++      if (index >= current.length) {
++        throw new Error(`Pointer does not resolve: array index ${token} is out of bounds`);
++      }
++      current = current[index];
++    } else if (typeof current === "object" && current !== null) {
++      if (!Object.prototype.hasOwnProperty.call(current, token)) {
++        throw new Error(`Pointer does not resolve: no member ${JSON.stringify(token)}`);
++      }
++      current = (current as Record<string, unknown>)[token];
++    } else {
++      throw new Error(`Pointer does not resolve: cannot descend into a non-container value at ${JSON.stringify(token)}`);
++    }
++  }
++  return current;
++}
+diff --git a/test/pointer.test.ts b/test/pointer.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..08876f00ae7f7afb220f8b3791f3dfcbab6b4a82
+--- /dev/null
++++ b/test/pointer.test.ts
+@@ -0,0 +1,51 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { resolvePointer } from "../src/index.ts";
++
++const doc = {
++  foo: ["bar", "baz"],
++  "": 0,
++  "a/b": 1,
++  "c%d": 2,
++  "e^f": 3,
++  "g|h": 4,
++  "i\\j": 5,
++  'k"l': 6,
++  " ": 7,
++  "m~n": 8,
++  nul: null,
++};
++
++test("RFC 6901 examples", () => {
++  assert.equal(resolvePointer(doc, ""), doc);
++  assert.deepEqual(resolvePointer(doc, "/foo"), ["bar", "baz"]);
++  assert.equal(resolvePointer(doc, "/foo/0"), "bar");
++  assert.equal(resolvePointer(doc, "/"), 0);
++  assert.equal(resolvePointer(doc, "/a~1b"), 1);
++  assert.equal(resolvePointer(doc, "/c%d"), 2);
++  assert.equal(resolvePointer(doc, "/e^f"), 3);
++  assert.equal(resolvePointer(doc, "/g|h"), 4);
++  assert.equal(resolvePointer(doc, "/i\\j"), 5);
++  assert.equal(resolvePointer(doc, '/k"l'), 6);
++  assert.equal(resolvePointer(doc, "/ "), 7);
++  assert.equal(resolvePointer(doc, "/m~0n"), 8);
++  assert.equal(resolvePointer(doc, "/nul"), null);
++});
++
++test("escape order", () => {
++  assert.equal(resolvePointer({ "~1": "x" }, "/~01"), "x");
++});
++
++test("invalid pointers", () => {
++  for (const p of ["foo", "/~", "/~2", "/a~"]) assert.throws(() => resolvePointer(doc, p));
++});
++
++test("unresolvable pointers", () => {
++  for (const p of ["/missing", "/foo/2", "/foo/-", "/foo/00", "/foo/01", "/foo/+1", "/foo/1.0", "/foo/x", "/foo/0/0", "/nul/x"]) {
++    assert.throws(() => resolvePointer(doc, p), p);
++  }
++});
++
++test("does not read inherited members", () => {
++  for (const p of ["/__proto__", "/constructor", "/foo/length"]) assert.throws(() => resolvePointer(doc, p), p);
++});

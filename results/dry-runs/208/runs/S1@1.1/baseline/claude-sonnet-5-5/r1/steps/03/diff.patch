@@ -1,0 +1,60 @@
+diff --git a/src/index.ts b/src/index.ts
+index 31e0f93bd7dd2e2af3e47ccab98ee672b81f11d8..22bc212f7c4ff51f51861c50e9b8ee7d31a79585 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -94,6 +94,13 @@ function deepEqual(a: unknown, b: unknown): boolean {
+   return a === b;
+ }
+ 
++function isJsonValue(v: unknown): boolean {
++  if (v === null || typeof v === "boolean" || typeof v === "string") return true;
++  if (typeof v === "number") return Number.isFinite(v);
++  if (Array.isArray(v)) return v.every(isJsonValue);
++  return isObject(v) && Object.keys(v).every((k) => isJsonValue(v[k]));
++}
++
+ const INDEX = /^(0|[1-9][0-9]*)$/;
+ 
+ /** Walks to the container holding the last token of `tokens` (which must be non-empty). */
+@@ -167,19 +174,26 @@ export function applyPatch(document: unknown, patch: unknown): JsonValue {
+ 
+   for (const [i, operation] of patch.entries()) {
+     if (!isObject(operation)) throw new Error(`Operation ${i} must be an object`);
+-    const { op, path } = operation;
++    const op = hasOwn(operation, "op") ? operation.op : undefined;
++    const path = hasOwn(operation, "path") ? operation.path : undefined;
+     if (typeof op !== "string" || !["add", "remove", "replace", "move", "copy", "test"].includes(op)) {
+       throw new Error(`Operation ${i} has an invalid "op"`);
+     }
+     if (typeof path !== "string") throw new Error(`Operation ${i} must have a string "path"`);
+     const needsFrom = op === "move" || op === "copy";
+     const needsValue = op === "add" || op === "replace" || op === "test";
++    if (needsFrom && !hasOwn(operation, "from")) {
++      throw new Error(`Operation ${i} (${op}) must have a string "from"`);
++    }
+     if (needsFrom && typeof operation.from !== "string") {
+       throw new Error(`Operation ${i} (${op}) must have a string "from"`);
+     }
+     if (needsValue && !hasOwn(operation, "value")) {
+       throw new Error(`Operation ${i} (${op}) must have a "value"`);
+     }
++    if (needsValue && !isJsonValue(operation.value)) {
++      throw new Error(`Operation ${i} (${op}) has a "value" that is not valid JSON`);
++    }
+ 
+     switch (op) {
+       case "add":
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index e365eb1b758fad34760f7a7f94dcef6791bd6ed3..8c877f23e79a201b119201ce4d477c7cf487df79 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -38,3 +38,9 @@ test("__proto__ key is not polluting", () => {
+   assert.equal(({} as any).x, undefined);
+   assert.deepEqual(Object.keys(r), ["__proto__"]);
+ });
++
++test("non-JSON values and inherited members are rejected", () => {
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/x", value: undefined }]));
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/x", value: NaN }]));
++  assert.throws(() => applyPatch({}, [Object.create({ op: "add", path: "/x", value: 1 })]));
++});

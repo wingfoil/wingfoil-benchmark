@@ -1,0 +1,149 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..453da333c191c4f58783c5ab82e8d706a48c3b2b
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-4-plan
++type: plan
++title: "Bulk import tasks"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-4"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-004-bulk-import-tasks.md b/docs/memory/task/task-004-bulk-import-tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..2a208654c033d1c3fca0291b1595dd4ec89ca992
+--- /dev/null
++++ b/docs/memory/task/task-004-bulk-import-tasks.md
+@@ -0,0 +1,20 @@
++---
++id: task-004-bulk-import-tasks
++type: task
++title: "Bulk import tasks"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++Request: a public helper `importTasks(list, text)`, exported from `src/index.ts`, for bulk import from spreadsheets.
++
++- Each line of `text` is `title;priority;tags`; an empty priority means normal; tags are separated by spaces. Blank lines are skipped.
++- Every valid line is added to the list. Returns `{ imported, rejected }`: `imported` counts the tasks added, `rejected` lists `{ line, reason }` (line counted from 1, blank lines included) for each line that could not be added.
++- Validation is the list's own (`add`), so its reasons are reused; a line with more than three fields is also rejected.
++- Implemented in `src/domain/import.ts`, tested in `test/import.test.ts`.
+diff --git a/src/domain/import.ts b/src/domain/import.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..f8cafd5b3577342ee3827b599707ce5a5104b7fa
+--- /dev/null
++++ b/src/domain/import.ts
+@@ -0,0 +1,45 @@
++import type { TaskList } from './list.ts';
++import type { Priority } from './task.ts';
++
++/** A line of the import text that could not be added, with its number (from 1) and why. */
++export interface RejectedLine {
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** The outcome of an import: how many tasks were added, and the lines that were not. */
++export interface ImportReport {
++  readonly imported: number;
++  readonly rejected: readonly RejectedLine[];
++}
++
++/**
++ * Adds the tasks written in `text`, one per line as `title;priority;tags`. The priority may be empty
++ * (a normal one) and the tags are separated by spaces. Blank lines are skipped; a line that cannot be
++ * added is reported and the others are still added.
++ *
++ * @param list - the list to add the tasks to
++ * @param text - the lines to import
++ */
++export function importTasks(list: TaskList, text: string): ImportReport {
++  const rejected: RejectedLine[] = [];
++  let imported = 0;
++  text.split(/\r\n|\n|\r/).forEach((raw, index) => {
++    if (raw.trim() === '') return;
++    const line = index + 1;
++    const fields = raw.split(';');
++    if (fields.length > 3) {
++      rejected.push({ line, reason: `expected "title;priority;tags" but found ${fields.length} fields` });
++      return;
++    }
++    const [title = '', priority = '', tags = ''] = fields;
++    const added = list.add({
++      title,
++      ...(priority.trim() === '' ? {} : { priority: priority.trim() as Priority }),
++      tags: tags.split(/\s+/).filter((tag) => tag !== ''),
++    });
++    if (added.ok) imported += 1;
++    else rejected.push({ line, reason: added.error.message });
++  });
++  return { imported, rejected };
++}
+diff --git a/src/index.ts b/src/index.ts
+index 0fe8c1e2870175bdec90238d7362a5226c2b4f48..60d752bca8a06eeff17a105ae9108774d1f9cee7 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -3,6 +3,8 @@ import type { TaskList } from './domain/list.ts';
+ 
+ export type { TaskFilter, TaskList } from './domain/list.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
++export { importTasks } from './domain/import.ts';
++export type { ImportReport, RejectedLine } from './domain/import.ts';
+ export { summarize } from './domain/summary.ts';
+ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+diff --git a/test/import.test.ts b/test/import.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..35a36d0514954e8bbc0e1669587ee78f08464ef0
+--- /dev/null
++++ b/test/import.test.ts
+@@ -0,0 +1,30 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++
++import { createTodoList, importTasks } from '../src/index.ts';
++
++describe('importTasks', () => {
++  it('adds valid lines, skips blank ones and reports the rest by line number', () => {
++    const list = createTodoList();
++    list.add({ title: 'Existing' });
++    const text = [
++      'Renew the insurance;high;admin money',
++      '',
++      'Buy milk',
++      'Walk;urgent;',
++      'Existing;low;',
++      '  ;low;x',
++      'a;b;c;d',
++      'Plain;;',
++    ].join('\r\n');
++    const report = importTasks(list, text);
++    assert.equal(report.imported, 3);
++    assert.deepEqual(report.rejected.map((r) => r.line), [4, 5, 6, 7]);
++    assert.ok(report.rejected.every((r) => r.reason.length > 0));
++    const insurance = list.find('Renew the insurance');
++    assert.ok(insurance.ok && insurance.value.priority === 'high' && insurance.value.tags.join() === 'admin,money');
++    const milk = list.find('Buy milk');
++    assert.ok(milk.ok && milk.value.priority === 'normal' && milk.value.tags.length === 0);
++    assert.equal(list.list().length, 4);
++  });
++});
