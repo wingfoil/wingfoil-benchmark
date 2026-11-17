@@ -947,11 +947,14 @@ describe("campaign.feature, the review loop's entry (task-148, F4.9)", () => {
   it('@F4.9 A campaign without a review loop is unchanged', () => {
     // Given a campaign file with no "review_loop" entry: it is valid as before
     expect(checkCampaign(writeRepo().file).ok).toBe(true);
-    // And every campaign file of the repository still loads, none of them holding one
+    // And every campaign file of the repository still loads, none holding one but v0.3's reference campaign, whose
+    // loop the approver chose (task-154, 2026-11-17)
     const files = readdirSync(repoPath('campaigns')).filter((file) => file.endsWith('.yaml'));
     for (const name of files.filter((file) => !file.endsWith('.dry-run.yaml'))) {
       const loaded = loadCampaign(repoPath('campaigns', name));
-      expect(loaded.ok ? loaded.value.spec.review_loop : loaded.issues, name).toBeUndefined();
+      if (name === 'v0-3-reference.yaml')
+        expect(loaded.ok && loaded.value.spec.review_loop, name).toBeTruthy();
+      else expect(loaded.ok ? loaded.value.spec.review_loop : loaded.issues, name).toBeUndefined();
     }
     // And every dry-run profile beside them, none holding one but v0.3's loop profile (task-152), which exists for it
     for (const name of files.filter((file) => file.endsWith('.dry-run.yaml'))) {
