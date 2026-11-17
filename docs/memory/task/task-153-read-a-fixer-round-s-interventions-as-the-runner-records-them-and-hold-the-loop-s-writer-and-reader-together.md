@@ -2,7 +2,7 @@
 id: task-153-read-a-fixer-round-s-interventions-as-the-runner-records-them-and-hold-the-loop-s-writer-and-reader-together
 type: task
 title: "Read a fixer round's interventions as the runner records them, and hold the loop's writer and reader together"
-status: backlog
+status: approved
 release: v0.3
 wave: W19
 features: [F4.9]
@@ -50,3 +50,32 @@ from the figures script on dry runs 208–215, so this task comes before W19 clo
 - `scripts/review-loop-figures.mjs` reads through `readLoop`, so it needs no change.
 
 ## Execution notes
+
+2026-11-17, branch `task/task-153-…`:
+
+- **Red first:** 11 of 22 tests in `test/unit/results/review.test.ts` failed before the change. The writer was not
+  exported, the reader refused the list, and a count was accepted.
+- **Change:** the runner's record is built by `fixerUsageRecord` (`src/runner/review-loop.ts`), which `fixRound` and
+  the tests both use. `readLoop` reads `interventions` as a list of `{step, kind, reply}` and counts its length. The
+  kinds are read from a `Record<InterventionKind, true>`, so a kind added to the runner fails to compile there. The
+  loop-records fixture writes the list. No requirement text changes.
+- **Criterion 3, on the stored dry runs (read only):** with this branch's `dist`, `findLoopDryRuns` counts
+  `dry-runs/213` for S3@1.1 `wingfoil` (outcome `no fix`, 0.2002 USD). With main's, it skips it as "has a loop record
+  that cannot be read". `node scripts/review-loop-figures.mjs --markdown <main>` reads dry runs 208–215: seven clean at
+  round 1, and 213 `no fix` at round 2 with M-V2 2/2 and M-V3 0.1785 EUR.
+- **Checks:** prettier, eslint and tsc are clean. `scripts/pre-review.sh main` is green (2 files, 49 tests). The
+  files that read or write a loop record are also green: 7 files, 141 tests, `--maxWorkers=2`, plus
+  `test/bin/review-loop-figures.test.ts` (3 tests).
+- **Independent review (dl-020), 2026-11-17:** a fresh read-only agent worked in its own `mktemp` copy and found no
+  blocker and no should-fix. It confirmed criteria 1–3:
+  - with main's reader put back, 11 of 22 tests fail, the 3 new ones included;
+  - `readLoop` reads dry runs 208–215;
+  - 213's M-V3 is 0.1785 EUR, equal to its `loop.json` `cost_eur`.
+
+  It compared every field of `loop.json`, `findings.json`, `reviewer-usage.json` and `fixer-usage.json` with the
+  runner's writers and found no other mismatch. Main's reflog was unchanged afterwards. Two nits:
+  - `reviewer-usage.json` and `loop.json` are still written inline, and only the fixture mirrors them, so the drift
+    behind bug-051 stays possible for those two files. They agree today. Extracting their writers as here is left to
+    the approver: no element filed.
+  - The fixture's non-zero `fix.interventions` path is unused, since the runner-writer test covers the count.
+    Cosmetic, left as is.

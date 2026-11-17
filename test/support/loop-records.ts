@@ -100,7 +100,12 @@ export function writeReviewLoop(runDir: string, spec: LoopSpec): void {
         join(roundDir, 'fixer-usage.json'),
         JSON.stringify({
           usage: usage(eur, 4, 2000),
-          interventions: round.fix.interventions ?? 0,
+          // The runner's list of the approver's replies (bug-051), as many as the round asks for.
+          interventions: Array.from({ length: round.fix.interventions ?? 0 }, () => ({
+            step: 99,
+            kind: 'approval',
+            reply: 'Approved. Proceed.',
+          })),
           outcome: 'completed',
         }),
       );
