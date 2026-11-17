@@ -158,3 +158,20 @@ rounds.
   test failing with its fix removed. One nit, fixed: Design's figure now reads 18 EUR.
 
 Pre-review green at `13ddb1d2`.
+
+## Criterion 7: the dry runs (2026-11-17)
+
+- **Spending consent:** given by the approver in chat, with a ceiling of 168 EUR, on task-152's profile
+  `campaigns/v0-3-review-loop.dry-run.yaml`.
+- **The series:** a scratchpad script ran the eight dry runs from the main checkout, behind a load gate. It would
+  have stopped before any dry run that could pass the ceiling, or after two failures. Before each run it printed the
+  key's latest step cost and the loop's 18 EUR bound.
+- **Results:** `dry-runs/208` to `215`, all completed, 3.54 EUR in all (steps 2.97 EUR, loops 0.57 EUR). Seven
+  loops closed clean at round 1. `213` (S3@1.1 `wingfoil`) ran two rounds with fixes and ended `no fix`.
+- **What `213` found:**
+  [bug-051](../bug/bug-051-the-results-reader-refuses-a-fixer-round-s-usage-because-the-runner-records-its-interventions-as-a-list.md).
+  Its fixer rounds could not be read back, so the figures script stopped. It was fixed by
+  [task-153](task-153-read-a-fixer-round-s-interventions-as-the-runner-records-them-and-hold-the-loop-s-writer-and-reader-together.md)
+  (merged at `2ab676b9`), with no stored record rewritten and no dry run repeated.
+- **Figures:** from `scripts/review-loop-figures.mjs`, in `docs/calibration/v0.3-review-loop.md` 1.0. The dry runs
+  are committed at `f5769638`, and W19's "Ends with" is recorded in `rel-v0-3`.
