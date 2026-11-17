@@ -2,7 +2,7 @@
 id: bug-052-the-review-loop-s-reviewer-usage.json-and-loop.json-are-written-inline-so-their-reader-is-tested-only-against-a-fixture
 type: bug
 title: "The review loop's reviewer-usage.json and loop.json are written inline, so their reader is tested only against a fixture"
-status: draft
+status: pending
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 tags: ["v0.4","results","review-loop"]
 ---
