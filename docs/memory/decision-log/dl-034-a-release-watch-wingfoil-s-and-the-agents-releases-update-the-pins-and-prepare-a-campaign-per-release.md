@@ -2,7 +2,7 @@
 id: dl-034-a-release-watch-wingfoil-s-and-the-agents-releases-update-the-pins-and-prepare-a-campaign-per-release
 type: decision-log
 title: "A release watch: WingFoil's and the agents' releases update the pins and prepare a campaign per release"
-status: draft
+status: pending
 tags: ["v0.4","pins","wingfoil","agents"]
 ---
 
