@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Spending-ledger lines generated from the stored records (task-144, dl-006): one Markdown table row per configuring
+// Spending-ledger lines generated from the stored records (task-144, dl-006; a dry run's review loop, task-154): one Markdown table row per configuring
 // session (`scenarios/<id>/<version>/configured/<arm>.json`) or per dry run (`results/dry-runs/<n>/`), in the columns
 // of docs/calibration/v0.3-ledger.md. It runs no agent, spends nothing and writes nothing.
 //
@@ -43,8 +43,27 @@ const modelCell = (model, effort, agent) =>
   `${MODELS[model] ?? model}, effort ${effort} (${agent.name === 'claude-code' ? 'Claude Code' : agent.name} ` +
   `${agent.version})`;
 const count = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-const costCell = (usd, eur) =>
-  `${usd.toFixed(4)} USD (${eur.toFixed(4)} €) API-equivalent; nothing billed per token`;
+const money = (usd, eur) => `${usd.toFixed(4)} USD (${eur.toFixed(4)} €)`;
+const costCell = (usd, eur) => `${money(usd, eur)} API-equivalent; nothing billed per token`;
+
+/**
+ * A dry run's review loop (task-154, REQ-FMT-06 as amended in 1.58): its outcome, its last round, its cost in EUR as
+ * `loop.json` records it (bounds included) and in USD as its sessions reported it; undefined without a loop.
+ */
+function reviewLoop(runDir) {
+  const file = join(runDir, 'review', 'loop.json');
+  if (!existsSync(file)) return undefined;
+  const loop = JSON.parse(readFileSync(file, 'utf8'));
+  let usd = 0;
+  for (const n of directories(join(runDir, 'review'))) {
+    const reviewer = join(runDir, 'review', n, 'reviewer-usage.json');
+    const fixer = join(runDir, 'review', n, 'fixer-usage.json');
+    if (existsSync(reviewer)) usd += JSON.parse(readFileSync(reviewer, 'utf8')).costUsd ?? 0;
+    if (existsSync(fixer)) usd += JSON.parse(readFileSync(fixer, 'utf8')).usage?.costUsd ?? 0;
+  }
+  const rounds = Array.isArray(loop.rounds) ? loop.rounds.length : 0;
+  return { outcome: loop.outcome, rounds, usd, eur: loop.cost_eur ?? 0 };
+}
 
 /** "clean" when no file under the paths holds the token file's content, "not run" without a token file. */
 function secretScan(paths) {
@@ -116,6 +135,7 @@ if (kind === 'configuring') {
           const usd = run.steps.reduce((sum, step) => sum + (step.usage?.costUsd ?? 0), 0);
           const eur = run.steps.reduce((sum, step) => sum + (step.usage?.costEur ?? 0), 0);
           const interventions = Array.isArray(run.interventions) ? run.interventions.length : 0;
+          const loop = reviewLoop(join(root, dir));
           const timestamp = firstTimestamp(join(root, dir, 'steps', '01', 'transcript.jsonl'));
           const date = timestamp ?? 'unknown date';
           rows.push({
@@ -126,11 +146,15 @@ if (kind === 'configuring') {
               timestamp === undefined ? date : timestamp.slice(0, 10),
               options.element,
               `dry run of ${scenario}, ${arm} arm (\`dry-runs/${n}\`, ${count(run.steps.length, 'step')}, ` +
-                `${count(interventions, 'intervention')}; ${run.outcome}`,
+                `${count(interventions, 'intervention')}; ${run.outcome}` +
+                (loop === undefined ? '' : `; review loop ${loop.outcome} at round ${loop.rounds}`),
               options.consent,
               modelCell(run.model, run.effort, run.agent),
               options.ceiling,
-              costCell(usd, eur),
+              loop === undefined
+                ? costCell(usd, eur)
+                : `${money(usd + loop.usd, eur + loop.eur)} API-equivalent: steps ${money(usd, eur)}, ` +
+                  `review loop ${money(loop.usd, loop.eur)}; nothing billed per token`,
               `\`${dir}/\`; ${secretScan([`results/dry-runs/${n}`])}`,
             ],
           });
