@@ -2,7 +2,7 @@
 id: dl-035-publishing-mirrors-on-hugging-face-and-provider-arms-through-an-openai-compatible-endpoint-as-inputs-to-v0.4-s-planning
 type: decision-log
 title: "Publishing mirrors on Hugging Face and provider arms through an OpenAI-compatible endpoint, as inputs to v0.4's planning"
-status: draft
+status: pending
 tags: ["v0.4","publishing","providers"]
 ---
 
