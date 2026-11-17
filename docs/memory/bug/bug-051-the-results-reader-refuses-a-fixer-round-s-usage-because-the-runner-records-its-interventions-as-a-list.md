@@ -2,7 +2,7 @@
 id: bug-051-the-results-reader-refuses-a-fixer-round-s-usage-because-the-runner-records-its-interventions-as-a-list
 type: bug
 title: "The results reader refuses a fixer round's usage because the runner records its interventions as a list"
-status: approved
+status: fixed
 fixed_by: task-153-read-a-fixer-round-s-interventions-as-the-runner-records-them-and-hold-the-loop-s-writer-and-reader-together
 tags: ["v0.3","results","review-loop"]
 ---
