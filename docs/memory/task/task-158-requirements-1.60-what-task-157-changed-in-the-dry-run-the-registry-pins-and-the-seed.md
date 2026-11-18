@@ -2,7 +2,7 @@
 id: task-158-requirements-1.60-what-task-157-changed-in-the-dry-run-the-registry-pins-and-the-seed
 type: task
 title: "Requirements 1.60: what task-157 changed in the dry run, the registry pins and the seed"
-status: pending
+status: backlog
 release: v0.3
 wave: publishing
 features: [F3.3, F7.4]
