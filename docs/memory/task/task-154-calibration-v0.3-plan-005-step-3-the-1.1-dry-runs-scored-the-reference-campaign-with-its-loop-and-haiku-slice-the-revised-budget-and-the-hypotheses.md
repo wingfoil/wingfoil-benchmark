@@ -103,3 +103,16 @@ What is settled before it:
   compare. A new ECB rate is the approver's choice at the budget gate.
 
 ## Execution notes
+
+- **Stage A:** the ledger gained `208`-`215`; `155`-`215` were scored (`160` superseded by `204`).
+- **The machine stopped stage A once:** an ACPI hang left docker unresponsive and the disk was full. The approver freed
+  the space and rebooted; the score left behind one container, removed before resuming.
+- **`dist` was rebuilt in this worktree while scores were using it:** `src` had not changed, so the scores stand.
+- **Stage B's first launch stopped after `216`:** the launching script lacked `BENCH_SPECKIT_REPO`, so two launches
+  failed before any session and nothing was spent. The variable was added and the remaining 47 dry runs were launched.
+- **Stage B:** `216`-`263`, 48 of 48 completed, 24.67 EUR against the 35 EUR ceiling (steps 20.00, loops 4.67). No stop
+  of the launching script fired. The machine slept during `260`, which completed; its step durations are not reliable.
+- **A running dry run's `loop.json` is provisional:** it says `interrupted` at the 2 EUR bound until the loop ends, so a
+  spend read during a session can overstate. The launching script reads between dry runs.
+- **The budget gate:** the estimate's high, 50.8545 EUR, passed the preset's provisional 50 EUR ceiling. The approver
+  approved `warn_eur` 65 and `ceiling_eur` 80 in chat on 2026-11-18 ("ok, avviso 65 € e tetto 80 €, procedi").

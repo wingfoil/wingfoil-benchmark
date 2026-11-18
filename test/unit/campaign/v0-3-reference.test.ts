@@ -36,6 +36,10 @@ describe("v0.3's reference campaign (task-154, characterization)", () => {
     expect(spec.review_loop).toEqual(profile('campaigns/v0-3-review-loop.dry-run.yaml').review_loop);
   });
 
+  it("holds the budget the approver approved at task-154's gate (2026-11-18)", () => {
+    expect(campaign().budget).toEqual({ warn_eur: 65, ceiling_eur: 80 });
+  });
+
   it("holds the approver's choices: thirteen arms, the 1.1 scenarios, S1 x 3, the Haiku slice", () => {
     const spec = campaign();
     expect(spec.arms).toHaveLength(13);
