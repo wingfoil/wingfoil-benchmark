@@ -1,0 +1,429 @@
+diff --git a/openspec/changes/archive/2026-11-17-validate-task-input/.openspec.yaml b/openspec/changes/archive/2026-11-17-validate-task-input/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..bbe8b3936527ad38e9220450a60063edbac5eb4c
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-validate-task-input/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-11-17
+diff --git a/openspec/changes/archive/2026-11-17-validate-task-input/design.md b/openspec/changes/archive/2026-11-17-validate-task-input/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f87c2612c21b3486105599f788580480c7bd9d08
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-validate-task-input/design.md
+@@ -0,0 +1,15 @@
++## Context
++
++`createTask`, `renameTask` and `addTag` in `task.ts` are pure and cannot fail; `list.ts` composes them. Results are used for errors in the domain.
++
++## Decisions
++
++- Add `invalid-input` to `TodoErrorCode`: none of the existing codes fits.
++- Put the checks in `task.ts` as small helpers (`validateTitle`, `validatePriority`, `validateTag`) returning `Result`; `renameTask` and `addTag` now return `Result<Task>`; `createTask` stays infallible and `list.add` calls `validateNewTask` first.
++- In `list.ts`, `add` validates before issuing an id, so a rejection consumes no id; `rename` validates before the duplicate check; `tag` goes through `change` and returns the error unchanged.
++- Title length is measured on the trimmed title, in JS string length.
++- Domain stays pure: no clock, no randomness, no throwing, no dependency. The public API gets no new function.
++
++## Risks
++
++- `createTask`, `renameTask`, `addTag` are not exported from `src/index.ts`, so changing their return type does not affect the app.
+diff --git a/openspec/changes/archive/2026-11-17-validate-task-input/proposal.md b/openspec/changes/archive/2026-11-17-validate-task-input/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f04cdf41cead34691b8534e24e6fb9d064733fd5
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-validate-task-input/proposal.md
+@@ -0,0 +1,25 @@
++## Why
++
++Some screens pass whatever the user typed straight to the list, so odd tasks get in: blank titles, huge titles, unknown priorities, tags with spaces. The list should reject them with a clear error.
++
++## What Changes
++
++- `add`, `rename` and `tag` validate their input and fail with a new error code `invalid-input` and a message saying what is wrong.
++- Rules: title not empty or only spaces; title at most 120 characters (after trimming); priority one of `low`, `normal`, `high`; tag not empty and without a space. On `add`, the tags given are checked too.
++- A rejected call changes nothing in the list (no task added, renamed or tagged, no id used).
++- `TodoErrorCode` gains `invalid-input`.
++
++## Capabilities
++
++### New Capabilities
++- `task-input-validation`: what input the list accepts for titles, priorities and tags, and how it rejects the rest.
++
++### Modified Capabilities
++
++None.
++
++## Impact
++
++- Project rules touched: errors are returned as a `Result` in the domain (validation returns `err`, never throws); TSDoc on every new exported function; no clock or randomness added; no new dependency. A code is added to `result.ts` because none of the existing codes fits.
++- Public API in `src/index.ts`: no new export, but the exported `TodoErrorCode` type gains `'invalid-input'`.
++- Code: `src/domain/result.ts`, `src/domain/task.ts` (`renameTask`, `addTag` now return `Result`), `src/domain/list.ts`, `test/list.test.ts`.
+diff --git a/openspec/changes/archive/2026-11-17-validate-task-input/specs/task-input-validation/spec.md b/openspec/changes/archive/2026-11-17-validate-task-input/specs/task-input-validation/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8eaa3aa8b903d42c2dabed8e1c2d8000ff20dc2b
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-validate-task-input/specs/task-input-validation/spec.md
+@@ -0,0 +1,49 @@
++## ADDED Requirements
++
++### Requirement: Titles are validated
++`add` and `rename` SHALL reject a title that is empty or only spaces, and a title longer than 120 characters once trimmed, with the error code `invalid-input` and a message saying whether the title is empty or too long.
++
++#### Scenario: Empty title on add
++- **WHEN** a task is added with the title `""` or `"   "`
++- **THEN** it fails with `invalid-input` and the list has no new task
++
++#### Scenario: Title of 120 characters
++- **WHEN** a task is added with a title of exactly 120 characters
++- **THEN** it is added
++
++#### Scenario: Title too long
++- **WHEN** a task is added or renamed with a title of 121 characters
++- **THEN** it fails with `invalid-input`, and the list is unchanged
++
++#### Scenario: Blank new title on rename
++- **WHEN** a task is renamed to `"  "`
++- **THEN** it fails with `invalid-input` and the task keeps its title
++
++### Requirement: Priorities are validated
++`add` SHALL reject a priority other than `low`, `normal` and `high` with `invalid-input`, and a message listing the accepted priorities. No priority given still means `normal`.
++
++#### Scenario: Unknown priority
++- **WHEN** a task is added with the priority `urgent`
++- **THEN** it fails with `invalid-input` and the list has no new task
++
++### Requirement: Tags are validated
++`tag` SHALL reject a tag that is empty or contains a space with `invalid-input`; `add` SHALL do the same for any of the tags given. The message says what is wrong with the tag.
++
++#### Scenario: Empty tag
++- **WHEN** a task is tagged with `""`
++- **THEN** it fails with `invalid-input` and the task's tags are unchanged
++
++#### Scenario: Tag with a space
++- **WHEN** a task is tagged with `"to do"`
++- **THEN** it fails with `invalid-input` and the task's tags are unchanged
++
++#### Scenario: Bad tag on add
++- **WHEN** a task is added with the tags `["ok", "not ok"]`
++- **THEN** it fails with `invalid-input` and the list has no new task
++
++### Requirement: Rejected input changes nothing
++When input is rejected, the list SHALL stay as it was: no task added, renamed or tagged, no `updatedAt` change, and no id consumed, so the next task added gets the id it would have had.
++
++#### Scenario: Rejected add does not consume an id
++- **WHEN** an add is rejected with `invalid-input` and a valid task is added afterwards
++- **THEN** the id of that task is the one it would have had without the rejected add
+diff --git a/openspec/changes/archive/2026-11-17-validate-task-input/tasks.md b/openspec/changes/archive/2026-11-17-validate-task-input/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6b8930d6344b1c0252a049aafd210bb451256d3a
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-validate-task-input/tasks.md
+@@ -0,0 +1,12 @@
++## 1. Implementation
++
++- [x] 1.1 Add `invalid-input` to `TodoErrorCode` in `src/domain/result.ts`
++- [x] 1.2 Add title, priority and tag validation in `src/domain/task.ts`, with TSDoc; make `renameTask`, `addTag` return `Result<Task>`, add `validateNewTask` for `add`
++- [x] 1.3 Update `src/domain/list.ts` so `add`, `rename`, `tag` return the errors and change nothing (no id consumed on rejected add)
++- [x] 1.4 Check `src/index.ts` needs no new export (`TodoErrorCode` is already exported)
++
++## 2. Tests
++
++- [x] 2.1 Add tests in `test/list.test.ts` for each failure path: empty/blank title, 121-char title (and 120 accepted), bad priority, empty tag, tag with space, bad tag on add; on add and rename and tag
++- [x] 2.2 Test that rejected input leaves the list, `updatedAt` and next id unchanged
++- [x] 2.3 Run `npm test`
+diff --git a/openspec/specs/task-input-validation/spec.md b/openspec/specs/task-input-validation/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..181fc7eaec6c9882318b517312954516f256eb80
+--- /dev/null
++++ b/openspec/specs/task-input-validation/spec.md
+@@ -0,0 +1,54 @@
++# task-input-validation Specification
++
++## Purpose
++TBD - created by archiving change validate-task-input. Update Purpose after archive.
++
++## Requirements
++
++### Requirement: Titles are validated
++`add` and `rename` SHALL reject a title that is empty or only spaces, and a title longer than 120 characters once trimmed, with the error code `invalid-input` and a message saying whether the title is empty or too long.
++
++#### Scenario: Empty title on add
++- **WHEN** a task is added with the title `""` or `"   "`
++- **THEN** it fails with `invalid-input` and the list has no new task
++
++#### Scenario: Title of 120 characters
++- **WHEN** a task is added with a title of exactly 120 characters
++- **THEN** it is added
++
++#### Scenario: Title too long
++- **WHEN** a task is added or renamed with a title of 121 characters
++- **THEN** it fails with `invalid-input`, and the list is unchanged
++
++#### Scenario: Blank new title on rename
++- **WHEN** a task is renamed to `"  "`
++- **THEN** it fails with `invalid-input` and the task keeps its title
++
++### Requirement: Priorities are validated
++`add` SHALL reject a priority other than `low`, `normal` and `high` with `invalid-input`, and a message listing the accepted priorities. No priority given still means `normal`.
++
++#### Scenario: Unknown priority
++- **WHEN** a task is added with the priority `urgent`
++- **THEN** it fails with `invalid-input` and the list has no new task
++
++### Requirement: Tags are validated
++`tag` SHALL reject a tag that is empty or contains a space with `invalid-input`; `add` SHALL do the same for any of the tags given. The message says what is wrong with the tag.
++
++#### Scenario: Empty tag
++- **WHEN** a task is tagged with `""`
++- **THEN** it fails with `invalid-input` and the task's tags are unchanged
++
++#### Scenario: Tag with a space
++- **WHEN** a task is tagged with `"to do"`
++- **THEN** it fails with `invalid-input` and the task's tags are unchanged
++
++#### Scenario: Bad tag on add
++- **WHEN** a task is added with the tags `["ok", "not ok"]`
++- **THEN** it fails with `invalid-input` and the list has no new task
++
++### Requirement: Rejected input changes nothing
++When input is rejected, the list SHALL stay as it was: no task added, renamed or tagged, no `updatedAt` change, and no id consumed, so the next task added gets the id it would have had.
++
++#### Scenario: Rejected add does not consume an id
++- **WHEN** an add is rejected with `invalid-input` and a valid task is added afterwards
++- **THEN** the id of that task is the one it would have had without the rejected add
+diff --git a/src/domain/list.ts b/src/domain/list.ts
+index b74043701c8188966b019ec63d3ecc38daebb0c6..2b9579de5036373b944b54da70e4dad031600070 100644
+--- a/src/domain/list.ts
++++ b/src/domain/list.ts
+@@ -1,6 +1,6 @@
+ import { err, ok } from './result.ts';
+ import type { Result } from './result.ts';
+-import { addTag, compareTasks, completeTask, createTask, removeTag, renameTask, reopenTask } from './task.ts';
++import { addTag, compareTasks, completeTask, createTask, removeTag, renameTask, reopenTask, validateNewTask, validateTitle } from './task.ts';
+ import type { NewTask, Priority, Status, Task } from './task.ts';
+ 
+ /** Which tasks to show: by status, priority or tag; every task when nothing is given. */
+@@ -64,6 +64,8 @@ export function createTaskList(now: () => string): TaskList {
+ 
+   return {
+     add(input) {
++      const valid = validateNewTask(input);
++      if (!valid.ok) return valid;
+       const title = input.title.trim();
+       if (tasks.has(title)) return err('duplicate', `there is already a task "${title}"`);
+       issued += 1;
+@@ -77,15 +79,17 @@ export function createTaskList(now: () => string): TaskList {
+     complete: (title) => change(title, completeTask),
+     reopen: (title) => change(title, reopenTask),
+     rename(title, newTitle) {
+-      const target = newTitle.trim();
++      const checked = validateTitle(newTitle);
++      if (!checked.ok) return checked;
++      const target = checked.value;
+       const found = find(title);
+       if (!found.ok) return found;
+       if (target !== found.value.title && tasks.has(target)) {
+         return err('duplicate', `there is already a task "${target}"`);
+       }
+-      return change(found.value.id, (task, at) => ok(renameTask(task, target, at)));
++      return change(found.value.id, (task, at) => renameTask(task, target, at));
+     },
+-    tag: (title, tag) => change(title, (task, at) => ok(addTag(task, tag, at))),
++    tag: (title, tag) => change(title, (task, at) => addTag(task, tag, at)),
+     untag: (title, tag) => change(title, (task, at) => ok(removeTag(task, tag, at))),
+     remove(title) {
+       const found = find(title);
+diff --git a/src/domain/result.ts b/src/domain/result.ts
+index c6ed17a1b929cb19e127e0be01e84aac17b45407..4e46dfbe7c138c650e2d4b2d86dfbc5a5b27267c 100644
+--- a/src/domain/result.ts
++++ b/src/domain/result.ts
+@@ -5,7 +5,7 @@ export interface TodoError {
+ }
+ 
+ /** The kinds of failure the task list reports. */
+-export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state';
++export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state' | 'invalid-input';
+ 
+ /** The outcome of an operation that can fail: its value, or the reason it failed. */
+ export type Result<T, E = TodoError> =
+diff --git a/src/domain/task.ts b/src/domain/task.ts
+index 7a08dd1dc37da5efaae976e83736bf926f3a7d00..abfe2e8ab9d2b415db851468f6ce1ed2b6bd943c 100644
+--- a/src/domain/task.ts
++++ b/src/domain/task.ts
+@@ -10,6 +10,9 @@ export const PRIORITIES: readonly Priority[] = ['low', 'normal', 'high'];
+ /** Whether a task still has to be done. */
+ export type Status = 'open' | 'done';
+ 
++/** The most characters a title can have, once trimmed. */
++export const MAX_TITLE_LENGTH = 120;
++
+ /** A task of the list. */
+ export interface Task {
+   readonly id: string;
+@@ -28,8 +31,68 @@ export interface NewTask {
+   readonly tags?: readonly string[];
+ }
+ 
++/**
++ * Checks a title: it must not be empty or only spaces, and must have at most 120 characters once trimmed.
++ *
++ * @param title - the title to check
++ */
++export function validateTitle(title: string): Result<string> {
++  const trimmed = title.trim();
++  if (trimmed === '') return err('invalid-input', 'the title is empty: give the task a title');
++  if (trimmed.length > MAX_TITLE_LENGTH) {
++    return err(
++      'invalid-input',
++      `the title is too long: it has ${trimmed.length} characters, the most allowed is ${MAX_TITLE_LENGTH}`,
++    );
++  }
++  return ok(trimmed);
++}
++
++/**
++ * Checks a tag: it must not be empty and must not contain a space.
++ *
++ * @param tag - the tag to check
++ */
++export function validateTag(tag: string): Result<string> {
++  if (tag === '') return err('invalid-input', 'the tag is empty: give a tag with at least one character');
++  if (/\s/.test(tag)) return err('invalid-input', `the tag "${tag}" contains a space: tags cannot have spaces`);
++  return ok(tag);
++}
++
++/**
++ * Checks a priority: it must be `low`, `normal` or `high`.
++ *
++ * @param priority - the priority to check
++ */
++export function validatePriority(priority: string): Result<Priority> {
++  if (!(PRIORITIES as readonly string[]).includes(priority)) {
++    return err('invalid-input', `the priority "${priority}" is not valid: use ${PRIORITIES.join(', ')}`);
++  }
++  return ok(priority as Priority);
++}
++
++/**
++ * Checks everything a new task is made of: its title, its priority if given, and each tag.
++ *
++ * @param input - the task's title, priority and tags
++ */
++export function validateNewTask(input: NewTask): Result<NewTask> {
++  const title = validateTitle(input.title);
++  if (!title.ok) return title;
++  if (input.priority !== undefined) {
++    const priority = validatePriority(input.priority);
++    if (!priority.ok) return priority;
++  }
++  for (const tag of input.tags ?? []) {
++    const checked = validateTag(tag);
++    if (!checked.ok) return checked;
++  }
++  return ok(input);
++}
++
+ /**
+  * A new open task. Its priority is `normal` unless given; its tags keep the order given, each once.
++ * The input is not validated; see `validateNewTask`.
+  *
+  * @param input - the task's title, priority and tags
+  * @param id - the unique id the task gets
+@@ -70,25 +133,29 @@ export function reopenTask(task: Task, at: string): Result<Task> {
+ }
+ 
+ /**
+- * The task under a new title.
++ * The task under a new title; an empty or too long title is rejected.
+  *
+  * @param task - the task to rename
+  * @param title - its new title
+  * @param at - the time of the change, an ISO-8601 date-time; it becomes `updatedAt`
+  */
+-export function renameTask(task: Task, title: string, at: string): Task {
+-  return { ...task, title: title.trim(), updatedAt: at };
++export function renameTask(task: Task, title: string, at: string): Result<Task> {
++  const checked = validateTitle(title);
++  if (!checked.ok) return checked;
++  return ok({ ...task, title: checked.value, updatedAt: at });
+ }
+ 
+ /**
+- * The task with one more tag; a tag it already has is not added twice.
++ * The task with one more tag; a tag it already has is not added twice, and an empty tag or one with a space is rejected.
+  *
+  * @param task - the task to tag
+  * @param tag - the tag to add
+  * @param at - the time of the change, an ISO-8601 date-time; it becomes `updatedAt`
+  */
+-export function addTag(task: Task, tag: string, at: string): Task {
+-  return { ...task, tags: unique([...task.tags, tag]), updatedAt: at };
++export function addTag(task: Task, tag: string, at: string): Result<Task> {
++  const checked = validateTag(tag);
++  if (!checked.ok) return checked;
++  return ok({ ...task, tags: unique([...task.tags, tag]), updatedAt: at });
+ }
+ 
+ /**
+diff --git a/test/list.test.ts b/test/list.test.ts
+index e51ac40e1c6f07a378d6c4b7f9fd5dbb1addcb62..2f7c1f1cd6925bacfe96e0645c108eb99734a8f0 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -190,3 +190,57 @@ describe('task timestamps', () => {
+     assert.equal(task.updatedAt, task.createdAt);
+   });
+ });
++
++describe('input validation', () => {
++  const code = (result: { ok: boolean; error?: { code: string } }) => (result.ok ? 'ok' : result.error?.code);
++
++  it('rejects empty, blank and too long titles on add', () => {
++    const list = createTodoList();
++    for (const title of ['', '   ', 'x'.repeat(121), ` ${'x'.repeat(121)} `]) {
++      assert.equal(code(list.add({ title })), 'invalid-input');
++    }
++    assert.equal(list.list().length, 0);
++    assert.equal(code(list.add({ title: 'x'.repeat(120) })), 'ok');
++  });
++
++  it('rejects an unknown priority on add', () => {
++    const list = createTodoList();
++    const result = list.add({ title: 'a', priority: 'urgent' as never });
++    assert.equal(code(result), 'invalid-input');
++    assert.match(!result.ok ? result.error.message : '', /low, normal, high/);
++    assert.equal(list.list().length, 0);
++  });
++
++  it('rejects bad tags on add', () => {
++    const list = createTodoList();
++    assert.equal(code(list.add({ title: 'a', tags: ['ok', 'not ok'] })), 'invalid-input');
++    assert.equal(code(list.add({ title: 'a', tags: [''] })), 'invalid-input');
++    assert.equal(list.list().length, 0);
++  });
++
++  it('does not use an id for a rejected add', () => {
++    const list = createTodoList();
++    list.add({ title: '' });
++    assert.equal(valueOf(list.add({ title: 'a' })).id, '1');
++  });
++
++  it('rejects bad titles on rename and changes nothing', () => {
++    let tick = 0;
++    const list = createTodoList(() => `t${(tick += 1)}`);
++    const before = valueOf(list.add({ title: 'a' }));
++    for (const title of ['', '  ', 'x'.repeat(121)]) {
++      assert.equal(code(list.rename('a', title)), 'invalid-input');
++    }
++    assert.deepEqual(valueOf(list.find('a')), before);
++    assert.equal(code(list.rename('a', 'x'.repeat(120))), 'ok');
++  });
++
++  it('rejects bad tags on tag and changes nothing', () => {
++    const list = createTodoList();
++    const before = valueOf(list.add({ title: 'a' }));
++    assert.equal(code(list.tag('a', '')), 'invalid-input');
++    assert.equal(code(list.tag('a', 'to do')), 'invalid-input');
++    assert.deepEqual(valueOf(list.find('a')), before);
++    assert.equal(code(list.tag('a', 'home')), 'ok');
++  });
++});

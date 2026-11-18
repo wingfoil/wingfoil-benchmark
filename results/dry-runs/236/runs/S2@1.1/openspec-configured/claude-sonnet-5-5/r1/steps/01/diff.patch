@@ -1,0 +1,377 @@
+diff --git a/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/.openspec.yaml b/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..bbe8b3936527ad38e9220450a60063edbac5eb4c
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-11-17
+diff --git a/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/design.md b/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a1a6808752e6f477aae8c80466052e815ba7a0e4
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/design.md
+@@ -0,0 +1,21 @@
++# Design
++
++## Context
++
++Each bug is a one-line divergence from the README, found in `src/catalog.ts` (`find` trims but does not upper-case, while products are stored under canonical SKUs), `src/shipping.ts` (`shippingCost` uses `>` against the threshold) and `src/tax.ts` (`lineVat` uses `Math.floor`). See proposal.md.
++
++## Goals / Non-Goals
++
++**Goals:** make the three behaviours match the README with minimal edits, reusing existing helpers.
++
++**Non-Goals:** no refactor, no change to other rules or to the public API.
++
++## Decisions
++
++- `Catalog.find` uses the existing `canonicalSku`, so `get`, `getForSale`, `reprice` and `deactivate` all benefit from one fix. Alternative: canonicalise in the order code only; rejected because it leaves other entry points broken.
++- `shippingCost` uses `>=` against `FREE_SHIPPING_FROM_CENTS` (5000).
++- `lineVat` uses `percentOf` from `src/money.ts`, which does integer half-up division; no floating point is introduced.
++
++## Risks / Trade-offs
++
++- Stored VAT of already-placed orders is not recomputed → out of scope; only new pricing changes.
+diff --git a/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/proposal.md b/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..aeef196cd7479cc71fff5a87db605271b60ae015
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/proposal.md
+@@ -0,0 +1,28 @@
++# Proposal
++
++## Why
++
++Three reports show the code disagreeing with the README business rules: a lower-case SKU (`lb-220`) is refused as an unknown product, an order whose goods come to exactly €50.00 is charged shipping, and a line's VAT can be one cent low (€1.99 at 22% shows €0.43, should be €0.44).
++
++## What Changes
++
++- Catalogue lookups canonicalise the SKU (trim, upper case) so `lb-220`, ` LB-220 ` and `LB-220` are the same product when ordering.
++- Shipping is free when the goods (after every discount, before VAT) are €50.00 **or more**; today exactly €50.00 still pays.
++- Line VAT is rounded half up to the cent, in integer cents, instead of rounded down.
++
++README rules affected: "Products" (SKUs case-insensitive and trimmed), "Shipping" (free from €50.00), "VAT" (half-up rounding per line). None of them is altered: the code is brought in line, so no README edit is needed.
++
++Out of scope: coupon-code handling, volume discounts, shipping VAT, invoices, the weight bands, and any other rule.
++
++## Capabilities
++
++### New Capabilities
++- `product-catalog`: SKU identity (case-insensitive, trimmed, shown upper case) when products are looked up.
++- `shipping`: Shipping cost by weight band and the free-shipping threshold.
++- `vat`: Per-line VAT rounding half up to the cent.
++
++### Modified Capabilities
++
++## Impact
++
++Code: `src/catalog.ts` (`find`), `src/shipping.ts` (`shippingCost`), `src/tax.ts` (`lineVat`). Tests in `test/*.test.ts`. No API, dependency or README change.
+diff --git a/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/specs/product-catalog/spec.md b/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/specs/product-catalog/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a3cf20a4e1083f9f80d75edfcaca6975a0a6c757
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/specs/product-catalog/spec.md
+@@ -0,0 +1,22 @@
++# Spec Delta
++
++## Purpose
++
++Defines how products in the catalogue are identified by SKU, so a product is found however the SKU is typed.
++
++## ADDED Requirements
++
++### Requirement: SKUs are case-insensitive and trimmed on lookup
++The system SHALL treat SKUs as case-insensitive and ignoring surrounding spaces wherever a product is looked up, including when an order line is placed, and SHALL show the SKU in upper case.
++
++#### Scenario: Lower-case SKU orders the product
++- **WHEN** product `LB-220` exists and an order line is placed with SKU `lb-220`
++- **THEN** the order is accepted and the line shows SKU `LB-220`
++
++#### Scenario: Padded SKU
++- **WHEN** an order line is placed with SKU ` lb-220 `
++- **THEN** it refers to product `LB-220`
++
++#### Scenario: Unknown SKU
++- **WHEN** an order line is placed with SKU `zz-999` that is not in the catalogue
++- **THEN** the order is refused as an unknown product
+diff --git a/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/specs/shipping/spec.md b/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/specs/shipping/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..2b093cdd05a3818e48a28d7b8108760db974e6d8
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/specs/shipping/spec.md
+@@ -0,0 +1,22 @@
++# Spec Delta
++
++## Purpose
++
++Defines the shipping cost of an order and when shipping is free.
++
++## ADDED Requirements
++
++### Requirement: Shipping is free from €50.00 of goods
++Shipping SHALL be free when the goods come to 5000 cents (€50.00) or more, after every discount and before VAT. Otherwise it SHALL be priced by parcel weight: up to 1 kg €4.90, up to 5 kg €8.90, up to 20 kg €14.90, heavier €29.90.
++
++#### Scenario: Exactly €50.00
++- **WHEN** the goods after discounts come to 5000 cents and the parcel weighs 500 g
++- **THEN** shipping is 0 cents
++
++#### Scenario: One cent below
++- **WHEN** the goods after discounts come to 4999 cents and the parcel weighs 500 g
++- **THEN** shipping is 490 cents
++
++#### Scenario: Discounted basket reaching €50.00
++- **WHEN** an order's lines total 5500 cents gross and discounts bring the goods to exactly 5000 cents
++- **THEN** shipping is 0 cents
+diff --git a/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/specs/vat/spec.md b/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/specs/vat/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..73f971fc65a102801b2a0d986751cae72955f4c9
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/specs/vat/spec.md
+@@ -0,0 +1,22 @@
++# Spec Delta
++
++## Purpose
++
++Defines how VAT on order lines is computed and rounded.
++
++## ADDED Requirements
++
++### Requirement: Line VAT rounds half up to the cent
++VAT SHALL be computed per line on the line's net amount after every discount, at the rate of its VAT class (standard 22%, reduced 10%, super-reduced 4%, exempt 0%), in integer cents, rounded half up on each line.
++
++#### Scenario: Below half a cent rounds down
++- **WHEN** a standard-rate line has net 100 cents
++- **THEN** its VAT is 22 cents
++
++#### Scenario: Above half a cent rounds up
++- **WHEN** a standard-rate line has net 199 cents (43.78 cents of VAT before rounding)
++- **THEN** its VAT is 44 cents
++
++#### Scenario: Exactly half a cent rounds up
++- **WHEN** a reduced-rate (10%) line has net 205 cents (20.5 cents)
++- **THEN** its VAT is 21 cents
+diff --git a/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/tasks.md b/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5add6cefbd987e7d52a2b3b189e2dbd6eada2e04
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-fix-sku-shipping-vat-rounding/tasks.md
+@@ -0,0 +1,17 @@
++# Tasks
++
++## 1. SKU lookup
++
++- [x] 1.1 Make `Catalog.find` in `src/catalog.ts` use `canonicalSku`; add a test in `test/catalog.test.ts` and `test/orders.test.ts` that `lb-220` and ` lb-220 ` find/order `LB-220`, and an unknown SKU is still refused; verify with `npm test`
++
++## 2. Free shipping threshold
++
++- [x] 2.1 Change `shippingCost` in `src/shipping.ts` to free at goods >= 5000; add tests in `test/orders.test.ts` for goods of 4999 (shipping paid) and 5000 (free), including a discounted order landing exactly on 5000; verify with `npm test`
++
++## 3. VAT rounding
++
++- [x] 3.1 Change `lineVat` in `src/tax.ts` to use `percentOf`; add tests in `test/orders.test.ts` for net 199 at 22% (44), a 0.5-cent case (net 205 at 10% → 21) and a round-down case (net 100 at 22% → 22); verify with `npm test`
++
++## 4. Final check
++
++- [x] 4.1 Run `npm test` in full and confirm all tests pass; confirm no README change is needed
+diff --git a/openspec/specs/product-catalog/spec.md b/openspec/specs/product-catalog/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..06be0d8e5e3170c6a4726b87453d09a6919938cd
+--- /dev/null
++++ b/openspec/specs/product-catalog/spec.md
+@@ -0,0 +1,21 @@
++# product-catalog Specification
++
++## Purpose
++Defines how products in the catalogue are identified by SKU, so a product is found however the SKU is typed.
++
++## Requirements
++
++### Requirement: SKUs are case-insensitive and trimmed on lookup
++The system SHALL treat SKUs as case-insensitive and ignoring surrounding spaces wherever a product is looked up, including when an order line is placed, and SHALL show the SKU in upper case.
++
++#### Scenario: Lower-case SKU orders the product
++- **WHEN** product `LB-220` exists and an order line is placed with SKU `lb-220`
++- **THEN** the order is accepted and the line shows SKU `LB-220`
++
++#### Scenario: Padded SKU
++- **WHEN** an order line is placed with SKU ` lb-220 `
++- **THEN** it refers to product `LB-220`
++
++#### Scenario: Unknown SKU
++- **WHEN** an order line is placed with SKU `zz-999` that is not in the catalogue
++- **THEN** the order is refused as an unknown product
+diff --git a/openspec/specs/shipping/spec.md b/openspec/specs/shipping/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a0f912019006fcdf3ed01a138d570e5b47b5e8ca
+--- /dev/null
++++ b/openspec/specs/shipping/spec.md
+@@ -0,0 +1,21 @@
++# shipping Specification
++
++## Purpose
++Defines the shipping cost of an order and when shipping is free.
++
++## Requirements
++
++### Requirement: Shipping is free from €50.00 of goods
++Shipping SHALL be free when the goods come to 5000 cents (€50.00) or more, after every discount and before VAT. Otherwise it SHALL be priced by parcel weight: up to 1 kg €4.90, up to 5 kg €8.90, up to 20 kg €14.90, heavier €29.90.
++
++#### Scenario: Exactly €50.00
++- **WHEN** the goods after discounts come to 5000 cents and the parcel weighs 500 g
++- **THEN** shipping is 0 cents
++
++#### Scenario: One cent below
++- **WHEN** the goods after discounts come to 4999 cents and the parcel weighs 500 g
++- **THEN** shipping is 490 cents
++
++#### Scenario: Discounted basket reaching €50.00
++- **WHEN** an order's lines total 5500 cents gross and discounts bring the goods to exactly 5000 cents
++- **THEN** shipping is 0 cents
+diff --git a/openspec/specs/vat/spec.md b/openspec/specs/vat/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9f60a1ec110738aa8fb9c15f10752f87653829b1
+--- /dev/null
++++ b/openspec/specs/vat/spec.md
+@@ -0,0 +1,21 @@
++# vat Specification
++
++## Purpose
++Defines how VAT on order lines is computed and rounded.
++
++## Requirements
++
++### Requirement: Line VAT rounds half up to the cent
++VAT SHALL be computed per line on the line's net amount after every discount, at the rate of its VAT class (standard 22%, reduced 10%, super-reduced 4%, exempt 0%), in integer cents, rounded half up on each line.
++
++#### Scenario: Below half a cent rounds down
++- **WHEN** a standard-rate line has net 100 cents
++- **THEN** its VAT is 22 cents
++
++#### Scenario: Above half a cent rounds up
++- **WHEN** a standard-rate line has net 199 cents (43.78 cents of VAT before rounding)
++- **THEN** its VAT is 44 cents
++
++#### Scenario: Exactly half a cent rounds up
++- **WHEN** a reduced-rate (10%) line has net 205 cents (20.5 cents)
++- **THEN** its VAT is 21 cents
+diff --git a/src/catalog.ts b/src/catalog.ts
+index 0dfc92645f10374f948e9312a79dc7dca44318e5..b114b9c78623136e5ee8c9b1fc6d118c4c478c33 100644
+--- a/src/catalog.ts
++++ b/src/catalog.ts
+@@ -56,7 +56,7 @@ export class Catalog {
+ 
+   /** The product with `sku`, or undefined. */
+   find(sku: string): Product | undefined {
+-    return this.#products.get(sku.trim());
++    return this.#products.get(canonicalSku(sku));
+   }
+ 
+   /** The product with `sku`; throws UnknownProductError when there is none. */
+diff --git a/src/shipping.ts b/src/shipping.ts
+index 71920b9dc3b375440460eaebb217a70a48152b33..f4290d2a7729ec7e4c062d0d5606894fb26fae09 100644
+--- a/src/shipping.ts
++++ b/src/shipping.ts
+@@ -30,6 +30,6 @@ export function parcelCost(grams: number): Cents {
+ 
+ /** The shipping cost of an order whose goods amount to `goods` and weigh `grams`. */
+ export function shippingCost(goods: Cents, grams: number): Cents {
+-  if (goods > FREE_SHIPPING_FROM_CENTS) return 0;
++  if (goods >= FREE_SHIPPING_FROM_CENTS) return 0;
+   return parcelCost(grams);
+ }
+diff --git a/src/tax.ts b/src/tax.ts
+index 7449c567971f4c22ec68c991949f8652936e091b..5e12c55f1ca4a2044012df5ea175a5b57febbef3 100644
+--- a/src/tax.ts
++++ b/src/tax.ts
+@@ -23,7 +23,7 @@ export function vatRate(vatClass: VatClass): number {
+ 
+ /** The VAT of one order line whose net amount is `net`. */
+ export function lineVat(net: Cents, vatClass: VatClass): Cents {
+-  return Math.floor((net * vatRate(vatClass)) / 100);
++  return percentOf(net, vatRate(vatClass));
+ }
+ 
+ /** The VAT on a shipping cost: the standard rate. */
+diff --git a/test/catalog.test.ts b/test/catalog.test.ts
+index 3c78feb21517c68b01432b4e6c8fdfee3e3914d9..260ecf8028ae817b2ff25af9aa0227e7de776e63 100644
+--- a/test/catalog.test.ts
++++ b/test/catalog.test.ts
+@@ -28,4 +28,12 @@ describe('catalogue', () => {
+     assert.throws(() => catalog.getForSale('TEA-7'), InactiveProductError);
+     assert.throws(() => catalog.get('TEA-8'), UnknownProductError);
+   });
++
++  it('finds a product whatever the case or spacing of the SKU', () => {
++    const { catalog } = createShop();
++    catalog.add({ sku: 'LB-220', name: 'Lunch box', priceCents: 1990, vatClass: 'standard', weightGrams: 200 });
++    assert.equal(catalog.get('lb-220').sku, 'LB-220');
++    assert.equal(catalog.get(' lb-220 ').sku, 'LB-220');
++    assert.equal(catalog.find('zz-999'), undefined);
++  });
+ });
+diff --git a/test/orders.test.ts b/test/orders.test.ts
+index d07f06bd09b3489b674e3119a14ea7d2ced148a7..4ec67ad5d983b722b1b530c4503969cc7afce0e0 100644
+--- a/test/orders.test.ts
++++ b/test/orders.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createShop, OrderStateError, OutOfStockError, receipt } from '../src/index.ts';
++import { createShop, OrderStateError, OutOfStockError, receipt, UnknownProductError } from '../src/index.ts';
+ 
+ function shop() {
+   const s = createShop();
+@@ -79,4 +79,51 @@ describe('orders', () => {
+     assert.match(text, /1 × Enamel mug \(MUG-01\)\s+€10\.00/);
+     assert.match(text, /Total\s+€/);
+   });
++
++  it('accepts a SKU typed in lower case or with spaces', () => {
++    const s = shop();
++    s.catalog.add({ sku: 'LB-220', name: 'Lunch box', priceCents: 1990, vatClass: 'standard', weightGrams: 200 });
++    s.inventory.restock('LB-220', 5);
++    const order = s.orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'lb-220', quantity: 1 }, { sku: ' LB-220 ', quantity: 1 }] });
++    assert.equal(order.lines.length, 1);
++    assert.equal(order.lines[0]?.sku, 'LB-220');
++    assert.equal(order.lines[0]?.quantity, 2);
++    assert.throws(() => s.orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'zz-999', quantity: 1 }] }), UnknownProductError);
++  });
++
++  it('charges shipping at €49.99 of goods and ships free at exactly €50.00', () => {
++    const s = createShop();
++    s.catalog.add({ sku: 'A-1', name: 'A', priceCents: 4999, vatClass: 'standard', weightGrams: 500 });
++    s.catalog.add({ sku: 'A-2', name: 'B', priceCents: 5000, vatClass: 'standard', weightGrams: 500 });
++    s.inventory.restock('A-1', 5);
++    s.inventory.restock('A-2', 5);
++    const below = s.orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'A-1', quantity: 1 }] });
++    assert.equal(below.totals.shippingCents, 490);
++    const exact = s.orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'A-2', quantity: 1 }] });
++    assert.equal(exact.totals.shippingCents, 0);
++  });
++
++  it('ships free when discounts bring the goods to exactly €50.00', () => {
++    const s = createShop();
++    s.catalog.add({ sku: 'PEN-4', name: 'Fountain pen', priceCents: 2000, vatClass: 'standard', weightGrams: 50 });
++    s.inventory.restock('PEN-4', 5);
++    s.coupons.add({ code: 'TENOFF', kind: 'fixed', value: 1000, validFrom: '2026-01-01', validUntil: '2026-12-31' });
++    const order = s.orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'PEN-4', quantity: 3 }], coupon: 'TENOFF' });
++    assert.equal(order.totals.goodsCents, 5000);
++    assert.equal(order.totals.shippingCents, 0);
++  });
++
++  it('rounds the VAT of a line half up to the cent', () => {
++    const s = createShop();
++    s.catalog.add({ sku: 'V-199', name: 'Standard 1.99', priceCents: 199, vatClass: 'standard', weightGrams: 10 });
++    s.catalog.add({ sku: 'V-205', name: 'Reduced 2.05', priceCents: 205, vatClass: 'reduced', weightGrams: 10 });
++    s.catalog.add({ sku: 'V-100', name: 'Standard 1.00', priceCents: 100, vatClass: 'standard', weightGrams: 10 });
++    for (const sku of ['V-199', 'V-205', 'V-100']) s.inventory.restock(sku, 5);
++    const order = s.orders.place({
++      customer: 'c-1',
++      date: '2026-03-02',
++      lines: [{ sku: 'V-199', quantity: 1 }, { sku: 'V-205', quantity: 1 }, { sku: 'V-100', quantity: 1 }],
++    });
++    assert.deepEqual(order.lines.map((line) => line.vatCents), [44, 21, 22]);
++  });
+ });

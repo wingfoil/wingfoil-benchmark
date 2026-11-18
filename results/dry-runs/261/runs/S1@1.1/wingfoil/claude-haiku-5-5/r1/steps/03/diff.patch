@@ -1,0 +1,202 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d5cff4a12cddc7b6b2b3c5b611dcb24c7337ce8a
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "Conform applyPatch to RFC 6902"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-conform-applypatch-to-rfc-6902-in-every-case.md b/docs/memory/task/task-003-conform-applypatch-to-rfc-6902-in-every-case.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..208dc95de19958064cd6f287cb9b6a1521ac8672
+--- /dev/null
++++ b/docs/memory/task/task-003-conform-applypatch-to-rfc-6902-in-every-case.md
+@@ -0,0 +1,52 @@
++---
++id: task-003-conform-applypatch-to-rfc-6902-in-every-case
++type: task
++title: "Conform applyPatch to RFC 6902 in every case"
++status: approved
++format: 1
++---
++
++# Task — Conform applyPatch to RFC 6902 in every case
++
++## Request
++
++Users of `applyPatch` report surprising results. Some patches they consider invalid are accepted, some
++edge cases give results they did not expect, and a patch that fails does not always behave the way they
++read the standard. Review how patches are checked and applied, and make the behaviour conform to
++RFC 6902 in every case, errors included.
++
++## Acceptance criteria
++
++1. A patch is an array of operation objects. Every element of the array is checked, including holes in
++   a sparse array, which are invalid operations and fail with a clear error.
++2. An operation `value` (for `add`, `replace` and `test`) must be a JSON value: `null`, a boolean, a
++   finite number, a string, an array, or a plain object. `undefined`, `NaN`, infinities, functions,
++   class instances such as `Date` or `Map`, sparse arrays and cyclic values are invalid, and the patch
++   throws before any operation runs.
++3. `move` from the empty path is an error, as `remove` of the whole document is. This holds for
++   `move` from `""` to `""` as well as to any other path, because RFC 6902 section 4.4 defines `move`
++   as a `remove` followed by an `add`.
++4. Every other behaviour already in place stays as it is: the atomicity of a patch, the input and
++   patch never mutated, and the results of the six operations.
++5. Each new rule has a test that fails before the change and passes after it.
++
++## Notes
++
++- Scope: `src/index.ts` (`applyPatch` and its helpers) and `test/patch.test.ts`. No runtime dependency.
++- Configuration under `.wingfoil/` is not changed.
++
++## Outcome
++
++Review of `src/index.ts` against RFC 6902 found three gaps; the other paths already conform.
++
++1. **Non-JSON values were accepted.** `add`, `replace` and `test` took any `value`, so `undefined`,
++   `NaN`, infinities, functions, class instances, holes and cycles passed. Now `assertJsonValue` checks
++   every `value` when the patch is validated, before any operation runs (criterion 2).
++2. **Holes in the patch array were not reported.** `patch.map` skips holes, so a sparse patch failed
++   with a `TypeError` rather than a patch error. Now `Array.from` visits every element (criterion 1).
++3. **`move` from the empty path to the empty path succeeded silently.** It is now an error, as is the
++   `move` from the whole document to any other path (criterion 3).
++
++New tests cover each gap and were red before the change: 4 failing tests before, 64 passing after.
++The existing 59 tests, covering the six operations, atomicity and non-mutation, are unchanged and pass
++(criterion 4). `tsc` is not installed in this repository, so no separate type check was run.
+diff --git a/src/index.ts b/src/index.ts
+index 3d4d7e8fe8989c5b86814754ed7e3e57c5ed57ad..011a64a212870fafbbe023e3098263c417fb869b 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -39,7 +39,8 @@ export function applyPatch(document: JsonValue, patch: JsonPatch): JsonValue {
+   if (!Array.isArray(patch)) {
+     throw new TypeError('JSON Patch must be an array of operations');
+   }
+-  const operations = patch.map(validateOperation);
++  // Array.from, unlike map, visits the holes of a sparse array, so that each of them is reported.
++  const operations = Array.from(patch, validateOperation);
+   let result = structuredClone(document);
+   for (const operation of operations) {
+     result = applyOperation(result, operation);
+@@ -65,6 +66,7 @@ function validateOperation(operation: unknown, index: number): JsonPatchOperatio
+       if (!Object.hasOwn(operation, 'value')) {
+         throw new Error(`${at}: "${op}" needs a "value"`);
+       }
++      assertJsonValue(operation.value, at);
+       return { op, path, value: operation.value };
+     case 'remove':
+       return { op, path };
+@@ -80,6 +82,39 @@ function validateOperation(operation: unknown, index: number): JsonPatchOperatio
+   }
+ }
+ 
++// RFC 6902, section 4 and RFC 8259: a "value" is a JSON value. Rejects what JSON cannot hold, such as
++// undefined, non-finite numbers, functions, class instances, holes in arrays and cyclic structures.
++function assertJsonValue(value: unknown, at: string, ancestors: object[] = []): asserts value is JsonValue {
++  if (value === null || typeof value === 'string' || typeof value === 'boolean') {
++    return;
++  }
++  if (typeof value === 'number') {
++    if (!Number.isFinite(value)) {
++      throw new Error(`${at}: "value" must be a finite number`);
++    }
++    return;
++  }
++  if (typeof value !== 'object' || ancestors.includes(value)) {
++    throw new Error(`${at}: "value" must be a JSON value, without cycles`);
++  }
++  if (Array.isArray(value)) {
++    for (let i = 0; i < value.length; i++) {
++      if (!Object.hasOwn(value, i)) {
++        throw new Error(`${at}: "value" must be a JSON value, without holes in arrays`);
++      }
++      assertJsonValue(value[i], at, [...ancestors, value]);
++    }
++    return;
++  }
++  const prototype = Object.getPrototypeOf(value);
++  if (prototype !== Object.prototype && prototype !== null) {
++    throw new Error(`${at}: "value" must be a JSON value, not an instance of a class`);
++  }
++  for (const key of Object.keys(value)) {
++    assertJsonValue((value as { [key: string]: unknown })[key], at, [...ancestors, value]);
++  }
++}
++
+ function applyOperation(document: JsonValue, operation: JsonPatchOperation): JsonValue {
+   switch (operation.op) {
+     case 'add':
+@@ -153,6 +188,10 @@ function replace(document: JsonValue, pointer: string, value: JsonValue): JsonVa
+ function move(document: JsonValue, from: string, pointer: string): JsonValue {
+   const fromTokens = parsePointer(from);
+   const tokens = parsePointer(pointer);
++  if (fromTokens.length === 0) {
++    // "move" is a "remove" followed by an "add", and the whole document cannot be removed.
++    throw new Error('JSON Patch "move" cannot move the whole document');
++  }
+   if (startsWith(tokens, fromTokens)) {
+     if (tokens.length === fromTokens.length) {
+       // Moving a value onto its own location leaves the document as it is, once it is shown to exist.
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index ae236e229701c5977bed71a55f305035d13330e7..fec1a2d05f4612750643ecca34c925638aed1a6f 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -290,3 +290,43 @@ test('null, false, 0 and the empty string are values, not missing', () => {
+     t: '',
+   });
+ });
++
++test('a hole in the patch array is an invalid operation', () => {
++  const patch = [, { op: 'remove', path: '/a' }];
++  assert.throws(() => applyPatch({ a: 1 }, patch as never), /operation 0/);
++});
++
++test('a "value" that is not a JSON value is invalid', () => {
++  const invalid: unknown[] = [
++    undefined,
++    NaN,
++    Infinity,
++    -Infinity,
++    () => 1,
++    new Date(0),
++    new Map(),
++    { a: undefined },
++    [1, , 3],
++    { nested: [{ deep: undefined }] },
++  ];
++  for (const value of invalid) {
++    assert.throws(() => applyPatch({}, [{ op: 'add', path: '/x', value }] as never), undefined, String(value));
++    assert.throws(() => applyPatch({ a: 1 }, [{ op: 'replace', path: '/a', value }] as never));
++    assert.throws(() => applyPatch({ a: 1 }, [{ op: 'test', path: '/a', value }] as never));
++  }
++});
++
++test('a cyclic "value" is invalid', () => {
++  const value: { self?: unknown } = {};
++  value.self = value;
++  assert.throws(() => applyPatch({}, [{ op: 'add', path: '/x', value }] as never));
++});
++
++test('a JSON "value" with any JSON shape is valid', () => {
++  const value = { n: null, b: true, i: -0, f: 1.5, s: '', list: [[]], obj: {} };
++  assert.deepEqual(applyPatch({}, [{ op: 'add', path: '/x', value }]), { x: value });
++});
++
++test('move from the empty path is an error, as remove of the whole document is', () => {
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: 'move', from: '', path: '' }]));
++});

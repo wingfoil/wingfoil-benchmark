@@ -1,0 +1,318 @@
+diff --git a/README.md b/README.md
+index 36b8b898be86b4bcd6e826d291478601225269aa..6174c36c008c93183441e8d470b7aef9a78cb431 100644
+--- a/README.md
++++ b/README.md
+@@ -26,6 +26,9 @@ priced at the item's `hourlyPrice` for each hour, and may cross midnight. It get
+ 24 hours or more must still start and end at midnight UTC, and times that are not on the hour are rejected.
+ An item without `hourlyPrice` cannot be rented by the hour. A booked item cannot be booked again for an
+ overlapping period, hourly or daily.
+-Cancellations are not implemented yet.
++- `cancel(bookingId, at)`: cancels the booking at the time `at` (a UTC instant, e.g. `2026-07-01T10:00:00Z`) and returns
++  `{ bookingId, refund }`, the euro cents given back. A booking cancelled 24 hours or more before its start is refunded
++  its full total (the long-stay total when it applies); a booking cancelled less than 24 hours before its start, or after
++  it, gets no refund. A cancelled booking no longer holds its item, and a booking can only be cancelled once.
+ 
+ Build and test with `npm test`.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..191546be65935acfd6f368bc817a4c4a92f2ba01
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-5-plan
++type: plan
++title: "Add booking cancellation"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-5"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-005-booking-cancellation-cancel-bookingid-at.md b/docs/memory/task/task-005-booking-cancellation-cancel-bookingid-at.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..bb332b4fe4b36b86e995c066973214ba23a5bdb0
+--- /dev/null
++++ b/docs/memory/task/task-005-booking-cancellation-cancel-bookingid-at.md
+@@ -0,0 +1,49 @@
++---
++id: task-005-booking-cancellation-cancel-bookingid-at
++type: task
++title: "Booking cancellation: cancel(bookingId, at)"
++status: approved
++format: 1
++---
++
++# Booking cancellation: cancel(bookingId, at)
++
++Plans change, and customers ask us to cancel their bookings. The rental service needs a way to cancel a booking.
++
++## Requested behaviour
++
++Add `cancel(bookingId, at)` to the rental service. It cancels the booking at the time `at` and returns
++`{ bookingId, refund }`, where `refund` is the amount given back to the customer, in euro cents.
++
++A cancelled booking no longer holds its equipment, so its item is free again for overlapping periods. A booking can
++only be cancelled once.
++
++## School rules
++
++Cancellation policy (task-001, school rule 5): a booking cancelled less than 24 hours before its start gets no
++refund; otherwise the full amount of the booking is refunded.
++
++## Interpretation
++
++- `at` is a UTC ISO-8601 instant ending in `Z`, e.g. `2026-07-01T10:00:00Z`, with optional seconds and fractional
++  seconds. Other strings and impossible dates throw.
++- `refund` is the booking's `total` (the long-stay discounted total when it applies) when the time from `at` to the
++  booking's `start` is 24 hours or more, and `0` when it is less than 24 hours. Exactly 24 hours before gets the full
++  refund.
++- A cancellation at or after `start` is allowed: it is less than 24 hours before the start, so `refund` is `0`, and it
++  frees the item.
++- `bookingId` must be the id returned by `book`. An unknown id throws. A second cancellation of the same booking throws.
++- The booking stays in the service as cancelled, so booking ids remain sequential and deterministic.
++- Cancelling does not change `availability` results for other bookings.
++
++## Acceptance
++
++- Cancelling 2 or more days before the start returns the full booked total as `refund`.
++- Cancelling less than 24 hours before the start returns `refund` 0.
++- Cancelling exactly 24 hours before the start returns the full total.
++- A long-stay booking refunds its discounted total.
++- After cancellation the item is free for an overlapping period, both by `book` and by `availability`.
++- An unknown booking id throws; cancelling the same booking twice throws.
++- An invalid `at` throws.
++- Tests are deterministic and in-process, with no external services.
++- The README describes `cancel` and its refund policy, replacing "Cancellations are not implemented yet."
+diff --git a/src/index.ts b/src/index.ts
+index cacb17b742d22a457f5d3badc47501033bbbef97..07cd1dbfbaec90dd40c5d4869f7c2e69e4d3a1d6 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -2,6 +2,7 @@ export { createRentalService } from './rental.js';
+ export type {
+   AvailabilityQuery,
+   Booking,
++  Cancellation,
+   Equipment,
+   EquipmentKind,
+   Quote,
+diff --git a/src/period.ts b/src/period.ts
+index 86010afb3126551d843fc1ada8457c0fba7e143a..a6089db4d2f12b942910b48dd6e716058c1fb94b 100644
+--- a/src/period.ts
++++ b/src/period.ts
+@@ -4,6 +4,8 @@ const DAY_MS = 86_400_000;
+ // A school time is UTC on the hour: `YYYY-MM-DD` (midnight), or `YYYY-MM-DDTHH:00:00Z` (optionally `.000`).
+ const ON_THE_HOUR_UTC = /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}):00:00(?:\.000)?Z)?$/;
+ 
++const UTC_INSTANT = /^(\d{4}-\d{2}-\d{2})T([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?Z$/;
++
+ /** A daily rental covers whole days; an hourly one is shorter than a day and covers whole hours. */
+ export type Period =
+   | { readonly unit: 'day'; readonly start: number; readonly end: number; readonly days: number }
+@@ -47,6 +49,20 @@ export function parsePeriod(start: string, end: string): Period {
+   throw new Error('a rental of a day or more must start and end at midnight UTC');
+ }
+ 
++/** A UTC instant such as `2026-07-01T10:30:00Z`, with optional seconds and fraction. Returns epoch milliseconds. */
++export function parseInstantUtc(value: string, name: string): number {
++  const match = UTC_INSTANT.exec(value);
++  if (match === null) {
++    throw new Error(`${name} must be a UTC instant ending in Z, e.g. 2026-07-01T10:00:00Z`);
++  }
++  const ms = Date.parse(value);
++  // Rejects impossible dates such as 2026-02-30, which Date.parse would otherwise roll over.
++  if (Number.isNaN(ms) || new Date(ms).toISOString().slice(0, 10) !== match[1]) {
++    throw new Error(`${name} is not a valid date: ${value}`);
++  }
++  return ms;
++}
++
+ export function overlaps(a: Period, b: Period): boolean {
+   return a.start < b.end && b.start < a.end;
+ }
+diff --git a/src/rental.test.ts b/src/rental.test.ts
+index 3e94ffcc1298abcf5c169140630fdd68b8d7823f..8f72d55b9a4bd4747f9a17955bb01c191d5f3e69 100644
+--- a/src/rental.test.ts
++++ b/src/rental.test.ts
+@@ -344,3 +344,77 @@ test('availability respects hourly bookings', () => {
+     ['board-1', 'board-2'],
+   );
+ });
++
++test('cancel refunds the full total two or more days before the start', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-10' + DAY, end: '2026-07-11' + DAY });
++  assert.deepEqual(service.cancel(booking.id, '2026-07-08T10:00:00Z'), { bookingId: booking.id, refund: 2500 });
++});
++
++test('cancel gives no refund less than 24 hours before the start', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-10' + DAY, end: '2026-07-11' + DAY });
++  assert.equal(service.cancel(booking.id, '2026-07-09T00:01:00Z').refund, 0);
++});
++
++test('cancel refunds the full total exactly 24 hours before the start', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-10' + DAY, end: '2026-07-11' + DAY });
++  assert.equal(service.cancel(booking.id, '2026-07-09T00:00:00Z').refund, 2500);
++});
++
++test('cancel gives no refund once the rental has started', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-10' + DAY, end: '2026-07-11' + DAY });
++  assert.equal(service.cancel(booking.id, '2026-07-10T09:00:00Z').refund, 0);
++});
++
++test('cancel refunds the long-stay total of a discounted booking', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-10' + DAY, end: '2026-07-13' + DAY });
++  assert.equal(service.cancel(booking.id, '2026-07-01T00:00:00Z').refund, 6750);
++});
++
++test('cancel refunds an hourly booking in full when cancelled in time', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500, hourlyPrice: 1000 });
++  const booking = service.book({
++    itemId: 'board-1',
++    start: '2026-07-10T10:00:00Z',
++    end: '2026-07-10T13:00:00Z',
++  });
++  assert.equal(booking.total, 3000);
++  assert.equal(service.cancel(booking.id, '2026-07-08T10:00:00Z').refund, 3000);
++});
++
++test('cancel frees the item for an overlapping period', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-10' + DAY, end: '2026-07-12' + DAY });
++  assert.deepEqual(service.availability({ start: '2026-07-11' + DAY, end: '2026-07-12' + DAY }), []);
++  service.cancel(booking.id, '2026-07-01T00:00:00Z');
++  assert.deepEqual(service.availability({ start: '2026-07-11' + DAY, end: '2026-07-12' + DAY }), ['board-1']);
++  assert.equal(service.book({ itemId: 'board-1', start: '2026-07-11' + DAY, end: '2026-07-12' + DAY }).total, 2500);
++});
++
++test('cancel throws for an unknown booking', () => {
++  const service = serviceWithBoard();
++  assert.throws(() => service.cancel('booking-99', '2026-07-01T00:00:00Z'));
++});
++
++test('cancel throws when the same booking is cancelled twice', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-10' + DAY, end: '2026-07-11' + DAY });
++  service.cancel(booking.id, '2026-07-01T00:00:00Z');
++  assert.throws(() => service.cancel(booking.id, '2026-07-01T01:00:00Z'));
++});
++
++test('cancel throws for an invalid time', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-10' + DAY, end: '2026-07-11' + DAY });
++  assert.throws(() => service.cancel(booking.id, '2026-07-01'));
++  assert.throws(() => service.cancel(booking.id, '2026-07-01T10:00:00+01:00'));
++  assert.throws(() => service.cancel(booking.id, '2026-02-30T10:00:00Z'));
++  assert.throws(() => service.cancel(booking.id, 'yesterday'));
++  // The booking is still live after the rejected calls.
++  assert.deepEqual(service.availability({ start: '2026-07-10' + DAY, end: '2026-07-11' + DAY }), []);
++});
+diff --git a/src/rental.ts b/src/rental.ts
+index 61c003116fcc0dd3c3f6a37f7fa4101acc0f9ef7..03e584e42f300a835a8e13c946078a47fc74d456 100644
+--- a/src/rental.ts
++++ b/src/rental.ts
+@@ -1,4 +1,4 @@
+-import { overlaps, parsePeriod, type Period } from './period.js';
++import { overlaps, parseInstantUtc, parsePeriod, type Period } from './period.js';
+ 
+ export type EquipmentKind = 'board' | 'sail';
+ 
+@@ -31,6 +31,12 @@ export interface Booking extends Quote {
+   readonly id: string;
+ }
+ 
++export interface Cancellation {
++  readonly bookingId: string;
++  /** Euro cents given back to the customer. */
++  readonly refund: number;
++}
++
+ export interface AvailabilityQuery {
+   /** Midnight UTC, ISO-8601. */
+   readonly start: string;
+@@ -56,11 +62,20 @@ export interface RentalService {
+   book(request: RentalRequest): Booking;
+   /** Returns the sorted ids of the items free for the whole period. Throws on an invalid period or kind. */
+   availability(query: AvailabilityQuery): string[];
++  /**
++   * Cancels a booking at the time `at` (UTC ISO-8601 instant). The item is free again. Refunds the full total
++   * when cancelled 24 hours or more before the start, and nothing otherwise. Throws on an unknown or already
++   * cancelled booking, or an invalid time.
++   */
++  cancel(bookingId: string, at: string): Cancellation;
+ }
+ 
+ interface StoredBooking {
++  readonly id: string;
+   readonly itemId: string;
+   readonly period: Period;
++  readonly total: number;
++  cancelled: boolean;
+ }
+ 
+ const KINDS: readonly string[] = ['board', 'sail'];
+@@ -69,6 +84,8 @@ const KINDS: readonly string[] = ['board', 'sail'];
+ const LONG_STAY_DAYS = 3;
+ /** Percent taken off a long-stay rental. */
+ const LONG_STAY_DISCOUNT_PERCENT = 10;
++/** A booking cancelled at least this long before its start gets a full refund. */
++const FULL_REFUND_NOTICE_MS = 24 * 60 * 60 * 1000;
+ 
+ function validateEquipment(item: Equipment): void {
+   if (typeof item.id !== 'string' || item.id === '') {
+@@ -112,7 +129,9 @@ export function createRentalService(): RentalService {
+   }
+ 
+   function isFree(itemId: string, period: Period): boolean {
+-    return !bookings.some((booking) => booking.itemId === itemId && overlaps(booking.period, period));
++    return !bookings.some(
++      (booking) => !booking.cancelled && booking.itemId === itemId && overlaps(booking.period, period),
++    );
+   }
+ 
+   return {
+@@ -140,9 +159,10 @@ export function createRentalService(): RentalService {
+       if (!isFree(request.itemId, period)) {
+         throw new Error(`${request.itemId} is already booked for an overlapping period`);
+       }
+-      bookings.push({ itemId: request.itemId, period });
++      const id = `booking-${bookings.length + 1}`;
++      bookings.push({ id, itemId: request.itemId, period, total, cancelled: false });
+       return {
+-        id: `booking-${bookings.length}`,
++        id,
+         itemId: request.itemId,
+         start: request.start,
+         end: request.end,
+@@ -166,5 +186,19 @@ export function createRentalService(): RentalService {
+       }
+       return ids.sort();
+     },
++
++    cancel(bookingId, at) {
++      const atMs = parseInstantUtc(at, 'at');
++      const booking = bookings.find((stored) => stored.id === bookingId);
++      if (booking === undefined) {
++        throw new Error(`unknown booking: ${bookingId}`);
++      }
++      if (booking.cancelled) {
++        throw new Error(`booking already cancelled: ${bookingId}`);
++      }
++      booking.cancelled = true;
++      const refund = booking.period.start - atMs >= FULL_REFUND_NOTICE_MS ? booking.total : 0;
++      return { bookingId, refund };
++    },
+   };
+ }

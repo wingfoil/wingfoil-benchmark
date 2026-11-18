@@ -1,0 +1,381 @@
+diff --git a/src/index.ts b/src/index.ts
+index 9874670f8acbf82e3d23b86161cbc7c98bf27fe4..9611f20c3ba36ac2ac66c43267d14df7c1db5453 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -330,3 +330,250 @@ function mergeInto(target: unknown, patch: unknown): unknown {
+ export function applyMergePatch(target: unknown, patch: unknown): unknown {
+   return mergeInto(copyJson(target, "the target"), copyJson(patch, "the merge patch"));
+ }
++
++/**
++ * JSON Patch (RFC 6902) generation.
++ */
++
++/** An operation of a JSON Patch, as `createPatch` produces it. */
++export type JsonPatchOperation =
++  | { op: "add" | "replace"; path: string; value: unknown }
++  | { op: "remove"; path: string }
++  | { op: "move"; from: string; path: string };
++
++/** Escapes a member name or an array index as one reference token of a JSON Pointer (RFC 6901). */
++function pointerToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++/**
++ * Returns a string that is the same for two JSON values exactly when they are equal: object members
++ * are compared regardless of their order.
++ */
++function canonicalKey(value: unknown): string {
++  if (Array.isArray(value)) {
++    return `[${value.map((item) => canonicalKey(item)).join(",")}]`;
++  }
++  if (isJsonObject(value)) {
++    const members = Object.keys(value)
++      .sort()
++      .map((key) => `${JSON.stringify(key)}:${canonicalKey(value[key])}`);
++    return `{${members.join(",")}}`;
++  }
++  return JSON.stringify(value);
++}
++
++/** Returns the indices from `start` (included) to `end` (excluded). */
++function indicesFrom(start: number, end: number): number[] {
++  return Array.from({ length: Math.max(0, end - start) }, (_, k) => start + k);
++}
++
++/**
++ * Returns the index pairs [i, j] of a longest common subsequence of `a` and `b`, in increasing order.
++ */
++function longestCommonSubsequence(a: string[], b: string[]): [number, number][] {
++  const width = b.length + 1;
++  // table[i * width + j] is the length of a longest common subsequence of a[i..] and b[j..].
++  const table = new Uint32Array((a.length + 1) * width);
++  for (let i = a.length - 1; i >= 0; i--) {
++    for (let j = b.length - 1; j >= 0; j--) {
++      table[i * width + j] =
++        a[i] === b[j]
++          ? table[(i + 1) * width + j + 1] + 1
++          : Math.max(table[(i + 1) * width + j], table[i * width + j + 1]);
++    }
++  }
++  const pairs: [number, number][] = [];
++  let i = 0;
++  let j = 0;
++  while (i < a.length && j < b.length) {
++    if (a[i] === b[j]) {
++      pairs.push([i, j]);
++      i++;
++      j++;
++    } else if (table[(i + 1) * width + j] >= table[i * width + j + 1]) {
++      i++;
++    } else {
++      j++;
++    }
++  }
++  return pairs;
++}
++
++/**
++ * Appends to `ops` the operations that turn the array `from` into the array `to`, both found at
++ * `path`.
++ *
++ * Items equal on both sides are matched by a longest common subsequence, so they stay where they are.
++ * An item that is equal on both sides but out of order is moved. Of the items left over, those that
++ * fall between the same two matched items are paired up and changed in place, and the others are
++ * removed from `from` or added from `to`. The structural operations come first, in an order in which
++ * each index they name is correct when they are applied one after another; the changes in place come
++ * last, at the final indices.
++ */
++function diffArrays(from: unknown[], to: unknown[], path: string, ops: JsonPatchOperation[]): void {
++  const fromKeys = from.map(canonicalKey);
++  const toKeys = to.map(canonicalKey);
++
++  // Equal items at the start and at the end are matched without a search; the rest is searched.
++  let head = 0;
++  while (head < from.length && head < to.length && fromKeys[head] === toKeys[head]) {
++    head++;
++  }
++  let tail = 0;
++  while (
++    tail < from.length - head &&
++    tail < to.length - head &&
++    fromKeys[from.length - 1 - tail] === toKeys[to.length - 1 - tail]
++  ) {
++    tail++;
++  }
++  const anchors: [number, number][] = [];
++  for (let i = 0; i < head; i++) {
++    anchors.push([i, i]);
++  }
++  for (const [i, j] of longestCommonSubsequence(
++    fromKeys.slice(head, from.length - tail),
++    toKeys.slice(head, to.length - tail),
++  )) {
++    anchors.push([head + i, head + j]);
++  }
++  for (let k = tail; k > 0; k--) {
++    anchors.push([from.length - k, to.length - k]);
++  }
++
++  // The leftovers between two consecutive anchors form a gap, which is where changes in place are sought.
++  const gaps: { from: number[]; to: number[] }[] = [];
++  let nextFrom = 0;
++  let nextTo = 0;
++  for (const [anchorFrom, anchorTo] of [...anchors, [from.length, to.length]]) {
++    gaps.push({ from: indicesFrom(nextFrom, anchorFrom), to: indicesFrom(nextTo, anchorTo) });
++    nextFrom = anchorFrom + 1;
++    nextTo = anchorTo + 1;
++  }
++
++  // A leftover item on the left that equals a leftover item on the right is a move.
++  const pendingTo = new Map<string, number[]>();
++  for (const gap of gaps) {
++    for (const j of gap.to) {
++      pendingTo.set(toKeys[j], [...(pendingTo.get(toKeys[j]) ?? []), j]);
++    }
++  }
++  const moves: [number, number][] = [];
++  for (const gap of gaps) {
++    gap.from = gap.from.filter((i) => {
++      const candidates = pendingTo.get(fromKeys[i]);
++      if (!candidates?.length) {
++        return true;
++      }
++      moves.push([i, candidates.shift() as number]);
++      return false;
++    });
++  }
++  const movedTo = new Set(moves.map(([, j]) => j));
++  for (const gap of gaps) {
++    gap.to = gap.to.filter((j) => !movedTo.has(j));
++  }
++
++  const changes: [number, number][] = [];
++  const removals: number[] = [];
++  const additions: number[] = [];
++  for (const gap of gaps) {
++    gap.from.forEach((i, k) => {
++      if (k < gap.to.length) {
++        changes.push([i, gap.to[k]]);
++      } else {
++        removals.push(i);
++      }
++    });
++    additions.push(...gap.to.slice(gap.from.length));
++  }
++
++  // Removals are made from the highest index down, so that the lower indices are still correct.
++  for (const i of [...removals].reverse()) {
++    ops.push({ op: "remove", path: `${path}/${i}` });
++  }
++
++  // Simulate the array as the to-index of each item it holds, so that move indices are exact.
++  // `settled` holds the items already in their final relative order; the others are moved to it.
++  const removed = new Set(removals);
++  const target = new Map<number, number>([...anchors, ...changes, ...moves]);
++  const current = from.flatMap((_, i) => (removed.has(i) ? [] : [target.get(i) as number]));
++  const settled = new Set([...anchors, ...changes].map(([, j]) => j));
++  for (const [, j] of [...moves].sort((a, b) => a[1] - b[1])) {
++    const at = current.indexOf(j);
++    current.splice(at, 1);
++    let before = -1;
++    current.forEach((item, k) => {
++      if (settled.has(item) && item < j) {
++        before = k;
++      }
++    });
++    if (at !== before + 1) {
++      ops.push({ op: "move", from: `${path}/${at}`, path: `${path}/${before + 1}` });
++    }
++    current.splice(before + 1, 0, j);
++    settled.add(j);
++  }
++
++  // Additions are made from the lowest index up, when everything before them is in place.
++  for (const j of additions) {
++    ops.push({ op: "add", path: `${path}/${j}`, value: to[j] });
++  }
++
++  for (const [i, j] of changes) {
++    diffValue(from[i], to[j], `${path}/${j}`, ops);
++  }
++}
++
++/** Appends to `ops` the operations that turn the object `from` into the object `to`, found at `path`. */
++function diffObjects(
++  from: Record<string, unknown>,
++  to: Record<string, unknown>,
++  path: string,
++  ops: JsonPatchOperation[],
++): void {
++  for (const key of Object.keys(from)) {
++    if (!Object.hasOwn(to, key)) {
++      ops.push({ op: "remove", path: `${path}/${pointerToken(key)}` });
++    }
++  }
++  for (const key of Object.keys(to)) {
++    if (!Object.hasOwn(from, key)) {
++      ops.push({ op: "add", path: `${path}/${pointerToken(key)}`, value: to[key] });
++    }
++  }
++  for (const key of Object.keys(from)) {
++    if (Object.hasOwn(to, key)) {
++      diffValue(from[key], to[key], `${path}/${pointerToken(key)}`, ops);
++    }
++  }
++}
++
++/** Appends to `ops` the operations that turn the value `from` into `to`, found at `path`. */
++function diffValue(from: unknown, to: unknown, path: string, ops: JsonPatchOperation[]): void {
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArrays(from, to, path, ops);
++  } else if (isJsonObject(from) && isJsonObject(to)) {
++    diffObjects(from, to, path, ops);
++  } else if (canonicalKey(from) !== canonicalKey(to)) {
++    ops.push({ op: "replace", path, value: to });
++  }
++}
++
++/**
++ * Returns a JSON Patch (RFC 6902) that turns `from` into `to` when applied with `applyPatch`.
++ *
++ * The patch describes only what changed. Members are added, removed or replaced where they differ.
++ * In an array, items are added and removed where they are, and an item that moved is moved with a
++ * "move" operation, so that the items around it are not sent again. An object or array that changed
++ * in place is patched member by member, rather than being sent whole.
++ *
++ * The inputs are not modified: the patch is built from copies. Throws a TypeError if either input is
++ * not JSON.
++ */
++export function createPatch(from: unknown, to: unknown): JsonPatchOperation[] {
++  const ops: JsonPatchOperation[] = [];
++  diffValue(copyJson(from, "the source document"), copyJson(to, "the target document"), "", ops);
++  return ops;
++}
+diff --git a/test/create-patch.test.mjs b/test/create-patch.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..afbaf67c2eecf37658c4ed9e122af4ddb502ff86
+--- /dev/null
++++ b/test/create-patch.test.mjs
+@@ -0,0 +1,120 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++test("equal documents give an empty patch", () => {
++  assert.deepEqual(createPatch({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] }), []);
++  assert.deepEqual(createPatch(1, 1), []);
++});
++
++test("a patch turns the source into the target and does not modify either input", () => {
++  const from = { name: "x", tags: ["a", "b"], nested: { n: 1 } };
++  const to = { name: "y", tags: ["a", "b", "c"], nested: { n: 1, m: [2] } };
++  const fromCopy = structuredClone(from);
++  const toCopy = structuredClone(to);
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.deepEqual(from, fromCopy);
++  assert.deepEqual(to, toCopy);
++});
++
++test("a changed member is replaced alone", () => {
++  const from = { a: 1, big: { payload: [1, 2, 3] }, c: "same" };
++  const to = { a: 1, big: { payload: [1, 2, 4] }, c: "same" };
++  assert.deepEqual(createPatch(from, to), [{ op: "replace", path: "/big/payload/2", value: 4 }]);
++});
++
++test("added and removed members are added and removed alone", () => {
++  assert.deepEqual(createPatch({ a: 1, b: 2 }, { a: 1, c: 3 }), [
++    { op: "remove", path: "/b" },
++    { op: "add", path: "/c", value: 3 },
++  ]);
++});
++
++test("an item inserted into a long array is added alone", () => {
++  const from = Array.from({ length: 1000 }, (_, i) => ({ id: i }));
++  const to = [...from.slice(0, 500), { id: "new" }, ...from.slice(500)];
++  const patch = createPatch(from, to);
++  assert.deepEqual(patch, [{ op: "add", path: "/500", value: { id: "new" } }]);
++  assert.deepEqual(applyPatch(from, patch), to);
++});
++
++test("an item removed from an array is removed alone", () => {
++  const from = ["a", "b", "c", "d"];
++  assert.deepEqual(createPatch(from, ["a", "c", "d"]), [{ op: "remove", path: "/1" }]);
++  assert.deepEqual(createPatch(from, ["a", "b", "c"]), [{ op: "remove", path: "/3" }]);
++});
++
++test("an item that moves is moved alone", () => {
++  assert.deepEqual(createPatch(["a", "b", "c", "d"], ["b", "c", "d", "a"]), [{ op: "move", from: "/0", path: "/3" }]);
++  assert.deepEqual(createPatch([1, 2, 3, 4, 5], [5, 1, 2, 3, 4]), [{ op: "move", from: "/4", path: "/0" }]);
++  assert.deepEqual(createPatch([5, 1, 2, 3, 4], [1, 2, 3, 4, 5]), [{ op: "move", from: "/0", path: "/4" }]);
++});
++
++test("an item that changed in place inside an array is patched in place", () => {
++  const from = [{ id: 1, name: "a" }, { id: 2, name: "b" }, { id: 3, name: "c" }];
++  const to = [{ id: 1, name: "a" }, { id: 2, name: "B" }, { id: 3, name: "c" }];
++  assert.deepEqual(createPatch(from, to), [{ op: "replace", path: "/1/name", value: "B" }]);
++});
++
++test("the root may change type, and object keys are escaped in paths", () => {
++  assert.deepEqual(createPatch({ a: 1 }, [1]), [{ op: "replace", path: "", value: [1] }]);
++  assert.deepEqual(createPatch({ "a/b": 1, "m~n": 2 }, { "a/b": 3, "m~n": 2 }), [
++    { op: "replace", path: "/a~1b", value: 3 },
++  ]);
++});
++
++test("a patch that is applied yields the target, for many random pairs of documents", () => {
++  // A small seeded generator, so that a failure can be reproduced.
++  let seed = 12345;
++  const random = () => {
++    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
++    return seed / 0x7fffffff;
++  };
++  const pick = (items) => items[Math.floor(random() * items.length)];
++  const scalar = () => pick([0, 1, 2, "a", "b", null, true]);
++  const value = (depth) => {
++    const r = random();
++    if (depth === 0 || r < 0.4) return scalar();
++    if (r < 0.7) return Array.from({ length: Math.floor(random() * 6) }, () => value(depth - 1));
++    const object = {};
++    for (const key of ["a", "b", "c", "d", "e/f"]) {
++      if (random() < 0.5) object[key] = value(depth - 1);
++    }
++    return object;
++  };
++  // Mutates a copy of `document` a little, so that most pairs share most of their content.
++  const mutate = (document, depth) => {
++    if (Array.isArray(document) && document.length > 0 && random() < 0.7) {
++      const items = document.map((item) => mutate(item, depth - 1));
++      const i = Math.floor(random() * items.length);
++      const j = Math.floor(random() * items.length);
++      const roll = random();
++      if (roll < 0.3) items.splice(i, 1);
++      else if (roll < 0.6) items.splice(j, 0, value(2));
++      else if (roll < 0.8) items.splice(j, 0, items.splice(i, 1)[0]);
++      return items;
++    }
++    if (isObject(document) && random() < 0.7) {
++      const result = {};
++      for (const [key, item] of Object.entries(document)) {
++        if (random() < 0.8) result[key] = mutate(item, depth - 1);
++      }
++      return result;
++    }
++    return random() < 0.3 ? value(1) : document;
++  };
++  const isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
++
++  for (let trial = 0; trial < 2000; trial++) {
++    const from = value(4);
++    const to = random() < 0.5 ? mutate(from, 4) : value(4);
++    const patch = createPatch(from, to);
++    assert.deepEqual(applyPatch(from, patch), to, `trial ${trial}: ${JSON.stringify({ from, to, patch })}`);
++  }
++});
++
++test("inputs that are not JSON are rejected", () => {
++  assert.throws(() => createPatch({ a: undefined }, {}), TypeError);
++  assert.throws(() => createPatch({}, [NaN]), TypeError);
++});

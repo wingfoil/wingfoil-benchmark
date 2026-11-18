@@ -1,0 +1,131 @@
+diff --git a/specs/001-fix-order-bugs/checklists/requirements.md b/specs/001-fix-order-bugs/checklists/requirements.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b31567a6af051a1b5199f3ef69d128d16a40945f
+--- /dev/null
++++ b/specs/001-fix-order-bugs/checklists/requirements.md
+@@ -0,0 +1,2 @@
++# Specification Quality Checklist: Fix order bugs
++All items pass: requirements testable, no clarification markers, scope bounded.
+diff --git a/specs/001-fix-order-bugs/plan.md b/specs/001-fix-order-bugs/plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..2597b79b8df71b8e4809edb7a1efa68de356f910
+--- /dev/null
++++ b/specs/001-fix-order-bugs/plan.md
+@@ -0,0 +1,4 @@
++# Plan: Fix order bugs
++Constitution check: README rules are the source of truth; no new deps; minimal changes; tests first; reuse `percentOf`.
++Changes: `Catalog.find` uses `canonicalSku`; `shippingCost` uses `>=`; `lineVat` uses `percentOf`.
++Rule chains re-verified: shipping threshold looks at goods after discounts; VAT per line; totals unchanged otherwise.
+diff --git a/specs/001-fix-order-bugs/spec.md b/specs/001-fix-order-bugs/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0aca146294e583adcf6ef1425ab5f6ccf2519121
+--- /dev/null
++++ b/specs/001-fix-order-bugs/spec.md
+@@ -0,0 +1,29 @@
++# Feature Specification: Fix SKU case, free-shipping threshold and line VAT rounding
++
++**Created**: 2026-11-17 | **Status**: Draft
++**Input**: Three reports: lower-case SKU refused (sales desk); €50.00 basket charged shipping (customer); line VAT one cent low (accounting).
++
++Affected README rules: Products (SKUs case-insensitive), Shipping (free from €50.00 after discounts), VAT (per line, half-up).
++
++## User Scenarios & Testing
++
++### User Story 1 - Lower-case SKU accepted (P1)
++Staff key in `lb-220` and the order is accepted as `LB-220`.
++**Acceptance**: Given product LB-220, when looked up as `lb-220` or ` lb-220 `, then it is found; an order with it is placed and shows `LB-220`.
++
++### User Story 2 - Free shipping at exactly €50.00 (P1)
++**Acceptance**: Goods after all discounts of exactly €50.00 ship free; €49.99 pays the weight band.
++
++### User Story 3 - VAT rounded half up per line (P1)
++**Acceptance**: A €1.99 line at 22% has VAT €0.44 (43.78c); exactly 0.5 cent (e.g. 25c at 10% = 2.5c) rounds up to 3c.
++
++## Requirements
++- **FR-001**: Catalogue lookup MUST treat SKUs case-insensitively and ignore surrounding spaces.
++- **FR-002**: Shipping MUST be free when goods after discounts, before VAT, are €50.00 or more.
++- **FR-003**: Line VAT MUST be rounded half up to the cent.
++
++## Success Criteria
++- SC-001: The three reported cases produce the expected results; all existing tests still pass.
++
++## Assumptions
++- Only the three reported defects are in scope; no rule changes, README unchanged.
+diff --git a/specs/001-fix-order-bugs/tasks.md b/specs/001-fix-order-bugs/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..27ee6e885da80d647a5b57f707b982553ae33b81
+--- /dev/null
++++ b/specs/001-fix-order-bugs/tasks.md
+@@ -0,0 +1,6 @@
++# Tasks
++- [x] T001 Add failing tests (test/fixes.test.ts): lower-case SKU lookup, €50.00 free shipping / €49.99 paid, VAT 199@22%=44 and 25@10%=3
++- [x] T002 Fix src/catalog.ts find
++- [x] T003 Fix src/shipping.ts threshold
++- [x] T004 Fix src/tax.ts lineVat
++- [x] T005 Run npm test
+diff --git a/src/catalog.ts b/src/catalog.ts
+index 0dfc92645f10374f948e9312a79dc7dca44318e5..b114b9c78623136e5ee8c9b1fc6d118c4c478c33 100644
+--- a/src/catalog.ts
++++ b/src/catalog.ts
+@@ -56,7 +56,7 @@ export class Catalog {
+ 
+   /** The product with `sku`, or undefined. */
+   find(sku: string): Product | undefined {
+-    return this.#products.get(sku.trim());
++    return this.#products.get(canonicalSku(sku));
+   }
+ 
+   /** The product with `sku`; throws UnknownProductError when there is none. */
+diff --git a/src/shipping.ts b/src/shipping.ts
+index 71920b9dc3b375440460eaebb217a70a48152b33..f4290d2a7729ec7e4c062d0d5606894fb26fae09 100644
+--- a/src/shipping.ts
++++ b/src/shipping.ts
+@@ -30,6 +30,6 @@ export function parcelCost(grams: number): Cents {
+ 
+ /** The shipping cost of an order whose goods amount to `goods` and weigh `grams`. */
+ export function shippingCost(goods: Cents, grams: number): Cents {
+-  if (goods > FREE_SHIPPING_FROM_CENTS) return 0;
++  if (goods >= FREE_SHIPPING_FROM_CENTS) return 0;
+   return parcelCost(grams);
+ }
+diff --git a/src/tax.ts b/src/tax.ts
+index 7449c567971f4c22ec68c991949f8652936e091b..5e12c55f1ca4a2044012df5ea175a5b57febbef3 100644
+--- a/src/tax.ts
++++ b/src/tax.ts
+@@ -23,7 +23,7 @@ export function vatRate(vatClass: VatClass): number {
+ 
+ /** The VAT of one order line whose net amount is `net`. */
+ export function lineVat(net: Cents, vatClass: VatClass): Cents {
+-  return Math.floor((net * vatRate(vatClass)) / 100);
++  return percentOf(net, vatRate(vatClass));
+ }
+ 
+ /** The VAT on a shipping cost: the standard rate. */
+diff --git a/test/fixes.test.ts b/test/fixes.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..85597552d78b66b9ae103216e189edd77874a6ce
+--- /dev/null
++++ b/test/fixes.test.ts
+@@ -0,0 +1,22 @@
++import assert from 'node:assert/strict';
++import { test } from 'node:test';
++import { Catalog } from '../src/catalog.ts';
++import { shippingCost } from '../src/shipping.ts';
++import { lineVat } from '../src/tax.ts';
++
++test('SKU lookup is case-insensitive and trimmed', () => {
++  const catalog = new Catalog();
++  catalog.add({ sku: 'LB-220', name: 'Lamp', priceCents: 1000, vatClass: 'standard', weightGrams: 100 });
++  assert.equal(catalog.find('lb-220')?.sku, 'LB-220');
++  assert.equal(catalog.getForSale(' lb-220 ').sku, 'LB-220');
++});
++
++test('shipping is free from exactly €50.00 of goods', () => {
++  assert.equal(shippingCost(5000, 100), 0);
++  assert.equal(shippingCost(4999, 100), 490);
++});
++
++test('line VAT rounds half up', () => {
++  assert.equal(lineVat(199, 'standard'), 44);
++  assert.equal(lineVat(25, 'reduced'), 3);
++});

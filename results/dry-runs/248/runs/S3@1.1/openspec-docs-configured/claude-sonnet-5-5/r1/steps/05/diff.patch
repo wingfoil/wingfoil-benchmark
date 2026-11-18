@@ -1,0 +1,104 @@
+diff --git a/openspec/specs/rental-cancellation/spec.md b/openspec/specs/rental-cancellation/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..2604877b3c85479eaa4c2afbdce1b17e4f4b966b
+--- /dev/null
++++ b/openspec/specs/rental-cancellation/spec.md
+@@ -0,0 +1,19 @@
++# Rental cancellation
++
++## Requirement: Cancel a booking
++The rental service SHALL let a booking be cancelled at a given UTC time `at`, returning the booking id and
++the refund in euro cents. A cancelled booking MUST no longer hold its equipment, and a booking MUST be
++cancellable only once. An unknown booking, an invalid `at`, or a booking that has already ended at `at` MUST
++be rejected.
++
++#### Scenario: Cancel before the rental starts
++- WHEN a booking totalling 6885 cents is cancelled at or before its start
++- THEN the refund is 6885 cents and the equipment is free again for that period
++
++#### Scenario: Cancel once the rental has started
++- WHEN a booking is cancelled after its start but before its end
++- THEN the refund is 0 cents and the equipment is free again
++
++#### Scenario: Cancel twice
++- WHEN a booking that was already cancelled is cancelled again
++- THEN the request is rejected
+diff --git a/src/index.ts b/src/index.ts
+index 12d531c0c8848da0f6ea19cf467d211bae08dba0..6b7c89f7e9abe2e6710624da74bee2435d8ec59f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -30,11 +30,17 @@ export interface AvailabilityQuery {
+   kind?: EquipmentKind;
+ }
+ 
++export interface Cancellation {
++  bookingId: string;
++  refund: number; // euro cents
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
+   availability(query: AvailabilityQuery): string[];
++  cancel(bookingId: string, at: string): Cancellation;
+ }
+ 
+ const HOUR_MS = 60 * 60 * 1000;
+@@ -65,6 +71,7 @@ function parseMidnightUtc(value: unknown, name: string): number {
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+   const bookings: Array<Booking & { startMs: number; endMs: number }> = [];
++  const cancelled = new Set<string>();
+   let nextBookingId = 1;
+ 
+   function price(request: RentalRequest) {
+@@ -159,5 +166,26 @@ export function createRentalService(): RentalService {
+         .map((item) => item.id)
+         .sort();
+     },
++
++    cancel(bookingId, at) {
++      if (typeof at !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?Z$/.test(at) || Number.isNaN(Date.parse(at))) {
++        throw new Error('at must be an ISO-8601 UTC string, e.g. 2026-05-01T09:30:00Z');
++      }
++      const atMs = Date.parse(at);
++      if (cancelled.has(bookingId)) {
++        throw new Error(`Booking already cancelled: ${bookingId}`);
++      }
++      const index = bookings.findIndex((b) => b.id === bookingId);
++      if (index === -1) {
++        throw new Error(`Unknown booking: ${bookingId}`);
++      }
++      const booking = bookings[index];
++      if (atMs >= booking.endMs) {
++        throw new Error(`Booking ${bookingId} has already ended`);
++      }
++      bookings.splice(index, 1);
++      cancelled.add(bookingId);
++      return { bookingId, refund: atMs <= booking.startMs ? booking.total : 0 };
++    },
+   };
+ }
+diff --git a/tests/rental.test.js b/tests/rental.test.js
+index f70c37ca4d4d936991dc33b22bc1574d89a9e292..5949d4a94f38e83fb6cdc86e16f5b6007235185f 100644
+--- a/tests/rental.test.js
++++ b/tests/rental.test.js
+@@ -79,3 +79,17 @@ test('rentals shorter than a day on the hour cost the hourly price per hour, and
+   assert.throws(() => s.addEquipment({ id: 'z', kind: 'sail', dailyPrice: 1, hourlyPrice: -1 }));
+   assert.throws(() => s.addEquipment({ id: 'z', kind: 'sail', dailyPrice: 1, hourlyPrice: 1.5 }));
+ });
++
++test('cancel refunds in full up to the start, nothing once started, frees the equipment, and works once', () => {
++  const s = setup();
++  const a = s.book(req('2026-06-01T00:00:00Z', '2026-06-04T00:00:00Z'));
++  assert.deepEqual(s.cancel(a.id, '2026-06-01T00:00:00Z'), { bookingId: a.id, refund: 6885 });
++  assert.throws(() => s.cancel(a.id, '2026-05-30T00:00:00Z'), /already cancelled/);
++  assert.deepEqual(s.availability({ start: '2026-06-01T00:00:00Z', end: '2026-06-04T00:00:00Z' }), ['b1']);
++  const b = s.book(req('2026-06-01T00:00:00Z', '2026-06-04T00:00:00Z'));
++  assert.deepEqual(s.cancel(b.id, '2026-06-02T10:30:00Z'), { bookingId: b.id, refund: 0 });
++  const c = s.book(req('2026-06-10T00:00:00Z', '2026-06-11T00:00:00Z'));
++  assert.throws(() => s.cancel(c.id, '2026-06-11T00:00:00Z'), /already ended/);
++  assert.throws(() => s.cancel('nope', '2026-06-01T00:00:00Z'), /Unknown booking/);
++  assert.throws(() => s.cancel(c.id, 'yesterday'));
++});

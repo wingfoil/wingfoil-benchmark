@@ -1,0 +1,48 @@
+# Project rules
+
+The rules this project follows. Every change follows them.
+
+## Rules
+
+json-toolkit is a small TypeScript library (ESM, Node, strict TypeScript, tsconfig includes only src/)
+with NO runtime dependencies: do not add any. It provides building blocks for services that store,
+exchange and update JSON (configuration files, API payloads, stored records).
+It is imported by other projects of the team, so its public API and behaviour are a contract:
+- Behaviour must follow the published standards it implements (e.g. JSON RFC 8259, JSON Pointer
+  RFC 6901, JSON Patch RFC 6902, JSON Merge Patch RFC 7396). Name the governing standard and section
+  in the specs and design, and where the standard and convenience disagree, the standard wins.
+- Changes to exported behaviour that could break importers must be called out explicitly as breaking.
+- Tests run with `npm test` (node --test); every behaviour in a spec needs a test, including the
+  standard's edge cases (escaping, null, arrays, missing/duplicate keys, invalid input).
+- Inputs are untrusted JSON: never mutate caller-supplied values unless the spec says so, and handle
+  hostile keys such as __proto__ safely.
+
+## Rules per artifact
+
+### proposal
+
+- State which standard (and section) governs the change, or say that none applies
+- Flag any breaking change for importing projects and state what is out of scope
+
+### specs
+
+- Write requirements as testable scenarios that cite the relevant RFC section, including edge cases and error cases
+
+### design
+
+- Justify any departure from or ambiguity in the standard; do not introduce runtime dependencies
+
+### tasks
+
+- Include a task for tests of each scenario, runnable with `npm test`
+
+## Operations
+
+### apply
+
+- Keep code in src/, with tests runnable by `npm test`; run them before marking tasks complete
+- Do not add runtime dependencies or change package.json beyond what the change requires
+
+### archive
+
+- Sync delta specs into openspec/specs before archiving

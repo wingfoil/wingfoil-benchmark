@@ -1,0 +1,68 @@
+diff --git a/src/index.ts b/src/index.ts
+index 30e5658203cd0caf52074122398ad53204c82f57..05abaed0249d28dc39bb32c1b1f5f795c6285940 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -15,6 +15,14 @@ export interface RentalRequest {
+   end: string;
+ }
+ 
++export interface AvailabilityQuery {
++  /** ISO-8601, midnight UTC. */
++  start: string;
++  /** ISO-8601, midnight UTC; the start of the day after the last day of the period. */
++  end: string;
++  kind?: EquipmentKind;
++}
++
+ export interface Quote {
+   itemId: string;
+   start: string;
+@@ -31,6 +39,8 @@ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  /** Sorted ids of the equipment (of `kind`, if given) that is free for the whole period. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+@@ -85,6 +95,19 @@ export function createRentalService(): RentalService {
+       return price(request).quote;
+     },
+ 
++    availability(query) {
++      const from = parseMidnightUtc(query?.start, 'start');
++      const to = parseMidnightUtc(query?.end, 'end');
++      if (to <= from) throw new Error('end must be after start');
++      const kind = query.kind;
++      if (kind !== undefined && kind !== 'board' && kind !== 'sail') throw new Error("kind must be 'board' or 'sail'");
++      return [...items.values()]
++        .filter((item) => kind === undefined || item.kind === kind)
++        .filter((item) => !bookings.some((b) => b.itemId === item.id && from < b.to && b.from < to))
++        .map((item) => item.id)
++        .sort();
++    },
++
+     book(request) {
+       const { quote, from, to } = price(request);
+       const clash = bookings.some((b) => b.itemId === quote.itemId && from < b.to && b.from < to);
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 4ac1e92e9db93b83202ec7f086657bde54a0b4f4..4a4617a6718a90a12659edcf1959a04fdaa3d7a6 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -31,3 +31,15 @@ test('book prevents overlaps but allows back-to-back', () => {
+   const b = s.book(req('2026-07-03T00:00:00Z', '2026-07-04T00:00:00Z'));
+   assert.notEqual(a.id, b.id);
+ });
++
++test('availability lists free items of a kind, sorted', () => {
++  const s = setup();
++  s.addEquipment({ id: 'a1', kind: 'sail', dailyPrice: 1000 });
++  s.addEquipment({ id: 'a0', kind: 'board', dailyPrice: 1000 });
++  s.book(req('2026-07-01T00:00:00Z', '2026-07-03T00:00:00Z'));
++  const q = (start: string, end: string, kind?: 'board' | 'sail') => s.availability({ start, end, kind });
++  assert.deepEqual(q('2026-07-02T00:00:00Z', '2026-07-04T00:00:00Z'), ['a0', 'a1']);
++  assert.deepEqual(q('2026-07-02T00:00:00Z', '2026-07-04T00:00:00Z', 'board'), ['a0']);
++  assert.deepEqual(q('2026-07-03T00:00:00Z', '2026-07-04T00:00:00Z', 'board'), ['a0', 'b1']);
++  assert.throws(() => q('2026-07-03T00:00:00Z', '2026-07-03T00:00:00Z'));
++});

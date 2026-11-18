@@ -1,0 +1,134 @@
+diff --git a/README.md b/README.md
+index 7b5a21ffdd9892d3668d7fa36960daa8979496f6..e4703b617e7ce2fc179b7f774d80b6336ed21bf1 100644
+--- a/README.md
++++ b/README.md
+@@ -43,4 +43,21 @@ applyPatch({ foo: "bar" }, [{ op: "add", path: "/baz", value: "qux" }]); // { fo
+ - `test` compares as RFC 6902 section 4.6 says: object member order is ignored, types must match.
+ - `__proto__` and similar keys are handled as ordinary own members and never touch the prototype chain.
+ 
++## JSON Merge Patch (RFC 7396)
++
++`applyMergePatch(target, patch)` applies a JSON Merge Patch to `target` and returns the merged document.
++
++```ts
++import { applyMergePatch } from "./src/index.ts";
++
++applyMergePatch({ a: "b", c: { d: "e" } }, { a: "z", c: { d: null } }); // { a: "z", c: {} }
++```
++
++- An object patch is merged member by member: a `null` member removes the member, any other value is merged
++  recursively. Anything else (a scalar, `null` or an array) replaces the target as a whole; arrays are never merged.
++- A non-object target is treated as `{}` when the patch is an object, so `null` members never appear in the result.
++- Merge Patch cannot set a member to `null` (RFC 7396 section 1); use `applyPatch` for that.
++- Never throws. Neither argument is mutated, the result shares no structure with either, and `__proto__` and
++  similar keys are handled as ordinary own members.
++
+ Run the tests with `npm test`.
+diff --git a/src/index.ts b/src/index.ts
+index 69f4dee56a4384e8b2c43ac8208438bf408f6481..08869b086904209a4aeb88fa2e4a40877f93e390 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -221,3 +221,32 @@ export function applyPatch(document: unknown, patch: unknown[]): unknown {
+   const operations = patch.map(validate);
+   return operations.reduce(applyOperation, structuredClone(document));
+ }
++
++/**
++ * Applies a JSON Merge Patch (RFC 7396 section 2) to `target` and returns the merged document.
++ *
++ * An object patch is merged member by member: a `null` member removes that member from the target, any
++ * other member is merged recursively. A patch that is not an object (including an array) replaces the
++ * target as a whole, and a non-object target is treated as `{}` when the patch is an object, so `null`
++ * members never survive in the result. Neither argument is mutated and the result shares no structure
++ * with either; `__proto__` and similar keys are handled as ordinary own members.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isObject(patch)) {
++    return structuredClone(patch);
++  }
++  const result: Record<string, unknown> = {};
++  if (isObject(target)) {
++    for (const key of Object.keys(target)) {
++      setMember(result, key, structuredClone(target[key]));
++    }
++  }
++  for (const key of Object.keys(patch)) {
++    if (patch[key] === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, applyMergePatch(Object.hasOwn(result, key) ? result[key] : undefined, patch[key]));
++    }
++  }
++  return result;
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..652480851f6c4e9a2f46aaf2f0cab2a2b5f26fb9
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,65 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "../src/index.ts";
++
++// RFC 7396 appendix A: the specification's own examples (target, patch, result).
++const appendixA: [unknown, unknown, unknown][] = [
++  [{ a: "b" }, { a: "c" }, { a: "c" }],
++  [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++  [{ a: "b" }, { a: null }, {}],
++  [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++  [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++  [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++  [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++  [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++  [["a", "b"], ["c", "d"], ["c", "d"]],
++  [{ a: "b" }, ["c"], ["c"]],
++  [{ a: "foo" }, null, null],
++  [{ a: "foo" }, "bar", "bar"],
++  [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++  [[1, 2], { a: "b", c: null }, { a: "b" }],
++  [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++];
++
++for (const [target, patch, expected] of appendixA) {
++  test(`RFC 7396 appendix A: ${JSON.stringify(target)} + ${JSON.stringify(patch)}`, () => {
++    assert.deepEqual(applyMergePatch(target, patch), expected);
++  });
++}
++
++test("an empty object patch leaves the target unchanged", () => {
++  assert.deepEqual(applyMergePatch({ a: 1 }, {}), { a: 1 });
++});
++
++test("a non-object target with an object patch is treated as an empty object", () => {
++  assert.deepEqual(applyMergePatch("x", { a: 1 }), { a: 1 });
++  assert.deepEqual(applyMergePatch(undefined, { a: null, b: 2 }), { b: 2 });
++});
++
++test("neither target nor patch is mutated and the result shares no structure", () => {
++  const target = { a: { b: 1 }, list: [1] };
++  const patch = { a: { c: 2 }, extra: { deep: [1] }, list: [2] };
++  const targetCopy = structuredClone(target);
++  const patchCopy = structuredClone(patch);
++  const result = applyMergePatch(target, patch) as typeof patch;
++  assert.deepEqual(target, targetCopy);
++  assert.deepEqual(patch, patchCopy);
++  assert.notEqual(result.extra, patch.extra);
++  assert.notEqual(result.extra.deep, patch.extra.deep);
++  assert.notEqual(result.a, target.a);
++});
++
++test("__proto__ keys are ordinary own members and never pollute prototypes", () => {
++  const patch = JSON.parse('{"__proto__":{"polluted":true},"constructor":{"prototype":{"p":1}}}');
++  const result = applyMergePatch({}, patch) as Record<string, unknown>;
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepEqual(Object.keys(result), ["__proto__", "constructor"]);
++  const removed = applyMergePatch(result, JSON.parse('{"__proto__":null}')) as Record<string, unknown>;
++  assert.deepEqual(Object.keys(removed), ["constructor"]);
++});
++
++test("inherited members of the target are not merged", () => {
++  const target = Object.create({ inherited: { a: 1 } }) as object;
++  assert.deepEqual(applyMergePatch(target, { inherited: { b: 2 } }), { inherited: { b: 2 } });
++});

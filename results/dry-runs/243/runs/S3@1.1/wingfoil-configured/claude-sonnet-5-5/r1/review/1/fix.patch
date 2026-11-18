@@ -1,0 +1,55 @@
+diff --git a/docs/memory/task/task-005-cancel-a-booking-with-refund.md b/docs/memory/task/task-005-cancel-a-booking-with-refund.md
+index 06db406d4588cb830dfdd79e9a97377cfd906eee..b40e54df1d71e8682e5b06cd848b6aefe06ba393 100644
+--- a/docs/memory/task/task-005-cancel-a-booking-with-refund.md
++++ b/docs/memory/task/task-005-cancel-a-booking-with-refund.md
+@@ -15,8 +15,8 @@ equipment, and a booking can only be cancelled once.
+ # Approach
+ 
+ - `at` is an ISO-8601 UTC instant (parsed like other instants); the clock is never read.
+-- Refund policy (ASSUMPTION: the request does not state one, to be confirmed by the approver):
+-  full `total` when `at` is before the booking's start; no refund (0) once the rental has started.
++- Refund policy (task-001's 24-hour refund policy): full `total` when `at` is at least 24 hours before the
++  booking's start; no refund (0) within the 24 hours before the start or once the rental has started.
+   Cancelling at or after the booking's end is rejected: the rental is over.
+ - Unknown booking ids and a second cancellation throw. A cancelled booking is removed from the overlap
+   checks, so `book` and `availability` see the equipment as free again.
+diff --git a/src/index.ts b/src/index.ts
+index 9ae93b25f17b220029dc3e3844d0a6b03e93372e..397ec3ce46780d4af76b2f826e6416c1917561ff 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -142,7 +142,7 @@ export function createRentalService(): RentalService {
+       const booking = bookings[index];
+       if (atMs >= booking.endMs) throw new Error(`booking ${bookingId} is over and cannot be cancelled`);
+       bookings.splice(index, 1);
+-      return { bookingId, refund: atMs < booking.startMs ? booking.total : 0 };
++      return { bookingId, refund: booking.startMs - atMs >= 24 * 60 * 60 * 1000 ? booking.total : 0 };
+     },
+ 
+     availability(query) {
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index ebb51d17dd121569fe0765c084ea5c405c968dca..1b7ad5be2aab51e64c7ef287ad1516299e40d9ad 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -104,16 +104,20 @@ test('hourly bookings block overlapping periods only', () => {
+   assert.deepStrictEqual(s.availability({ start: '2026-06-01T16:00:00Z', end: '2026-06-01T17:00:00Z' }), ['h']);
+ });
+ 
+-test('cancel refunds the total before the start, nothing once started, and frees the equipment', () => {
++test('cancel refunds the total 24h or more before the start, nothing after, and frees the equipment', () => {
+   const s = setup();
+   const a = s.book(req('2026-06-02T00:00:00Z', '2026-06-04T00:00:00Z'));
+-  assert.deepStrictEqual(s.cancel(a.id, '2026-06-01T23:59:59Z'), { bookingId: a.id, refund: 5100 });
++  assert.deepStrictEqual(s.cancel(a.id, '2026-06-01T00:00:00Z'), { bookingId: a.id, refund: 5100 });
+   assert.deepStrictEqual(s.availability({ start: '2026-06-02T00:00:00Z', end: '2026-06-04T00:00:00Z' }), ['b1']);
+   const b = s.book(req('2026-06-02T00:00:00Z', '2026-06-04T00:00:00Z'));
+   assert.notStrictEqual(b.id, a.id);
+   assert.deepStrictEqual(s.cancel(b.id, '2026-06-02T00:00:00Z'), { bookingId: b.id, refund: 0 });
+   const c = s.book(req('2026-06-05T00:00:00Z', '2026-06-06T00:00:00Z'));
+   assert.deepStrictEqual(s.cancel(c.id, '2026-06-05T12:00:00Z'), { bookingId: c.id, refund: 0 });
++  const d = s.book(req('2026-06-08T00:00:00Z', '2026-06-09T00:00:00Z'));
++  assert.deepStrictEqual(s.cancel(d.id, '2026-06-07T00:00:01Z'), { bookingId: d.id, refund: 0 });
++  const e = s.book(req('2026-06-08T00:00:00Z', '2026-06-09T00:00:00Z'));
++  assert.deepStrictEqual(s.cancel(e.id, '2026-06-07T00:00:00Z'), { bookingId: e.id, refund: e.total });
+ });
+ 
+ test('cancel rejects a second cancellation, unknown ids, finished bookings and bad instants', () => {

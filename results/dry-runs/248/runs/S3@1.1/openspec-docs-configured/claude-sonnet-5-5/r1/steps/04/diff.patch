@@ -1,0 +1,152 @@
+diff --git a/openspec/specs/rental-pricing/spec.md b/openspec/specs/rental-pricing/spec.md
+index 022bb7978bd2e543210a8d9883e94764c6b00a5a..3a7d79961ae7572d588eca74610e66e7abd904ac 100644
+--- a/openspec/specs/rental-pricing/spec.md
++++ b/openspec/specs/rental-pricing/spec.md
+@@ -11,3 +11,21 @@ nearest euro cent. Quotes and bookings MUST both show the reduced total.
+ #### Scenario: Two-day rental
+ - WHEN a board at 2550 cents per day is quoted or booked for 2 days
+ - THEN the total is 5100 cents, with no discount
++
++## Requirement: Hourly rental
++An item added with an hourly price SHALL be rentable by the hour: a rental shorter than a day that starts
++and ends on the hour MUST cost the hourly price for each hour, with no long-rental discount. An item
++without an hourly price MUST NOT be rented for less than a day. Rentals of a day or more still start and
++end at midnight UTC. Quotes and bookings MUST both show the hourly total.
++
++#### Scenario: Three-hour rental
++- WHEN a board at 700 cents per hour is quoted or booked from 13:00 to 16:00 on the same day
++- THEN the total is 2100 cents
++
++#### Scenario: No hourly price
++- WHEN a board without an hourly price is quoted or booked for less than a day
++- THEN the request is rejected
++
++#### Scenario: Not on the hour
++- WHEN an hourly rental starts or ends at 13:30
++- THEN the request is rejected
+diff --git a/src/index.ts b/src/index.ts
+index ca1f008197328314404037b20a6e165256b68d67..12d531c0c8848da0f6ea19cf467d211bae08dba0 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -4,12 +4,13 @@ export interface Equipment {
+   id: string;
+   kind: EquipmentKind;
+   dailyPrice: number; // euro cents
++  hourlyPrice?: number; // euro cents; absent means the item cannot be rented by the hour
+ }
+ 
+ export interface RentalRequest {
+   itemId: string;
+-  start: string; // ISO-8601, midnight UTC
+-  end: string; // ISO-8601, midnight UTC, start of the day after the last day
++  start: string; // ISO-8601 UTC, midnight (or on the hour for a rental shorter than a day)
++  end: string; // ISO-8601 UTC, start of the day after the last day (or on the hour for a rental shorter than a day)
+ }
+ 
+ export interface Quote {
+@@ -36,14 +37,15 @@ export interface RentalService {
+   availability(query: AvailabilityQuery): string[];
+ }
+ 
++const HOUR_MS = 60 * 60 * 1000;
+ const DAY_MS = 24 * 60 * 60 * 1000;
+ const LONG_RENTAL_DAYS = 3;
+ const LONG_RENTAL_PERCENT_OF_FULL_PRICE = 90;
+-const MIDNIGHT_UTC = /^\d{4}-\d{2}-\d{2}T00:00(:00(\.0+)?)?Z$/;
++const ON_THE_HOUR_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:00(:00(\.0+)?)?Z$/;
+ 
+-function parseMidnightUtc(value: unknown, name: string): number {
+-  if (typeof value !== 'string' || !MIDNIGHT_UTC.test(value)) {
+-    throw new Error(`${name} must be an ISO-8601 UTC string at midnight, e.g. 2026-05-01T00:00:00Z`);
++function parseOnTheHourUtc(value: unknown, name: string): number {
++  if (typeof value !== 'string' || !ON_THE_HOUR_UTC.test(value)) {
++    throw new Error(`${name} must be an ISO-8601 UTC string on the hour, e.g. 2026-05-01T00:00:00Z`);
+   }
+   const ms = Date.parse(value);
+   if (Number.isNaN(ms)) {
+@@ -52,6 +54,14 @@ function parseMidnightUtc(value: unknown, name: string): number {
+   return ms;
+ }
+ 
++function parseMidnightUtc(value: unknown, name: string): number {
++  const ms = parseOnTheHourUtc(value, name);
++  if (ms % DAY_MS !== 0) {
++    throw new Error(`${name} must be an ISO-8601 UTC string at midnight, e.g. 2026-05-01T00:00:00Z`);
++  }
++  return ms;
++}
++
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+   const bookings: Array<Booking & { startMs: number; endMs: number }> = [];
+@@ -62,11 +72,25 @@ export function createRentalService(): RentalService {
+     if (!item) {
+       throw new Error(`Unknown item: ${request?.itemId}`);
+     }
+-    const startMs = parseMidnightUtc(request.start, 'start');
+-    const endMs = parseMidnightUtc(request.end, 'end');
++    const startMs = parseOnTheHourUtc(request.start, 'start');
++    const endMs = parseOnTheHourUtc(request.end, 'end');
+     if (endMs <= startMs) {
+       throw new Error('end must be after start');
+     }
++    if (endMs - startMs < DAY_MS) {
++      if (item.hourlyPrice === undefined) {
++        throw new Error(`Item ${item.id} cannot be rented by the hour`);
++      }
++      const hourly: Quote = {
++        itemId: item.id,
++        start: request.start,
++        end: request.end,
++        total: ((endMs - startMs) / HOUR_MS) * item.hourlyPrice,
++      };
++      return { quote: hourly, startMs, endMs };
++    }
++    parseMidnightUtc(request.start, 'start');
++    parseMidnightUtc(request.end, 'end');
+     const days = (endMs - startMs) / DAY_MS;
+     const fullPrice = days * item.dailyPrice;
+     const quote: Quote = {
+@@ -89,10 +113,18 @@ export function createRentalService(): RentalService {
+       if (!Number.isInteger(item.dailyPrice) || item.dailyPrice < 0) {
+         throw new Error('dailyPrice must be a non-negative integer number of euro cents');
+       }
++      if (item.hourlyPrice !== undefined && (!Number.isInteger(item.hourlyPrice) || item.hourlyPrice < 0)) {
++        throw new Error('hourlyPrice must be a non-negative integer number of euro cents');
++      }
+       if (equipment.has(item.id)) {
+         throw new Error(`Equipment already exists: ${item.id}`);
+       }
+-      equipment.set(item.id, { id: item.id, kind: item.kind, dailyPrice: item.dailyPrice });
++      equipment.set(item.id, {
++        id: item.id,
++        kind: item.kind,
++        dailyPrice: item.dailyPrice,
++        ...(item.hourlyPrice !== undefined && { hourlyPrice: item.hourlyPrice }),
++      });
+     },
+ 
+     quote(request) {
+diff --git a/tests/rental.test.js b/tests/rental.test.js
+index 45a0b8b8242241e709166fbf613608b8db494ff5..f70c37ca4d4d936991dc33b22bc1574d89a9e292 100644
+--- a/tests/rental.test.js
++++ b/tests/rental.test.js
+@@ -64,3 +64,18 @@ test('availability lists free equipment ids, sorted, optionally by kind', () =>
+   assert.throws(() => q('2026-06-05T00:00:00Z', '2026-06-05T00:00:00Z'));
+   assert.throws(() => q('2026-06-01T00:00:00Z', '2026-06-05T00:00:00Z', 'boat'));
+ });
++
++test('rentals shorter than a day on the hour cost the hourly price per hour, and need an hourly price', () => {
++  const s = setup();
++  s.addEquipment({ id: 'h1', kind: 'board', dailyPrice: 2550, hourlyPrice: 700 });
++  assert.equal(s.quote(req('2026-06-01T13:00:00Z', '2026-06-01T16:00:00Z', 'h1')).total, 2100);
++  assert.equal(s.book(req('2026-06-01T00:00:00Z', '2026-06-01T23:00:00Z', 'h1')).total, 16100);
++  assert.throws(() => s.book(req('2026-06-01T15:00:00Z', '2026-06-01T17:00:00Z', 'h1')));
++  assert.equal(s.book(req('2026-06-01T23:00:00Z', '2026-06-02T00:00:00Z', 'h1')).total, 700);
++  assert.throws(() => s.quote(req('2026-06-01T13:00:00Z', '2026-06-01T16:00:00Z')));
++  assert.throws(() => s.quote(req('2026-06-01T13:30:00Z', '2026-06-01T16:00:00Z', 'h1')));
++  assert.throws(() => s.quote(req('2026-06-01T13:00:00Z', '2026-06-02T13:00:00Z', 'h1')));
++  assert.equal(s.quote(req('2026-06-01T00:00:00Z', '2026-06-02T00:00:00Z', 'h1')).total, 2550);
++  assert.throws(() => s.addEquipment({ id: 'z', kind: 'sail', dailyPrice: 1, hourlyPrice: -1 }));
++  assert.throws(() => s.addEquipment({ id: 'z', kind: 'sail', dailyPrice: 1, hourlyPrice: 1.5 }));
++});

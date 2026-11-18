@@ -1,0 +1,91 @@
+diff --git a/specs/002-availability/spec.md b/specs/002-availability/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..73747f3ff08bb9b42be44893fc8abe6511eaeeca
+--- /dev/null
++++ b/specs/002-availability/spec.md
+@@ -0,0 +1,16 @@
++# Feature Specification: Availability
++
++**Created**: 2026-11-17 | **Status**: Implemented
++**Input**: The desk needs to see what can still be rented: `availability({start, end, kind?})` returns the sorted ids of equipment (of that kind, or any) free for the whole period.
++
++## Requirements
++- **FR-001**: `availability` returns ids of items with no booking overlapping the period (half-open, as in `book`), sorted.
++- **FR-002**: `kind` is optional; when given, only items of that kind are listed.
++- **FR-003**: Invalid periods (same rules as `quote`/`book`) or an invalid kind throw; no items → `[]`.
++
++## Plan / Tasks
++- Add `AvailabilityQuery` and `availability` in `src/index.ts`, reusing `parsePeriod` and the overlap rule of `book`.
++- Add tests in `test/rental.test.ts` (kind filter, back-to-back, sorting, empty, invalid input).
++
++## Assumptions
++- Back-to-back periods do not conflict; a bad `kind` is an error, consistent with `addEquipment`.
+diff --git a/src/index.ts b/src/index.ts
+index 550e33891c4a41b01f81c057a4d2f8a69b3f8a63..54577b352e75b7cf07c14a2514cf4ffcdee6b0e4 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -22,10 +22,18 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: EquipmentKind;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  /** Ids of the equipment (of `kind`, if given) free for the whole period, sorted. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const MS_PER_DAY = 24 * 60 * 60 * 1000;
+@@ -111,5 +119,17 @@ export function createRentalService(): RentalService {
+       bookings.push({ ...booking, startMs: period.startMs, endMs: period.endMs });
+       return booking;
+     },
++
++    availability(query) {
++      const { startMs, endMs } = parsePeriod(query.start, query.end);
++      if (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail') {
++        throw new Error("kind must be 'board' or 'sail'");
++      }
++      return [...items.values()]
++        .filter((item) => query.kind === undefined || item.kind === query.kind)
++        .filter((item) => !bookings.some((b) => b.itemId === item.id && b.startMs < endMs && startMs < b.endMs))
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 01246af42ad7d709ca611f30fc562b5e01027ad2..3f2a714678bf05952ad4606a5a6ffb42cf0635dd 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -84,3 +84,23 @@ test('services are independent', () => {
+   assert.throws(() => b.quote({ itemId: 'b1', start: D(1), end: D(2) }));
+   a.book({ itemId: 'b1', start: D(1), end: D(2) });
+ });
++
++test('availability lists free items of a kind, sorted', () => {
++  const s = setup();
++  s.addEquipment({ id: 'a0', kind: 'board', dailyPrice: 1000 });
++  s.book({ itemId: 'b1', start: D(1), end: D(4) });
++  assert.deepEqual(s.availability({ start: D(3), end: D(5), kind: 'board' }), ['a0']);
++  assert.deepEqual(s.availability({ start: D(3), end: D(5) }), ['a0', 's1']);
++  assert.deepEqual(s.availability({ start: D(4), end: D(6), kind: 'board' }), ['a0', 'b1']);
++  assert.deepEqual(s.availability({ start: D(1), end: D(2), kind: 'sail' }), ['s1']);
++});
++
++test('availability is empty when nothing is free or registered, and rejects bad input', () => {
++  const s = setup();
++  s.book({ itemId: 's1', start: D(2), end: D(3) });
++  assert.deepEqual(s.availability({ start: D(1), end: D(5), kind: 'sail' }), []);
++  assert.deepEqual(createRentalService().availability({ start: D(1), end: D(2) }), []);
++  assert.throws(() => s.availability({ start: D(2), end: D(2) }));
++  assert.throws(() => s.availability({ start: '2026-06-01T12:00:00Z', end: D(3) }));
++  assert.throws(() => s.availability({ start: D(1), end: D(2), kind: 'kite' as never }));
++});

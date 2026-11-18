@@ -1,0 +1,126 @@
+diff --git a/src/index.ts b/src/index.ts
+index ba873ed611cd79e4bdf5af5e4a6ae57f772b3b60..d1838c061d37efef8796ef438c224c4bc45a99b5 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -53,6 +53,64 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+  * JSON Patch (RFC 6902) application.
+  */
+ 
++/**
++ * Returns a deep copy of `value`, checking on the way that it is a JSON value (RFC 8259).
++ *
++ * Throws a TypeError naming `what` if it is not: undefined, a function, a symbol, a bigint, a
++ * non-finite number, a sparse array, a circular structure, or an object that is not a plain object.
++ */
++function copyJson(value: unknown, what: string): unknown {
++  return copyJsonValue(value, what, new Set());
++}
++
++/** The recursive part of `copyJson`; `ancestors` holds the containers being copied, to detect cycles. */
++function copyJsonValue(value: unknown, what: string, ancestors: Set<object>): unknown {
++  if (value === null || typeof value === "string" || typeof value === "boolean") {
++    return value;
++  }
++  if (typeof value === "number") {
++    if (!Number.isFinite(value)) {
++      throw new TypeError(`${what} is not JSON: ${value} is not a finite number`);
++    }
++    return value;
++  }
++  if (typeof value !== "object") {
++    throw new TypeError(`${what} is not JSON: it contains ${typeof value}`);
++  }
++  if (ancestors.has(value)) {
++    throw new TypeError(`${what} is not JSON: it contains a circular reference`);
++  }
++  ancestors.add(value);
++  let copy: unknown;
++  if (Array.isArray(value)) {
++    const items: unknown[] = [];
++    for (let i = 0; i < value.length; i++) {
++      if (!(i in value)) {
++        throw new TypeError(`${what} is not JSON: array index ${i} is a hole`);
++      }
++      items.push(copyJsonValue(value[i], what, ancestors));
++    }
++    copy = items;
++  } else {
++    if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
++      throw new TypeError(`${what} is not JSON: it contains an object that is not a plain object`);
++    }
++    const members: Record<string, unknown> = {};
++    for (const key of Object.keys(value)) {
++      // defineProperty rather than assignment, so that a key such as "__proto__" becomes an own member.
++      Object.defineProperty(members, key, {
++        value: copyJsonValue((value as Record<string, unknown>)[key], what, ancestors),
++        writable: true,
++        enumerable: true,
++        configurable: true,
++      });
++    }
++    copy = members;
++  }
++  ancestors.delete(value);
++  return copy;
++}
++
+ /** A patch operation after validation: its pointers are known to be well-formed. */
+ type Operation =
+   | { op: "add" | "replace" | "test"; path: string; value: unknown }
+@@ -202,15 +260,16 @@ function applyOperation(document: unknown, operation: Operation): unknown {
+ /**
+  * Applies a JSON Patch (RFC 6902) to `document` and returns the resulting document.
+  *
+- * The input is not modified: the operations are applied to a copy. Throws a TypeError if `patch`
+- * is not a well-formed patch, and an Error if one of its operations fails.
++ * The input is not modified: the operations are applied to a copy. Throws a TypeError if `document`
++ * or `patch` is not JSON, or if `patch` is not a well-formed patch, and an Error if one of its
++ * operations fails. In every case where it throws, the document is left unchanged.
+  */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) {
+     throw new TypeError("JSON Patch must be an array of operations");
+   }
+-  const operations = patch.map(parseOperation);
+-  let result = structuredClone(document);
++  const operations = (copyJson(patch, "the JSON Patch") as unknown[]).map(parseOperation);
++  let result = copyJson(document, "the document");
+   operations.forEach((operation, index) => {
+     try {
+       result = applyOperation(result, operation);
+diff --git a/test/apply-patch.test.mjs b/test/apply-patch.test.mjs
+index 078cd551459a13002c75a44555c55aea95cd0c0f..d368585dc8365a8c45b15afa411bf56f30c9e0eb 100644
+--- a/test/apply-patch.test.mjs
++++ b/test/apply-patch.test.mjs
+@@ -177,3 +177,31 @@ test("throws when an operation fails, naming its index", () => {
+     (error) => error instanceof Error && /operation 1 \(remove\)/.test(error.message),
+   );
+ });
++
++test("throws for a patch or a document that is not JSON", () => {
++  const add = [{ op: "add", path: "/b", value: 1 }];
++  assert.throws(() => applyPatch({ a: undefined }, add), TypeError);
++  assert.throws(() => applyPatch(undefined, [{ op: "add", path: "", value: 1 }]), TypeError);
++  assert.throws(() => applyPatch({ a: NaN }, add), TypeError);
++  assert.throws(() => applyPatch({ a: new Date(0) }, add), TypeError);
++  assert.throws(() => applyPatch({}, [, { op: "remove", path: "/a" }]), TypeError);
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: [, 1] }]), TypeError);
++  assert.throws(() => applyPatch({}, Object.create([{ op: "remove", path: "/a" }])), TypeError);
++  assert.throws(() => applyPatch({}, [Object.create({ op: "remove", path: "/a" })]), TypeError);
++});
++
++test("throws for a value that is not JSON, in any operation", () => {
++  const cyclic = {};
++  cyclic.self = cyclic;
++  for (const value of [undefined, NaN, Infinity, 1n, () => 1, Symbol("s"), cyclic, new Map()]) {
++    assert.throws(() => applyPatch({ a: 1 }, [{ op: "add", path: "/b", value }]), TypeError);
++    assert.throws(() => applyPatch({ a: 1 }, [{ op: "replace", path: "/a", value }]), TypeError);
++    assert.throws(() => applyPatch({ a: 1 }, [{ op: "test", path: "/a", value }]), TypeError);
++  }
++});
++
++test("a patch that is not JSON leaves the document unchanged", () => {
++  const doc = { a: 1 };
++  assert.throws(() => applyPatch(doc, [{ op: "remove", path: "/a" }, { op: "add", path: "/b", value: undefined }]), TypeError);
++  assert.deepEqual(doc, { a: 1 });
++});

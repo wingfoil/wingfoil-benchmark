@@ -1,0 +1,118 @@
+diff --git a/README.md b/README.md
+index 69f602d1456431f95254f12cccd7e2dc3e343ead..8e7cc0e77e2a9e003e76ce2893b61149f823a613 100644
+--- a/README.md
++++ b/README.md
+@@ -23,3 +23,12 @@ zeros, failed `test`, `move` from a proper prefix of its path, removing the whol
+ Pointers (RFC 6901); `-` is accepted only to append with `add`. Operations are applied in order and the patch
+ is atomic: on failure no result is returned. `__proto__` and similar keys are treated as plain members
+ and never reach the prototype chain.
++
++## JSON Merge Patch (RFC 7396)
++
++`applyMergePatch(target, patch)` (exported from `src/index.ts`) applies a JSON Merge Patch (RFC 7396
++section 2) and returns the merged document as a new value. An object patch is merged into the target
++member by member (a non-object target is treated as `{}`); a `null` member removes that member; any other
++patch value, including an array, replaces the target. Neither argument is modified and the result shares
++no structure with them. `__proto__` and similar keys are treated as plain members. Note that a merge patch
++cannot set a member to `null`. Any JSON value is a valid patch, so it never throws.
+diff --git a/src/index.ts b/src/index.ts
+index 99422f42134c388a9a94911e32e09935c53896ac..7a1723fa2ab7c129ddbe5de55239109062d9bbe5 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -254,3 +254,33 @@ export function applyPatch(document: unknown, patch: PatchOperation[]): unknown
+   }
+   return result;
+ }
++
++/**
++ * Applies a JSON Merge Patch to a target document.
++ *
++ * Implements JSON Merge Patch, RFC 7396 section 2 (`MergePatch`): an object patch is merged
++ * member by member into the target (a non-object target is treated as `{}`), a `null` member
++ * removes that member, and any non-object patch (including arrays) replaces the target.
++ * Neither argument is modified and the result shares no structure with them. `__proto__` and
++ * similar keys are treated as plain members.
++ *
++ * @param target any parsed JSON value
++ * @param patch any parsed JSON value
++ * @returns the merged document as a new value
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (typeof patch !== "object" || patch === null || Array.isArray(patch)) return clone(patch);
++  const out: Record<string, unknown> =
++    typeof target === "object" && target !== null && !Array.isArray(target)
++      ? (clone(target) as Record<string, unknown>)
++      : {};
++  for (const key of Object.keys(patch)) {
++    const value = (patch as Record<string, unknown>)[key];
++    if (value === null) {
++      delete out[key];
++    } else {
++      setMember(out, key, applyMergePatch(has(out, key) ? out[key] : undefined, value));
++    }
++  }
++  return out;
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..274dcf60d1ddd3a9f2d890ebba0181717e75c873
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,57 @@
++import { test } from "node:test";
++import assert from "node:assert";
++import { applyMergePatch } from "../src/index.ts";
++
++const ok = (target: unknown, patch: unknown, expected: unknown) =>
++  assert.deepStrictEqual(applyMergePatch(target, patch), expected);
++
++// RFC 7396 Appendix A examples.
++const examples: [unknown, unknown, unknown][] = [
++  [{ a: "b" }, { a: "c" }, { a: "c" }],
++  [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++  [{ a: "b" }, { a: null }, {}],
++  [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++  [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++  [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++  [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++  [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++  [["a", "b"], ["c", "d"], ["c", "d"]],
++  [{ a: "b" }, ["c"], ["c"]],
++  [{ a: "foo" }, null, null],
++  [{ a: "foo" }, "bar", "bar"],
++  [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++  [[1, 2], { a: "b", c: null }, { a: "b" }],
++  [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++];
++examples.forEach(([t, p, e], i) => test(`RFC 7396 example ${i + 1}`, () => ok(t, p, e)));
++
++test("empty object patch leaves target unchanged", () => ok({ a: 1 }, {}, { a: 1 }));
++test("object patch on a primitive target", () => ok(5, { a: 1 }, { a: 1 }));
++test("null inside arrays is kept", () => ok({}, { a: [null, 1] }, { a: [null, 1] }));
++
++test("does not mutate arguments and shares no structure", () => {
++  const target = { a: { b: 1 }, c: [1] };
++  const patch = { a: { d: { e: 2 } }, c: [2] };
++  const t = structuredClone(target);
++  const p = structuredClone(patch);
++  const result = applyMergePatch(target, patch) as typeof target & { a: { d: unknown } };
++  assert.deepStrictEqual(target, t);
++  assert.deepStrictEqual(patch, p);
++  assert.notStrictEqual(result.a.d, patch.a.d);
++  assert.notStrictEqual(result.c, patch.c);
++});
++
++test("__proto__ keys are plain data", () => {
++  const patch = JSON.parse('{"__proto__":{"polluted":true},"a":{"__proto__":{"x":1}}}');
++  const result = applyMergePatch({}, patch) as Record<string, unknown>;
++  assert.strictEqual(({} as Record<string, unknown>).polluted, undefined);
++  assert.strictEqual(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepStrictEqual(Object.keys(result), ["__proto__", "a"]);
++  assert.deepStrictEqual(JSON.parse(JSON.stringify(result)), patch);
++});
++
++test("null patch on __proto__ removes own member only", () => {
++  const target = JSON.parse('{"__proto__":1,"a":2}');
++  const result = applyMergePatch(target, JSON.parse('{"__proto__":null}'));
++  assert.deepStrictEqual(Object.keys(result as object), ["a"]);
++});

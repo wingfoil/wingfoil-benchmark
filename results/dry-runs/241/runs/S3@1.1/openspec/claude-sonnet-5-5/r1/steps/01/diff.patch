@@ -1,0 +1,533 @@
+diff --git a/README.md b/README.md
+index b5fe1b2a4feac926b16f4b55fd72f2bb6eb7b711..e3e6ba96068ca3cade57ad6b93057e1e41c49572 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,19 @@
+ The Lakeside Windsurf School teaches windsurfing on the lake from April to October, and rents boards and
+ sails to its students and to visitors who bring their own experience. This repository holds the software
+ of its booking desk, written in TypeScript with no runtime dependency.
++
++## Rental module
++
++`createRentalService()` (from `src/index.ts`) returns an in-memory rental service. Money is integer euro
++cents; times are UTC ISO-8601 strings; a period starts and ends at midnight UTC, `end` being the start of
++the day after the last rented day.
++
++```ts
++const rentals = createRentalService();
++rentals.addEquipment({ id: 'b1', kind: 'board', dailyPrice: 2500 });
++rentals.quote({ itemId: 'b1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' }); // total: 7500
++rentals.book({ itemId: 'b1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' });
++```
++
++`quote` and `book` throw for an unknown item or an invalid period; `book` also throws when the item is
++already booked for part of the period. Cancellation is not implemented yet.
+diff --git a/openspec/changes/archive/2026-11-17-add-rental-module/.openspec.yaml b/openspec/changes/archive/2026-11-17-add-rental-module/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..bbe8b3936527ad38e9220450a60063edbac5eb4c
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-add-rental-module/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-11-17
+diff --git a/openspec/changes/archive/2026-11-17-add-rental-module/design.md b/openspec/changes/archive/2026-11-17-add-rental-module/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0454a88be9cce0f527f2dd33197637e3704d7e2f
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-add-rental-module/design.md
+@@ -0,0 +1,29 @@
++# Design
++
++## Context
++
++The repository has no source yet: TypeScript, ESM (`NodeNext`), no runtime dependencies, tests run with `node --test`. See proposal.md for motivation.
++
++## Goals / Non-Goals
++
++**Goals:**
++- A small, dependency-free in-memory service behind `createRentalService()`.
++- Rules are enforced in one place so later features (cancellation) reuse them.
++
++**Non-Goals:**
++- Cancellation and refunds, persistence, customers, availability search.
++
++## Decisions
++
++- **Layout**: `src/index.ts` re-exports from `src/rental.ts` (service) and keeps period parsing in `src/period.ts`. Alternative: one file; rejected to keep rules reusable.
++- **Period parsing**: accept only ISO-8601 date-times with a `Z` designator (optionally with fractional seconds), parsed to epoch milliseconds, and require a multiple of 86,400,000 ms. Date-only strings and offsets are rejected as not UTC midnight timestamps. Results echo `start` and `end` exactly as given.
++- **Days and price**: `days = (end - start) / 86_400_000`; `total = dailyPrice * days`, both integers. `dailyPrice` must be a non-negative safe integer.
++- **Overlap**: half-open intervals `[start, end)`; two overlap iff `aStart < bEnd && bStart < aEnd`. Bookings are kept per item.
++- **Booking ids**: a counter-based string (e.g. `booking-1`); unique within a service instance.
++- **Cancellation policy**: not implemented. Bookings store `start` and `total`, so a later change can apply "less than 24 hours before start means no refund, otherwise full refund" without reshaping data.
++- **Errors**: plain `Error` with a descriptive message.
++
++## Risks / Trade-offs
++
++- [Strict date parsing rejects `+00:00` or date-only input] → Keeps "written in UTC" unambiguous; can be relaxed later.
++- [In-memory state is lost on restart] → Accepted for this first step.
+diff --git a/openspec/changes/archive/2026-11-17-add-rental-module/proposal.md b/openspec/changes/archive/2026-11-17-add-rental-module/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..cca195c8f3643ff219826b6a8572753904634cdd
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-add-rental-module/proposal.md
+@@ -0,0 +1,25 @@
++# Proposal
++
++## Why
++
++The school rents boards and sails to students and visitors, and the booking desk has no software for it yet. A rental module is the first step: it prices and books equipment while enforcing the school's rental rules.
++
++## What Changes
++
++- Add an in-memory rental service, created with `createRentalService()` and exported from `src/index.ts`.
++- `addEquipment` registers boards and sails with a daily price in euro cents.
++- `quote` prices a rental period; `book` reserves the item for it, refusing overlaps.
++- Money, UTC time, whole-day periods and no-double-booking rules apply to everything the module does.
++- The cancellation policy (no refund under 24 hours before start, otherwise full refund) is a school rule that later work will need. **Cancellation itself is out of scope** and is not implemented here.
++
++## Capabilities
++
++### New Capabilities
++- `equipment-rental`: registering rentable equipment, quoting and booking whole-day rental periods.
++
++### Modified Capabilities
++
++## Impact
++
++- New code under `src/` (the repository has none yet); no runtime dependencies.
++- New public API: `createRentalService()` and its types.
+diff --git a/openspec/changes/archive/2026-11-17-add-rental-module/specs/equipment-rental/spec.md b/openspec/changes/archive/2026-11-17-add-rental-module/specs/equipment-rental/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c37580cc908a2866f3f1d64fac107071cfd7a4b9
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-add-rental-module/specs/equipment-rental/spec.md
+@@ -0,0 +1,81 @@
++# Spec Delta
++
++## Purpose
++
++Lets the booking desk register rentable boards and sails, quote the price of a rental period and book it without double-booking, following the school's rules on money, UTC time and whole days.
++
++## ADDED Requirements
++
++### Requirement: Equipment registration
++The service SHALL let equipment be added as `{ id, kind, dailyPrice }`, where `id` is a string, `kind` is `'board'` or `'sail'`, and `dailyPrice` is a non-negative integer number of euro cents. Adding an item with an invalid `kind` or `dailyPrice`, or with an id already registered, MUST throw.
++
++#### Scenario: Add a board
++- **WHEN** a board with id `b1` and daily price 2500 is added
++- **THEN** it can be quoted and booked by id `b1`
++
++#### Scenario: Invalid equipment rejected
++- **WHEN** an item has kind `'kayak'`, or a daily price of 12.5, or an id already in use
++- **THEN** adding it throws
++
++### Requirement: Whole-day UTC periods
++A rental period SHALL be given as ISO-8601 UTC `start` and `end` strings, both at midnight UTC, with `end` after `start`. `end` is the start of the day after the last rented day, so the period covers `(end - start)` whole days. Any other period MUST be rejected with an error by both `quote` and `book`.
++
++#### Scenario: Valid three-day period
++- **WHEN** start is `2026-07-01T00:00:00Z` and end is `2026-07-04T00:00:00Z`
++- **THEN** the period is accepted and covers 3 days
++
++#### Scenario: Not at midnight UTC
++- **WHEN** start is `2026-07-01T10:00:00Z`
++- **THEN** quote and book throw
++
++#### Scenario: Empty or reversed period
++- **WHEN** end is equal to or before start
++- **THEN** quote and book throw
++
++#### Scenario: Not UTC
++- **WHEN** a time carries a non-UTC offset or has no time zone
++- **THEN** quote and book throw
++
++### Requirement: Quote
++`quote({ itemId, start, end })` SHALL return `{ itemId, start, end, total }`, where `total` is the item's daily price times the number of days, as an integer number of euro cents. Quoting MUST NOT reserve the item. It MUST throw for an unknown item.
++
++#### Scenario: Price of a period
++- **WHEN** an item priced 2500 cents a day is quoted for 3 days
++- **THEN** the total is 7500
++
++#### Scenario: Unknown item
++- **WHEN** an item id that was never added is quoted
++- **THEN** quote throws
++
++### Requirement: Booking
++`book(request)` SHALL, for the same request as `quote`, reserve the item and return `{ id, itemId, start, end, total }`, with `total` equal to the quote and `id` a string unique among bookings. It MUST throw for an unknown item or invalid period.
++
++#### Scenario: Successful booking
++- **WHEN** a free item is booked for a valid period
++- **THEN** the result has a unique `id` and the same `total` as the quote
++
++#### Scenario: Unknown item
++- **WHEN** an unknown item is booked
++- **THEN** book throws
++
++### Requirement: No overlapping bookings
++The same item SHALL NOT be booked twice for overlapping periods; `book` MUST throw when the item is not free for the whole period, and a refused booking MUST leave existing bookings unchanged. Periods that merely touch (one ends when the other starts) do not overlap, and different items never conflict.
++
++#### Scenario: Overlap refused
++- **WHEN** item `b1` is booked for July 1 to July 4 and then for July 3 to July 6
++- **THEN** the second book throws
++
++#### Scenario: Back-to-back allowed
++- **WHEN** item `b1` is booked for July 1 to July 4 and then for July 4 to July 6
++- **THEN** both bookings succeed
++
++#### Scenario: Other item unaffected
++- **WHEN** `b1` is booked for a period and `s1` for the same period
++- **THEN** both bookings succeed
++
++### Requirement: Money as integer cents
++Every amount the service accepts or returns SHALL be an integer number of euro cents.
++
++#### Scenario: Totals are integers
++- **WHEN** any quote or booking is returned
++- **THEN** `total` is an integer
+diff --git a/openspec/changes/archive/2026-11-17-add-rental-module/tasks.md b/openspec/changes/archive/2026-11-17-add-rental-module/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d3ef7a60cce8aa0bf95f4cf6513f4c889574b583
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-add-rental-module/tasks.md
+@@ -0,0 +1,11 @@
++# Tasks
++
++## 1. Period and money rules
++
++- [x] 1.1 Add `src/period.ts` parsing and validating whole-day UTC periods and counting days, with `node --test` tests (`src/period.test.ts`, run via compiled or type-stripped execution as the repo allows) covering valid, non-midnight, reversed/empty, and non-UTC inputs; verify `npm test` passes
++
++## 2. Rental service
++
++- [x] 2.1 Add `src/rental.ts` with `createRentalService()`, `addEquipment` (validation, duplicate ids) and `quote`; export from `src/index.ts`; verify tests for registration, pricing in cents and unknown items pass
++- [x] 2.2 Add `book` with unique ids and half-open overlap refusal; verify tests for success, overlap, back-to-back, other items, and unchanged state after a refused booking pass
++- [x] 2.3 Add a short usage note to `README.md` and verify the example matches the exported API
+diff --git a/openspec/specs/equipment-rental/spec.md b/openspec/specs/equipment-rental/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..45532cc6987d8379b173bbc25522fc10b0c77c38
+--- /dev/null
++++ b/openspec/specs/equipment-rental/spec.md
+@@ -0,0 +1,80 @@
++# equipment-rental Specification
++
++## Purpose
++Lets the booking desk register rentable boards and sails, quote the price of a rental period and book it without double-booking, following the school's rules on money, UTC time and whole days.
++
++## Requirements
++
++### Requirement: Equipment registration
++The service SHALL let equipment be added as `{ id, kind, dailyPrice }`, where `id` is a string, `kind` is `'board'` or `'sail'`, and `dailyPrice` is a non-negative integer number of euro cents. Adding an item with an invalid `kind` or `dailyPrice`, or with an id already registered, MUST throw.
++
++#### Scenario: Add a board
++- **WHEN** a board with id `b1` and daily price 2500 is added
++- **THEN** it can be quoted and booked by id `b1`
++
++#### Scenario: Invalid equipment rejected
++- **WHEN** an item has kind `'kayak'`, or a daily price of 12.5, or an id already in use
++- **THEN** adding it throws
++
++### Requirement: Whole-day UTC periods
++A rental period SHALL be given as ISO-8601 UTC `start` and `end` strings, both at midnight UTC, with `end` after `start`. `end` is the start of the day after the last rented day, so the period covers `(end - start)` whole days. Any other period MUST be rejected with an error by both `quote` and `book`.
++
++#### Scenario: Valid three-day period
++- **WHEN** start is `2026-07-01T00:00:00Z` and end is `2026-07-04T00:00:00Z`
++- **THEN** the period is accepted and covers 3 days
++
++#### Scenario: Not at midnight UTC
++- **WHEN** start is `2026-07-01T10:00:00Z`
++- **THEN** quote and book throw
++
++#### Scenario: Empty or reversed period
++- **WHEN** end is equal to or before start
++- **THEN** quote and book throw
++
++#### Scenario: Not UTC
++- **WHEN** a time carries a non-UTC offset or has no time zone
++- **THEN** quote and book throw
++
++### Requirement: Quote
++`quote({ itemId, start, end })` SHALL return `{ itemId, start, end, total }`, where `total` is the item's daily price times the number of days, as an integer number of euro cents. Quoting MUST NOT reserve the item. It MUST throw for an unknown item.
++
++#### Scenario: Price of a period
++- **WHEN** an item priced 2500 cents a day is quoted for 3 days
++- **THEN** the total is 7500
++
++#### Scenario: Unknown item
++- **WHEN** an item id that was never added is quoted
++- **THEN** quote throws
++
++### Requirement: Booking
++`book(request)` SHALL, for the same request as `quote`, reserve the item and return `{ id, itemId, start, end, total }`, with `total` equal to the quote and `id` a string unique among bookings. It MUST throw for an unknown item or invalid period.
++
++#### Scenario: Successful booking
++- **WHEN** a free item is booked for a valid period
++- **THEN** the result has a unique `id` and the same `total` as the quote
++
++#### Scenario: Unknown item
++- **WHEN** an unknown item is booked
++- **THEN** book throws
++
++### Requirement: No overlapping bookings
++The same item SHALL NOT be booked twice for overlapping periods; `book` MUST throw when the item is not free for the whole period, and a refused booking MUST leave existing bookings unchanged. Periods that merely touch (one ends when the other starts) do not overlap, and different items never conflict.
++
++#### Scenario: Overlap refused
++- **WHEN** item `b1` is booked for July 1 to July 4 and then for July 3 to July 6
++- **THEN** the second book throws
++
++#### Scenario: Back-to-back allowed
++- **WHEN** item `b1` is booked for July 1 to July 4 and then for July 4 to July 6
++- **THEN** both bookings succeed
++
++#### Scenario: Other item unaffected
++- **WHEN** `b1` is booked for a period and `s1` for the same period
++- **THEN** both bookings succeed
++
++### Requirement: Money as integer cents
++Every amount the service accepts or returns SHALL be an integer number of euro cents.
++
++#### Scenario: Totals are integers
++- **WHEN** any quote or booking is returned
++- **THEN** `total` is an integer
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..a2e8d39ada3fa39c1d18732838f892dfe065e6fb
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,2 @@
++export { createRentalService } from './rental.ts';
++export type { Booking, Equipment, EquipmentKind, Quote, RentalRequest, RentalService } from './rental.ts';
+diff --git a/src/period.test.ts b/src/period.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..b7e0ec6184935781e63d32135648ec3c8f9a38a2
+--- /dev/null
++++ b/src/period.test.ts
+@@ -0,0 +1,26 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { parsePeriod } from './period.ts';
++
++test('accepts a whole-day period and counts days', () => {
++  assert.equal(parsePeriod('2026-07-01T00:00:00Z', '2026-07-04T00:00:00Z').days, 3);
++  assert.equal(parsePeriod('2026-07-01T00:00:00.000Z', '2026-07-02T00:00:00Z').days, 1);
++});
++
++test('rejects times that are not midnight UTC', () => {
++  assert.throws(() => parsePeriod('2026-07-01T10:00:00Z', '2026-07-04T00:00:00Z'));
++  assert.throws(() => parsePeriod('2026-07-01T00:00:00Z', '2026-07-04T00:00:01Z'));
++});
++
++test('rejects empty or reversed periods', () => {
++  assert.throws(() => parsePeriod('2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z'));
++  assert.throws(() => parsePeriod('2026-07-04T00:00:00Z', '2026-07-01T00:00:00Z'));
++});
++
++test('rejects non-UTC, date-only, invalid and non-string input', () => {
++  assert.throws(() => parsePeriod('2026-07-01T00:00:00+02:00', '2026-07-04T00:00:00Z'));
++  assert.throws(() => parsePeriod('2026-07-01T00:00:00', '2026-07-04T00:00:00Z'));
++  assert.throws(() => parsePeriod('2026-07-01', '2026-07-04'));
++  assert.throws(() => parsePeriod('2026-13-01T00:00:00Z', '2026-07-04T00:00:00Z'));
++  assert.throws(() => parsePeriod(undefined, '2026-07-04T00:00:00Z'));
++});
+diff --git a/src/period.ts b/src/period.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..650c6e00ee9357051238c1dc12bae5a55f771e23
+--- /dev/null
++++ b/src/period.ts
+@@ -0,0 +1,20 @@
++const DAY_MS = 86_400_000;
++const UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
++
++function parseUtc(value: unknown, name: string): number {
++  if (typeof value !== 'string' || !UTC_TIMESTAMP.test(value)) {
++    throw new Error(`${name} must be an ISO-8601 UTC timestamp ending in Z`);
++  }
++  const ms = Date.parse(value);
++  if (Number.isNaN(ms)) throw new Error(`${name} is not a valid date`);
++  if (ms % DAY_MS !== 0) throw new Error(`${name} must be at midnight UTC`);
++  return ms;
++}
++
++/** Validates a whole-day UTC period and returns it as epoch milliseconds plus its length in days. */
++export function parsePeriod(start: unknown, end: unknown): { startMs: number; endMs: number; days: number } {
++  const startMs = parseUtc(start, 'start');
++  const endMs = parseUtc(end, 'end');
++  if (endMs <= startMs) throw new Error('end must be after start');
++  return { startMs, endMs, days: (endMs - startMs) / DAY_MS };
++}
+diff --git a/src/rental.test.ts b/src/rental.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..e44e1920242c96806ae21ccb929c0f397f7a4693
+--- /dev/null
++++ b/src/rental.test.ts
+@@ -0,0 +1,69 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { createRentalService } from './index.ts';
++
++const day = (n: number) => `2026-07-${String(n).padStart(2, '0')}T00:00:00Z`;
++
++function setup() {
++  const service = createRentalService();
++  service.addEquipment({ id: 'b1', kind: 'board', dailyPrice: 2500 });
++  service.addEquipment({ id: 's1', kind: 'sail', dailyPrice: 1500 });
++  return service;
++}
++
++test('quote prices whole days in integer cents without reserving', () => {
++  const service = setup();
++  const q = service.quote({ itemId: 'b1', start: day(1), end: day(4) });
++  assert.deepEqual(q, { itemId: 'b1', start: day(1), end: day(4), total: 7500 });
++  assert.doesNotThrow(() => service.book({ itemId: 'b1', start: day(1), end: day(4) }));
++});
++
++test('quote and book reject unknown items and invalid periods', () => {
++  const service = setup();
++  for (const op of [service.quote, service.book]) {
++    assert.throws(() => op({ itemId: 'x', start: day(1), end: day(2) }));
++    assert.throws(() => op({ itemId: 'b1', start: '2026-07-01T09:00:00Z', end: day(2) }));
++    assert.throws(() => op({ itemId: 'b1', start: day(2), end: day(2) }));
++  }
++});
++
++test('addEquipment validates input and duplicate ids', () => {
++  const service = setup();
++  assert.throws(() => service.addEquipment({ id: 'k1', kind: 'kayak' as never, dailyPrice: 100 }));
++  assert.throws(() => service.addEquipment({ id: 'k1', kind: 'board', dailyPrice: 12.5 }));
++  assert.throws(() => service.addEquipment({ id: 'k1', kind: 'board', dailyPrice: -1 }));
++  assert.throws(() => service.addEquipment({ id: 'b1', kind: 'board', dailyPrice: 100 }));
++});
++
++test('book returns a booking with a unique id and the quoted total', () => {
++  const service = setup();
++  const a = service.book({ itemId: 'b1', start: day(1), end: day(4) });
++  const b = service.book({ itemId: 's1', start: day(1), end: day(2) });
++  assert.equal(a.total, 7500);
++  assert.equal(a.itemId, 'b1');
++  assert.equal(a.start, day(1));
++  assert.equal(a.end, day(4));
++  assert.notEqual(a.id, b.id);
++});
++
++test('overlapping bookings of one item are refused', () => {
++  const service = setup();
++  service.book({ itemId: 'b1', start: day(1), end: day(4) });
++  assert.throws(() => service.book({ itemId: 'b1', start: day(3), end: day(6) }));
++  assert.throws(() => service.book({ itemId: 'b1', start: day(2), end: day(3) }));
++  assert.throws(() => service.book({ itemId: 'b1', start: day(1), end: day(10) }));
++});
++
++test('back-to-back bookings and other items are allowed', () => {
++  const service = setup();
++  service.book({ itemId: 'b1', start: day(1), end: day(4) });
++  assert.doesNotThrow(() => service.book({ itemId: 'b1', start: day(4), end: day(6) }));
++  assert.doesNotThrow(() => service.book({ itemId: 's1', start: day(1), end: day(4) }));
++});
++
++test('a refused booking leaves state unchanged', () => {
++  const service = setup();
++  service.book({ itemId: 'b1', start: day(1), end: day(4) });
++  assert.throws(() => service.book({ itemId: 'b1', start: day(3), end: day(8) }));
++  assert.doesNotThrow(() => service.book({ itemId: 'b1', start: day(4), end: day(8) }));
++});
+diff --git a/src/rental.ts b/src/rental.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d372388b2b0c6311d459d2d00f7b1bdf66a5edb4
+--- /dev/null
++++ b/src/rental.ts
+@@ -0,0 +1,84 @@
++import { parsePeriod } from './period.ts';
++
++export type EquipmentKind = 'board' | 'sail';
++
++export interface Equipment {
++  id: string;
++  kind: EquipmentKind;
++  dailyPrice: number;
++}
++
++export interface RentalRequest {
++  itemId: string;
++  start: string;
++  end: string;
++}
++
++export interface Quote {
++  itemId: string;
++  start: string;
++  end: string;
++  total: number;
++}
++
++export interface Booking extends Quote {
++  id: string;
++}
++
++export interface RentalService {
++  addEquipment(item: Equipment): void;
++  quote(request: RentalRequest): Quote;
++  book(request: RentalRequest): Booking;
++}
++
++interface Reserved {
++  startMs: number;
++  endMs: number;
++}
++
++export function createRentalService(): RentalService {
++  const equipment = new Map<string, Equipment>();
++  const reserved = new Map<string, Reserved[]>();
++  let bookingCount = 0;
++
++  function price(request: RentalRequest) {
++    const item = equipment.get(request?.itemId);
++    if (!item) throw new Error(`unknown item: ${String(request?.itemId)}`);
++    const period = parsePeriod(request.start, request.end);
++    const quote: Quote = {
++      itemId: item.id,
++      start: request.start,
++      end: request.end,
++      total: item.dailyPrice * period.days,
++    };
++    return { quote, period };
++  }
++
++  return {
++    addEquipment(item) {
++      if (typeof item?.id !== 'string' || item.id === '') throw new Error('id must be a non-empty string');
++      if (item.kind !== 'board' && item.kind !== 'sail') throw new Error("kind must be 'board' or 'sail'");
++      if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
++        throw new Error('dailyPrice must be a non-negative integer number of euro cents');
++      }
++      if (equipment.has(item.id)) throw new Error(`item already exists: ${item.id}`);
++      equipment.set(item.id, { id: item.id, kind: item.kind, dailyPrice: item.dailyPrice });
++    },
++
++    quote(request) {
++      return price(request).quote;
++    },
++
++    book(request) {
++      const { quote, period } = price(request);
++      const existing = reserved.get(quote.itemId) ?? [];
++      if (existing.some((r) => period.startMs < r.endMs && r.startMs < period.endMs)) {
++        throw new Error(`item ${quote.itemId} is not free for the whole period`);
++      }
++      existing.push({ startMs: period.startMs, endMs: period.endMs });
++      reserved.set(quote.itemId, existing);
++      bookingCount += 1;
++      return { id: `booking-${bookingCount}`, ...quote };
++    },
++  };
++}
+diff --git a/tsconfig.json b/tsconfig.json
+index fcd97f5ddbf1cb248969ba1e85bc3d6da5f12237..a8145afaf8914015a346f43e9f3bf16fecb72d10 100644
+--- a/tsconfig.json
++++ b/tsconfig.json
+@@ -6,7 +6,8 @@
+     "strict": true,
+     "declaration": true,
+     "outDir": "dist",
+-    "skipLibCheck": true
++    "skipLibCheck": true,
++    "rewriteRelativeImportExtensions": true
+   },
+   "include": ["src"]
+ }

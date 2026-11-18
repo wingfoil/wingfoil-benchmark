@@ -1,0 +1,141 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4f8b1db6bd265e00b5fbf688d5fc4bf72714c253
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-5-plan
++type: plan
++title: "Cancel bookings with refund"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-5"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-005-cancel-a-booking-with-refund.md b/docs/memory/task/task-005-cancel-a-booking-with-refund.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..06db406d4588cb830dfdd79e9a97377cfd906eee
+--- /dev/null
++++ b/docs/memory/task/task-005-cancel-a-booking-with-refund.md
+@@ -0,0 +1,23 @@
++---
++id: task-005-cancel-a-booking-with-refund
++type: task
++title: "Cancel a booking with refund"
++status: approved
++format: 1
++---
++
++# Request
++
++Add `cancel(bookingId, at)` to the rental service: it cancels the booking at time `at` and returns
++`{ bookingId, refund }`, the amount given back to the customer. A cancelled booking no longer holds its
++equipment, and a booking can only be cancelled once.
++
++# Approach
++
++- `at` is an ISO-8601 UTC instant (parsed like other instants); the clock is never read.
++- Refund policy (ASSUMPTION: the request does not state one, to be confirmed by the approver):
++  full `total` when `at` is before the booking's start; no refund (0) once the rental has started.
++  Cancelling at or after the booking's end is rejected: the rental is over.
++- Unknown booking ids and a second cancellation throw. A cancelled booking is removed from the overlap
++  checks, so `book` and `availability` see the equipment as free again.
++- Tests cover refund before/at/after start, after end, double cancel, unknown id, bad `at`, freed equipment.
+diff --git a/src/index.ts b/src/index.ts
+index 862f18d06fd575ef19e3c5eca3133d2c4ba75373..9ae93b25f17b220029dc3e3844d0a6b03e93372e 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -31,11 +31,19 @@ export interface AvailabilityQuery {
+   kind?: EquipmentKind;
+ }
+ 
++export interface Cancellation {
++  bookingId: string;
++  /** Euro cents given back to the customer. */
++  refund: number;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
+   availability(query: AvailabilityQuery): string[];
++  /** Full refund before the booking starts, none once it has started; rejected from its end on. */
++  cancel(bookingId: string, at: string): Cancellation;
+ }
+ 
+ const HOUR_MS = 60 * 60 * 1000;
+@@ -78,6 +86,8 @@ export function createRentalService(): RentalService {
+   const items = new Map<string, Equipment>();
+   const bookings: Array<Booking & { startMs: number; endMs: number }> = [];
+ 
++  let issued = 0;
++
+   function price(request: RentalRequest) {
+     const item = items.get(request?.itemId);
+     if (!item) throw new Error(`unknown item: ${String(request?.itemId)}`);
+@@ -115,7 +125,7 @@ export function createRentalService(): RentalService {
+       );
+       if (clash) throw new Error(`item ${request.itemId} is not free for that period`);
+       const booking = {
+-        id: `booking-${bookings.length + 1}`,
++        id: `booking-${++issued}`,
+         itemId: request.itemId,
+         start: request.start,
+         end: request.end,
+@@ -125,6 +135,16 @@ export function createRentalService(): RentalService {
+       return booking;
+     },
+ 
++    cancel(bookingId, at) {
++      const atMs = parseInstant(at, 'at');
++      const index = bookings.findIndex((b) => b.id === bookingId);
++      if (index < 0) throw new Error(`unknown booking or already cancelled: ${String(bookingId)}`);
++      const booking = bookings[index];
++      if (atMs >= booking.endMs) throw new Error(`booking ${bookingId} is over and cannot be cancelled`);
++      bookings.splice(index, 1);
++      return { bookingId, refund: atMs < booking.startMs ? booking.total : 0 };
++    },
++
+     availability(query) {
+       const { start, end } = parsePeriod({ itemId: '', start: query?.start, end: query?.end });
+       const kind = query.kind;
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 3a15da51c91e25654190dc85e8736cc1e8bcdc81..ebb51d17dd121569fe0765c084ea5c405c968dca 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -103,3 +103,25 @@ test('hourly bookings block overlapping periods only', () => {
+   assert.deepStrictEqual(s.availability({ start: '2026-06-01T14:00:00Z', end: '2026-06-01T15:00:00Z' }), []);
+   assert.deepStrictEqual(s.availability({ start: '2026-06-01T16:00:00Z', end: '2026-06-01T17:00:00Z' }), ['h']);
+ });
++
++test('cancel refunds the total before the start, nothing once started, and frees the equipment', () => {
++  const s = setup();
++  const a = s.book(req('2026-06-02T00:00:00Z', '2026-06-04T00:00:00Z'));
++  assert.deepStrictEqual(s.cancel(a.id, '2026-06-01T23:59:59Z'), { bookingId: a.id, refund: 5100 });
++  assert.deepStrictEqual(s.availability({ start: '2026-06-02T00:00:00Z', end: '2026-06-04T00:00:00Z' }), ['b1']);
++  const b = s.book(req('2026-06-02T00:00:00Z', '2026-06-04T00:00:00Z'));
++  assert.notStrictEqual(b.id, a.id);
++  assert.deepStrictEqual(s.cancel(b.id, '2026-06-02T00:00:00Z'), { bookingId: b.id, refund: 0 });
++  const c = s.book(req('2026-06-05T00:00:00Z', '2026-06-06T00:00:00Z'));
++  assert.deepStrictEqual(s.cancel(c.id, '2026-06-05T12:00:00Z'), { bookingId: c.id, refund: 0 });
++});
++
++test('cancel rejects a second cancellation, unknown ids, finished bookings and bad instants', () => {
++  const s = setup();
++  const a = s.book(req('2026-06-02T00:00:00Z', '2026-06-03T00:00:00Z'));
++  assert.throws(() => s.cancel('nope', '2026-06-01T00:00:00Z'));
++  assert.throws(() => s.cancel(a.id, 'yesterday'));
++  assert.throws(() => s.cancel(a.id, '2026-06-03T00:00:00Z'));
++  s.cancel(a.id, '2026-06-01T00:00:00Z');
++  assert.throws(() => s.cancel(a.id, '2026-06-01T00:00:00Z'));
++});

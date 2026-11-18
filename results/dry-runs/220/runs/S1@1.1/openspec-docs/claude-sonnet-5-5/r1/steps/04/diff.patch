@@ -1,0 +1,84 @@
+diff --git a/src/index.ts b/src/index.ts
+index ba22d8611c2fcb619a43e56746ff0e3e2f625dd1..30256ce7871397b612df9ea7613220f7c03e7f9d 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -240,3 +240,25 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   }
+   return result;
+ }
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a JSON document and returns the resulting document.
++ * The input target and patch are never mutated, and the result shares no structure with them.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isObject(patch)) return clone(patch as JsonValue);
++  const result: { [key: string]: JsonValue } = {};
++  if (isObject(target)) {
++    for (const key of Object.keys(target)) setMember(result, key, clone(target[key]));
++  }
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      const existing = Object.prototype.hasOwnProperty.call(result, key) ? result[key] : undefined;
++      setMember(result, key, applyMergePatch(existing, value) as JsonValue);
++    }
++  }
++  return result;
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..57c3ff41d09b05af7a3ba25484ada86de56f6e96
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,48 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "../src/index.ts";
++
++test("RFC 7386 section 3 example", () => {
++  const target = { title: "Goodbye!", author: { givenName: "John", familyName: "Doe" }, tags: ["example", "sample"], content: "This will be unchanged" };
++  const patch = { title: "Hello!", phoneNumber: "+01-123-456-7890", author: { familyName: null }, tags: ["example"] };
++  assert.deepEqual(applyMergePatch(target, patch), {
++    title: "Hello!",
++    author: { givenName: "John" },
++    tags: ["example"],
++    content: "This will be unchanged",
++    phoneNumber: "+01-123-456-7890",
++  });
++});
++
++test("RFC 7386 appendix A cases", () => {
++  const cases: [unknown, unknown, unknown][] = [
++    [{ a: "b" }, { a: "c" }, { a: "c" }],
++    [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++    [{ a: "b" }, { a: null }, {}],
++    [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++    [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++    [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++    [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++    [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++    [["a", "b"], ["c", "d"], ["c", "d"]],
++    [{ a: "b" }, ["c"], ["c"]],
++    [{ a: "foo" }, null, null],
++    [{ a: "foo" }, "bar", "bar"],
++    [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++    [[1, 2], { a: "b", c: null }, { a: "b" }],
++    [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++  ];
++  for (const [target, patch, expected] of cases) {
++    assert.deepEqual(applyMergePatch(target, patch), expected);
++  }
++});
++
++test("does not mutate inputs and handles __proto__", () => {
++  const target = { a: { b: 1 } };
++  const patch = JSON.parse('{"a":{"c":2},"__proto__":{"x":1}}');
++  const result = applyMergePatch(target, patch) as any;
++  assert.deepEqual(target, { a: { b: 1 } });
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepEqual(result.a, { b: 1, c: 2 });
++  assert.deepEqual(Object.keys(result), ["a", "__proto__"]);
++});
