@@ -90,3 +90,16 @@ that was red first:
   of throwing.
 
 The rehearsal on the scratch copy gives the same 83 transcripts after these changes.
+
+**The second independent review.** It read the fixes above and found no blocker. Its findings are applied with 17 new
+tests. Against the previous commit 14 of them were red, 2 passed because rounds 0 and -1 were already refused, and the
+session count of 1e15 was left out because it hangs that commit. Two earlier link tests changed the path they expect.
+
+- A link that leads nowhere, under a run's `steps`, `attempts` or `review` or on the way to a configuring session, made
+  its transcripts look absent: the pack exited 0 and dropped the run's record of the asset. It is now refused by name.
+- Those folders are refused by name when they are files, and so is a file the system will not let the pack read.
+- A run whose own steps are gone is named even when an earlier attempt's remain.
+- Impossible round numbers and session counts (above 1000) are refused.
+
+No link exists under the real `results/`, so no stored execution is refused. The rehearsal on the scratch copy still
+gives 83 transcripts with the same digest. **This last commit had no third independent review.**
