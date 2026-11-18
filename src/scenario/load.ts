@@ -83,6 +83,13 @@ export function loadScenario(scenariosRoot: string, id: string, version: string)
   const hidden = existsSync(resolve(dir, CONFIGURED_DIR))
     ? [...arms.declared, { path: CONFIGURED_DIR, relative: CONFIGURED_DIR, kind: 'directory' } as const]
     : arms.declared;
+  // A run's first commit is the seed's: with no file git would refuse it in its own words (bug-033).
+  if (issues.length === 0 && !holdsFile(resolve(dir, spec.seed))) {
+    issues.push({
+      path: seed.path,
+      message: `directory '${spec.seed}' holds no file: a run's first commit needs at least one`,
+    });
+  }
   if (issues.length === 0) issues.push(...overlapIssues(seed, others, hidden, dir));
   if (issues.length === 0) issues.push(...vendoredIssues(spec, dir));
   if (issues.length > 0) return fail(issues);
@@ -483,6 +490,13 @@ function markdownUnder(directory: string, relative: string): string[] {
       if (entry.isDirectory()) return markdownUnder(join(directory, entry.name), path);
       return entry.isFile() && entry.name.endsWith('.md') ? [path] : [];
     });
+}
+
+/** Whether `dir` holds a file at any depth: git records no directory by itself. */
+function holdsFile(dir: string): boolean {
+  return readdirSync(dir, { withFileTypes: true }).some((entry) =>
+    entry.isDirectory() ? holdsFile(join(dir, entry.name)) : entry.isFile(),
+  );
 }
 
 function fileIssues(declared: readonly Declared[], dir: string): Issue[] {

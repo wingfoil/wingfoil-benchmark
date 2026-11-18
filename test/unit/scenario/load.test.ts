@@ -252,6 +252,15 @@ describe('loadScenario', () => {
     expect(paths(writeScenario(withField([field], value)))).toEqual([field]);
   });
 
+  it('refuses a seed that holds no file, in its own words (bug-033)', () => {
+    const empty = COMPLETE_FILES.filter((file) => !file.startsWith('seed/'));
+    const root = writeScenario(completeScenarioYaml(), empty);
+    mkdirSync(join(root, 'S9', '1.0', 'seed', 'only', 'directories'), { recursive: true });
+    expect(issuesOf(root)).toEqual([
+      { path: 'seed', message: "directory 'seed' holds no file: a run's first commit needs at least one" },
+    ]);
+  });
+
   it('names every file or directory that does not exist, in declaration order', () => {
     const root = writeScenario(completeScenarioYaml(), ['prompts/01.md']);
     expect(issuesOf(root)).toEqual([
