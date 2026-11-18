@@ -99,7 +99,8 @@ export function renderMarkdown(text: string, options: MarkdownOptions = {}): Ren
       continue;
     }
     const item = ITEM.exec(line);
-    if (item !== null) {
+    // After a line of text, a number other than 1 is that text wrapped: a list starts there only after a blank line.
+    if (item !== null && (opensList(line) || (lines[index - 1] ?? '').trim() === '')) {
       // The list takes the indent of its own first item, so it always reads that line (bug-037).
       const [html, next] = list(lines, index, (item[1] as string).length, inline, anchored);
       out.push(html);
@@ -156,6 +157,7 @@ function list(
     const text = [match[3] as string];
     index += 1;
     const nested: string[] = [];
+    const after: string[] = [];
     while (index < lines.length) {
       const line = lines[index] as string;
       if (line.trim() === '') break;
@@ -167,16 +169,21 @@ function list(
         index = next;
         continue;
       }
-      if ((deeper !== null && depth <= indent) || !line.startsWith(' ')) break;
-      text.push(line.trim());
+      const sibling = depth === indent && (deeper?.[2] === undefined) === (match[2] === undefined);
+      if ((deeper !== null && (depth < indent || sibling || opensList(line))) || !line.startsWith(' ')) break;
+      (nested.length === 0 ? text : after).push(line.trim());
       index += 1;
     }
     const [content, id] = anchored(text.join(' '));
     const inner = nested.length === 0 ? '' : `\n${nested.join('\n')}\n`;
-    items.push(`<li${id}>${inline(content)}${inner}</li>`);
-    if (index < lines.length && (lines[index] as string).trim() === '' && !ITEM.test(lines[index + 1] ?? ''))
-      break;
-    if (index < lines.length && (lines[index] as string).trim() === '') index += 1;
+    items.push(`<li${id}>${inline(content)}${inner}${inline(after.join(' '))}</li>`);
+    if (index < lines.length && (lines[index] as string).trim() === '') {
+      // A blank line stays inside the list only before this list's next item.
+      const next = ITEM.exec(lines[index + 1] ?? '');
+      if (next === null || (next[1] as string).length !== indent) break;
+      if ((next[2] === undefined) !== (number === undefined)) break;
+      index += 1;
+    }
   }
   const body = items.map((item) => `${item}\n`).join('');
   if (number === undefined) return [`<ul>\n${body}</ul>`, index];
