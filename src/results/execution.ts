@@ -181,7 +181,7 @@ export function executionSpendingEur(executionDir: string, usdToEur: number): nu
       throw unreadable((error as Error).message, error);
     }
     // A record that parses to anything but an object is no record either (task-081's review).
-    if (run === null || typeof run !== 'object') throw unreadable('it is not a run record');
+    if (run === null || typeof run !== 'object' || Array.isArray(run)) throw unreadable('it is not a run record');
     for (const step of run.steps ?? []) {
       const reported = typeof step.usage?.costEur === 'number' ? step.usage.costEur : 0;
       const bound = typeof step.cost_bound_usd === 'number' ? step.cost_bound_usd * usdToEur : 0;

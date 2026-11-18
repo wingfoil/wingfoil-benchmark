@@ -130,7 +130,7 @@ describe('reading the comparisons of an execution (REQ-RES-02 as amended, task-0
     writeFileSync(join(dir, name), text);
   }
 
-  it('reads every comparison whose newer side is the execution, in file-name order; none is none', () => {
+  it('reads every comparison whose newer side is the execution, by campaign; none is none', () => {
     const root = tempDir('bench-site-cmp-');
     expect(readComparisons(root, 'abcdef012345', 2)).toEqual({ ok: true, value: [] });
     write(
@@ -144,6 +144,44 @@ describe('reading the comparisons of an execution (REQ-RES-02 as amended, task-0
     write(root, '0123456789ab-1.json', JSON.stringify(comparison()));
     const read = readComparisons(root, 'abcdef012345', 2);
     expect(read.ok && read.value.map((c) => c.earlier.campaign)).toEqual(['0123456789ab', 'fedcba987654']);
+  });
+
+  it('orders by campaign before the number (bug-033)', () => {
+    const root = tempDir('bench-site-cmp-');
+    write(
+      root,
+      '0123456789ab-2.json',
+      JSON.stringify({
+        ...comparison(),
+        earlier: { campaign: '0123456789ab', execution: 2, model: 'sonnet' },
+      }),
+    );
+    write(
+      root,
+      'fedcba987654-1.json',
+      JSON.stringify({
+        ...comparison(),
+        earlier: { campaign: 'fedcba987654', execution: 1, model: 'sonnet' },
+      }),
+    );
+    const read = readComparisons(root, 'abcdef012345', 2);
+    expect(read.ok && read.value.map((c) => c.earlier.campaign)).toEqual(['0123456789ab', 'fedcba987654']);
+  });
+
+  it('orders the executions of one campaign by number, so 2 comes before 10 (bug-033)', () => {
+    const root = tempDir('bench-site-cmp-');
+    for (const execution of [10, 2, 1]) {
+      write(
+        root,
+        `0123456789ab-${execution}.json`,
+        JSON.stringify({
+          ...comparison(),
+          earlier: { campaign: '0123456789ab', execution, model: 'sonnet' },
+        }),
+      );
+    }
+    const read = readComparisons(root, 'abcdef012345', 2);
+    expect(read.ok && read.value.map((c) => c.earlier.execution)).toEqual([1, 2, 10]);
   });
 
   it('reads a comparison of version 2, with its M-R across the executions, and one of version 1 without (1.32)', () => {

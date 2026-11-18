@@ -89,6 +89,54 @@ describe('scripts/full-suites.sh (dl-016, task-075)', () => {
     );
   });
 
+  /** A `git` whose `status` and `rev-parse` fail at the given calls, every other command being the real one's (bug-033). */
+  function failingGit(root: string, failing: { status?: readonly number[]; revParse?: readonly number[] }) {
+    const real = execFileSync('bash', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+    const counted = (command: string, calls: readonly number[] = []) => [
+      `if [ "$1" = ${command} ]; then`,
+      `  n=$(( $(cat '${join(root, command)}' 2>/dev/null || echo 0) + 1 )); echo "$n" > '${join(root, command)}'`,
+      `  case " ${calls.join(' ')} " in *" $n "*) exit 128 ;; esac`,
+      'fi',
+    ];
+    writeFileSync(
+      join(root, 'bin', 'git'),
+      [
+        '#!/usr/bin/env bash',
+        ...counted('status', failing.status),
+        ...counted('rev-parse', failing.revParse),
+        `exec '${real}' "$@"`,
+      ].join('\n'),
+    );
+    chmodSync(join(root, 'bin', 'git'), 0o755);
+  }
+
+  it.each([
+    ['status before the suites', { status: [1] }],
+    ['status after the suites', { status: [2] }],
+    ['rev-parse before the suites', { revParse: [1] }],
+    ['rev-parse after the suites', { revParse: [2] }],
+    ['every call', { status: [1, 2], revParse: [1, 2] }],
+  ])('says GIT-ERROR once when git fails at %s, and does not read as clean (bug-033)', (_, failing) => {
+    const { root, out, env } = fixture();
+    failingGit(root, failing);
+    expect(spawnSync('bash', [SCRIPT, 'task/x'], { env, encoding: 'utf8' }).status).toBe(0);
+    expect(readFileSync(join(day(out), 'summary.txt'), 'utf8')).toMatch(
+      /^task\/x ([0-9a-f]+|unknown) GIT-ERROR: LINT 0/m,
+    );
+  });
+
+  it('says CHANGED when the worktree changes during the suites (bug-033)', () => {
+    const { root, out, env } = fixture();
+    writeFileSync(
+      join(root, 'bin', 'npm'),
+      '#!/usr/bin/env bash\n[ "$1" = run ] && echo edited > edited.txt\nexit 0\n',
+    );
+    expect(spawnSync('bash', [SCRIPT, 'task/x'], { env, encoding: 'utf8' }).status).toBe(0);
+    expect(readFileSync(join(day(out), 'summary.txt'), 'utf8')).toMatch(
+      /^task\/x [0-9a-f]+ CHANGED: LINT 0/m,
+    );
+  });
+
   it('says which branches it could not run, and a name that matches no worktree', () => {
     const { root, out, env } = fixture();
     expect(spawnSync('bash', [SCRIPT, 'task/x', 'task/typo'], { env, encoding: 'utf8' }).status).toBe(0);

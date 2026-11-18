@@ -2,14 +2,15 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { docsGeneratorOf } from '../arms/index.js';
-import { loadCampaign, loadRegister } from '../campaign/index.js';
+import { loadCampaign } from '../campaign/index.js';
 import type { Campaign } from '../campaign/index.js';
-import { eligibilityIssues, fail, harnessCoverage, ok, verdictPolicyIssue } from '../core/index.js';
+import { fail, harnessCoverage, ok, verdictPolicyIssue } from '../core/index.js';
 import type { Arm, Issue, Result, Scenario } from '../core/index.js';
 import { versionChange } from '../results/index.js';
 import { loadScenario, reviewPromptIssues } from '../scenario/index.js';
 
 import { configuredIssues } from './configured-pins.js';
+import { harnessPinIssues } from './harness-pins.js';
 import { loadPinnedArm, pinnedDigestIssue } from './pinned-arm.js';
 
 /** A valid campaign with every scenario and every arm it names loaded, in the campaign's order. */
@@ -84,11 +85,8 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
     issues.push(...coverage);
     // Every harness arm pins a tool the eligibility register admits at that version (REQ-FMT-01, F7.4): checked once
     // the pins are right, so that a wrong or missing pin is reported once.
-    if (coverage.length === 0) {
-      const register = loadRegister(campaign.repoRoot);
-      if (register.ok) issues.push(...eligibilityIssues(campaign.spec.harnesses, arms, register.value));
-      else if (arms.some((arm) => arm.requires !== undefined)) issues.push(...register.issues);
-    }
+    if (coverage.length === 0)
+      issues.push(...harnessPinIssues(campaign.spec.harnesses, arms, campaign.repoRoot));
   }
   // The review loop's prompts: present, as pinned, and scanned as the configuring prompt is (REQ-FMT-01 and REQ-FMT-08
   // as amended in 1.58), against the scenario versions that loaded.

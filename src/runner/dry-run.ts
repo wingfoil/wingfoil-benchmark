@@ -2,7 +2,15 @@ import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
 import { armDigest } from '../arms/index.js';
-import { canonicalJson, fail, harnessCoverage, modelId, ok, verdictPolicyIssue } from '../core/index.js';
+import {
+  canonicalJson,
+  fail,
+  harnessCoverage,
+  modelId,
+  ok,
+  registryPinIssues,
+  verdictPolicyIssue,
+} from '../core/index.js';
 import type { Arm, DryRunProfile, Issue, Result, Scenario } from '../core/index.js';
 import { DRY_RUNS, versionChange } from '../results/index.js';
 import {
@@ -15,6 +23,7 @@ import {
 } from '../scenario/index.js';
 
 import { configuredIssues } from './configured-pins.js';
+import { eligibilityOfPins } from './harness-pins.js';
 import { loadPinnedArm, pinnedDigestIssue } from './pinned-arm.js';
 import { runPlan } from './run.js';
 import type { RunnerOptions, RunSummary } from './run.js';
@@ -46,6 +55,8 @@ export interface CheckedDryRun {
   /** Every arm loaded: the one that runs, and for a docs control the arm it is generated from (REQ-RUN-11). */
   readonly arms: readonly Arm[];
   readonly model: string;
+  /** What a campaign on these pins would be refused for, which a dry run only says (bug-033). */
+  readonly notes: readonly string[];
 }
 
 /**
@@ -110,6 +121,13 @@ export function checkDryRun(request: DryRunRequest, root: string): Result<Checke
   if (issues.length > 0) return fail(issues);
   const uncovered = harnessCoverage(profile.value, arms);
   if (uncovered.length > 0) return fail(uncovered);
+  // A registry pin that cannot be fetched fails at the build: refused before it (bug-033).
+  const pins = registryPinIssues(profile.value.harnesses, arms);
+  if (pins.length > 0) return fail(pins);
+  // A version the register does not admit runs, and is noted: dry runs are how it is studied (task-063, bug-033).
+  const notes = eligibilityOfPins(profile.value.harnesses, arms, root).map((issue) =>
+    issue.path.startsWith('harnesses') ? issue.message : `${issue.path}: ${issue.message}`,
+  );
   // A configured arm, or a docs control of one, runs a configuration as a campaign's does (REQ-FMT-01 as
   // amended in 1.50, REQ-CLI-05 as amended in 1.54).
   const configured = configuredIssues(profile.value, [scenario.value], arms, root);
@@ -126,6 +144,7 @@ export function checkDryRun(request: DryRunRequest, root: string): Result<Checke
     arm,
     arms,
     model,
+    notes,
   });
 }
 

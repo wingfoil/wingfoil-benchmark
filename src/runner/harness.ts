@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
 
-import { baseArmOf } from '../core/index.js';
+import { baseArmOf, REGISTRY_PACKAGES, RELEASED_VERSION } from '../core/index.js';
 import type { Arm, CampaignFile, DockerPort, GitPort } from '../core/index.js';
 
 import { hostUser } from './identity.js';
@@ -133,12 +133,6 @@ function registryBuild(tool: string, spec: string): string {
   ].join('\n');
 }
 
-/** A released version, as a registry pin must be (task-071): npm reads anything else as a tag. */
-const RELEASE = /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
-
-/** The tools fetched from the npm registry by version, with no clone (task-071): their package, by tool. */
-const REGISTRY_PACKAGES: Readonly<Record<string, string>> = { openspec: '@fission-ai/openspec' };
-
 /** The harness tools this runner can build, by the name an arm `requires`. */
 const BUILDERS: Readonly<Record<string, (sha: string) => string>> = {
   wingfoil: wingfoilBuild,
@@ -218,7 +212,7 @@ async function prepareFromRegistry(
     );
   }
   const version = harness.version;
-  if (!RELEASE.test(version)) {
+  if (!RELEASED_VERSION.test(version)) {
     throw new Error(`the ${tool} harness pins ${version}, which is not a released version of ${tool}`);
   }
   const cache = join(target.repoRoot, HARNESS_CACHE, tool, version);

@@ -58,8 +58,8 @@ const comparisonShape = z
 
 /**
  * The comparisons whose newer side is execution `<campaign>/<execution>` (REQ-RES-02 as amended, REQ-CLI-12,
- * task-084): every `results/comparisons/<campaign>-<execution>/*.json`, in file-name order; none when there is none. A
- * file that cannot be read, or that names another newer execution, is refused, naming it.
+ * task-084): every `results/comparisons/<campaign>-<execution>/*.json`, by campaign then by execution; none when there
+ * is none. A file that cannot be read, or that names another newer execution, is refused, naming it.
  */
 export function readComparisons(
   root: string,
@@ -73,7 +73,7 @@ export function readComparisons(
   const issues: Issue[] = [];
   for (const name of readdirSync(dir)
     .filter((file) => file.endsWith('.json'))
-    .sort()) {
+    .sort(byExecution)) {
     const path = `${where}/${name}`;
     let parsed: unknown;
     try {
@@ -106,6 +106,17 @@ export function readComparisons(
     comparisons.push(parsed as CampaignComparison);
   }
   return issues.length > 0 ? fail(issues) : ok(comparisons);
+}
+
+/** Comparison files by campaign, then by execution as a number (`…-2` before `…-10`, bug-033). */
+function byExecution(a: string, b: string): number {
+  const key = (name: string): [string, number] => {
+    const match = /^(.*)-(\d+)\.json$/.exec(name);
+    return match === null ? [name, -1] : [match[1] as string, Number(match[2])];
+  };
+  const [[campaignA, numberA], [campaignB, numberB]] = [key(a), key(b)];
+  if (campaignA !== campaignB) return campaignA < campaignB ? -1 : 1;
+  return numberA - numberB || (a < b ? -1 : a > b ? 1 : 0);
 }
 
 /** The page of a comparison, beside its newer execution's pages: named after the earlier execution (REQ-RES-07). */

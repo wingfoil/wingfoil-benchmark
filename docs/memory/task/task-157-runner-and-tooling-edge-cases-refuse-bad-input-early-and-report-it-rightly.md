@@ -2,7 +2,7 @@
 id: task-157-runner-and-tooling-edge-cases-refuse-bad-input-early-and-report-it-rightly
 type: task
 title: "Runner and tooling edge cases: refuse bad input early and report it rightly"
-status: backlog
+status: approved
 release: v0.3
 wave: publishing
 features: [F7.4]
@@ -43,8 +43,9 @@ profile and scenario stays valid.
 1. **An empty seed (item 1):** a scenario whose seed holds no file that a run would copy (it is empty, or holds only
    empty directories or symbolic links) is refused when the scenario loads, at the `seed` field, in the benchmark's own
    words.
-2. **The dry run's register (item 3):** `checkDryRun` refuses a harness arm whose pinned tool and version the
-   eligibility register does not admit, with `campaign validate`'s message.
+2. **The dry run's register (item 3, amended by the approver's choice A, 2026-11-18):** a harness arm whose pinned tool
+   and version the eligibility register does not admit still runs, because dry runs are how a version is studied before
+   it is assessed (task-063). `scenario dry-run` prints `campaign validate`'s message as a note.
 3. **A registry pin (item 4):** `campaign validate` and `checkDryRun` refuse, before any image is built, a registry tool
    pinned by `commit` or by a version that is not a release. The run-time refusal stays as a guard.
 4. **The suites' report (item 5):** when `git` fails in a worktree, the summary line says so and does not read as clean.
@@ -73,3 +74,22 @@ profile and scenario stays valid.
   fixtures.
 
 ## Execution notes
+
+- **Item 2 is left out:** it did not reproduce (§ Context), and the approver approved the task that says so.
+- **Red first:** every new test failed before its fix. Items 3 and 4 share one check, `src/runner/harness-pins.ts`, so
+  they are one commit and not two.
+- **`readRecord` in `src/runner/run.ts`:** it refuses a list too, but a resume reads `executionSpendingEur` first, so
+  the CLI test catches a regression only when both checks are removed.
+- **Nothing stored breaks (criterion 8):** main's checks and this branch's gave the same answer on all 1310 stored
+  cases: 9 scenario versions with their hashes, 14 campaign files, and 1287 pairs of a dry-run profile, a scenario
+  version and an arm.
+- **The independent review (2026-11-18) found that refusing an unassessed version would block its admission:** a new
+  version needs dry-run evidence before it is admitted (task-063; WingFoil v0.3.1's entry cites dry runs 86 and 87). The
+  approver chose A: the dry run runs and notes it. Registry pins that cannot be fetched stay refused.
+- **The review's other findings are fixed:** the dry run names every kind of dry run that does not count, also when an
+  older one still counts; a seed git cannot commit fails in the benchmark's words; and the regressions it found
+  untested are tested. A seed holding only links stays refused by the earlier link check, at the link's own path.
+- **A second independent review (2026-11-18) found no blocker.** Its findings are fixed: a note names the register when
+  it is missing or invalid, the empty seed is recognised by asking git for an empty commit and not by git's words, which
+  change with its locale, and the reasons and the `CHANGED` case it found untested are tested. These last fixes were not
+  reviewed again.

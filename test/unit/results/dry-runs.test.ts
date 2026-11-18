@@ -148,3 +148,32 @@ describe("findDryRuns: the agent's version (REQ-CLI-02 as amended in 1.59, task-
     expect(findDryRuns(root, KEY).records.map((record) => record.execution)).toEqual([1]);
   });
 });
+
+describe('findDryRuns: why a dry run does not count, for a dry run quoting its own key (bug-033)', () => {
+  const QUOTED = { ...KEY, effort: 'medium', pinnedBy: 'the profile' };
+  const reason = (extra: Record<string, unknown>) => {
+    const root = tempDir('bench-results-');
+    dryRun(root, 1, stored([0.1], { effort: 'medium', ...extra }));
+    return findDryRuns(root, QUOTED).skipped;
+  };
+
+  it.each([
+    [{ outcome: 'failed' }, 'dry run 1 ended failed'],
+    [{ outcome: undefined }, 'dry run 1 records no outcome'],
+    [{ dry_run: false }, 'dry run 1 is not marked a dry run'],
+    [{ scenario_hash: 'another' }, 'dry run 1 ran other content of this scenario version'],
+    [{ effort: 'low' }, 'dry run 1 ran at effort low, the profile pins medium'],
+  ])('names %j', (extra, expected) => {
+    expect(reason(extra)).toBe(expected);
+  });
+
+  it("leaves an estimate's lookup as it was: no reason for a failed run, none beside a dry run that counts", () => {
+    const root = tempDir('bench-results-');
+    dryRun(root, 1, stored([0.1]));
+    dryRun(root, 2, stored([0.2], { outcome: 'failed' }));
+    dryRun(root, 3, stored([0.3], { effort: 'low' }));
+    const found = findDryRuns(root, KEY);
+    expect(found.records.map((record) => record.execution)).toEqual([1]);
+    expect(found).not.toHaveProperty('skipped');
+  });
+});

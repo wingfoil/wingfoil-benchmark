@@ -28,7 +28,27 @@ export async function prepareWorkspace(directory: string, scenario: Scenario, gi
     filter: keepInsideSeed,
   });
   await git.init(directory);
-  await git.commitAll(directory, SEED_COMMIT);
+  try {
+    await git.commitAll(directory, SEED_COMMIT);
+  } catch (error) {
+    if (await commitsEmpty(directory, git)) {
+      throw new Error(
+        `the seed of ${scenario.id}@${scenario.version} gives its first commit nothing: git records none of the files it holds`,
+        { cause: error },
+      );
+    }
+    throw error;
+  }
+}
+
+/** Whether only an empty commit is left to make (bug-033): asked of git itself, whose words change with its locale. */
+async function commitsEmpty(directory: string, git: GitPort): Promise<boolean> {
+  try {
+    await git.commitAll(directory, SEED_COMMIT, { allowEmpty: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Symbolic links are not copied at all: nothing in a workspace may point outside it. */

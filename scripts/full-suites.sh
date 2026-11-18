@@ -4,8 +4,9 @@
 # and at idle I/O priority (the containers test:docker starts are dockerd's, and keep their own), vitest with 2 workers.
 # Run on demand, when the machine is free (the approver's choice of 2026-10-09: never from a cron on a machine that
 # sleeps). Each branch's log is $WFB_OUT/<date>/<branch>-<commit>-<hhmmss>.txt, never overwritten; summary.txt gets a
-# line per branch: the commit the run started on, DIRTY when the worktree had changes not committed, each stage's exit
-# code and the log's name. A run holds a lock, and a second one runs nothing. No agent, no credential.
+# line per branch: the commit the run started on, DIRTY when the worktree had changes not committed, GIT-ERROR when
+# git could not say, each stage's exit code and the log's name. A run holds a lock, and a second one runs nothing.
+# No agent, no credential.
 # Usage: scripts/full-suites.sh [branch…]
 set -uo pipefail
 MAIN="${WFB_MAIN:-$(git -C "$(dirname "$0")" worktree list --porcelain | sed -n '1s/^worktree //p')}"
@@ -24,9 +25,14 @@ low() { nice -n 19 ionice -c3 "$@" < /dev/null 9>&-; }
 run() { # $1 = worktree, $2 = branch
   local dir="$1" branch="$2"
   if ! cd "$dir" 2> /dev/null; then echo "SKIPPED $branch: cannot enter $dir" | tee -a "$SUMMARY"; return; fi
-  local sha dirty='' log
-  sha="$(git rev-parse --short HEAD)"
-  [ -z "$(git status --porcelain)" ] || dirty=' DIRTY'
+  local sha dirty='' log status
+  sha="$(git rev-parse --short HEAD)" || { sha=unknown; dirty=' GIT-ERROR'; }
+  # A git that fails prints nothing, which must not read as a clean worktree (bug-033).
+  if status="$(git status --porcelain)"; then
+    [ -z "$status" ] || dirty="${dirty:- DIRTY}"
+  else
+    dirty=' GIT-ERROR'
+  fi
   log="$DAY_DIR/$(echo "$branch" | tr '/' '_')-$sha-$(date +%H%M%S).txt"
   {
     echo "== $branch $sha$dirty $(date -Is)"
@@ -39,7 +45,20 @@ run() { # $1 = worktree, $2 = branch
   } > "$log" 2>&1
   local codes changed=''; codes="$(grep -E '^(LINT|TEST|BUILD|BIN|DOCKER) [0-9]+$' "$log" | tr '\n' ' ')"
   # A commit or an edit in the shared worktree during the run: the log no longer names what it tested.
-  [ "$(git rev-parse --short HEAD)" = "$sha" ] && { [ -n "$dirty" ] || [ -z "$(git status --porcelain)" ]; } || changed=' CHANGED'
+  local now
+  if [ "$dirty" = ' GIT-ERROR' ]; then
+    : # Already said: what git could not name before the suites cannot be compared after them.
+  elif ! now="$(git rev-parse --short HEAD)"; then
+    changed=' GIT-ERROR'
+  elif [ "$now" != "$sha" ]; then
+    changed=' CHANGED'
+  elif [ -z "$dirty" ]; then
+    if ! status="$(git status --porcelain)"; then
+      changed=' GIT-ERROR'
+    elif [ -n "$status" ]; then
+      changed=' CHANGED'
+    fi
+  fi
   echo "$branch $sha$dirty$changed: $codes(log $(basename "$log"))" | tee -a "$SUMMARY"
 }
 
