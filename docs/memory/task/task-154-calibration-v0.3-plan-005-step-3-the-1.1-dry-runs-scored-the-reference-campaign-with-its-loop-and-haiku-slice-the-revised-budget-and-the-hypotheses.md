@@ -116,3 +116,7 @@ What is settled before it:
   spend read during a session can overstate. The launching script reads between dry runs.
 - **The budget gate:** the estimate's high, 50.8545 EUR, passed the preset's provisional 50 EUR ceiling. The approver
   approved `warn_eur` 65 and `ceiling_eur` 80 in chat on 2026-11-18 ("ok, avviso 65 € e tetto 80 €, procedi").
+- **`scripts/pre-review.sh main` stops at Prettier on this branch:** the branch changes 1474 files, nearly all dry-run
+  records, and `npx` passes them as one shell string longer than the kernel's 128 KiB limit for a single argument, so
+  Prettier exits 249 and prints nothing. The script's checks were run by hand instead: Markdown passed in the script,
+  Prettier in batches of 200 files, then eslint, tsc, and the touched tests with the traceability test, all green.
