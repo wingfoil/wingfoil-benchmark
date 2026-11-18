@@ -38,6 +38,8 @@ export interface DryRunKey {
    * recorded no version still does, as one stored without an arm digest.
    */
   readonly agent?: { readonly name: string; readonly version: string };
+  /** Who pins this key, as a skip reason names it: `the campaign` unless a dry run's profile does (bug-033). */
+  readonly pinnedBy?: string;
 }
 
 /** A stored dry run: where it is, what it cost per step and in total (USD), and what it ran with. */
@@ -119,6 +121,7 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
     .sort((a, b) => b - a);
   const records: DryRunRecord[] = [];
   let skipped: string | undefined;
+  const pinnedBy = key.pinnedBy ?? 'the campaign';
   for (const execution of executions) {
     const dir = join(root, String(execution));
     const file = join(dir, 'runs', `${key.id}@${key.version}`, key.arm, key.model, 'r1', 'run.json');
@@ -132,7 +135,7 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
     }
     if (key.armDigest !== undefined && typeof run.arm_digest === 'string' && !run.arm_digest.startsWith(key.armDigest)) {
       if (records.length === 0) {
-        skipped ??= `dry run ${execution} ran arm ${key.arm} at digest ${run.arm_digest.slice(0, 12)}, the campaign pins ${key.armDigest}`;
+        skipped ??= `dry run ${execution} ran arm ${key.arm} at digest ${run.arm_digest.slice(0, 12)}, ${pinnedBy} pins ${key.armDigest}`;
       }
       continue;
     }
@@ -146,14 +149,14 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
     ) {
       if (records.length === 0) {
         const ran = [agentName, agentVersion].filter((part) => part !== undefined).join(' ');
-        skipped ??= `dry run ${execution} ran agent ${ran}, the campaign pins ${key.agent.name} ${key.agent.version}`;
+        skipped ??= `dry run ${execution} ran agent ${ran}, ${pinnedBy} pins ${key.agent.name} ${key.agent.version}`;
       }
       continue;
     }
     const ranOn = key.harness === undefined ? undefined : profileHarnessPin(dir, key.harness.tool);
     if (key.harness !== undefined && ranOn !== undefined && !samePin(ranOn, key.harness.pin)) {
       if (records.length === 0) {
-        skipped ??= `dry run ${execution} ran ${key.harness.tool} ${pinText(ranOn)}, the campaign pins ${pinText(key.harness.pin)}`;
+        skipped ??= `dry run ${execution} ran ${key.harness.tool} ${pinText(ranOn)}, ${pinnedBy} pins ${pinText(key.harness.pin)}`;
       }
       continue;
     }

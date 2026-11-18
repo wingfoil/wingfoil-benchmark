@@ -362,8 +362,8 @@ describe('bench scenario dry-run: the run (F3.3, REQ-RES-01, REQ-NFR-06)', () =>
     // The arm changed since: its digest is another, and so is what it measures.
     writeFileSync(join(root, 'arms', 'baseline', 'manual.md'), 'another manual\n');
     const changed = await dryRun(root, ['T3@1.0', '--arm', 'baseline'], p());
-    expect(changed.stdout.split('\n')[0]).toBe(
-      'dry run T3@1.0 in baseline on fake-model: no dry run yet; this one may spend up to its cap, 1 EUR',
+    expect(changed.stdout.split('\n')[0]).toMatch(
+      /^dry run T3@1\.0 in baseline on fake-model: no dry run counts \(dry run 1 ran arm baseline at digest [0-9a-f]{12}, the profile pins [0-9a-f]+; a dry run always keys on the arm's digest, which an unpinned campaign's estimate does not\); this one may spend up to its cap, 1 EUR$/,
     );
 
     // Another WingFoil pin: the docs control's rules are generated from that harness (its source arm's).
@@ -372,9 +372,8 @@ describe('bench scenario dry-run: the run (F3.3, REQ-RES-01, REQ-NFR-06)', () =>
       harnesses: { wingfoil: { tool: 'wingfoil', version: other } },
     });
     const repinned = await dryRun(root, ['T3@1.0', '--arm', 'baseline-docs'], p());
-    expect(repinned.stdout.split('\n')[0]).toBe(
-      'dry run T3@1.0 in baseline-docs on fake-model: no dry run yet; this one may spend up to its cap, 1 EUR',
-    );
+    expect(repinned.stdout.split('\n')[0]).toContain('no dry run counts (dry run 2 ran wingfoil ');
+    expect(repinned.stdout.split('\n')[0]).toContain(`the profile pins ${other}`);
 
     // Another agent release (REQ-CLI-02 as amended in 1.59, task-152): the baseline's dry runs ran 1.0.0.
     writeDryRunProfile(root, {
@@ -383,8 +382,8 @@ describe('bench scenario dry-run: the run (F3.3, REQ-RES-01, REQ-NFR-06)', () =>
       agent: { name: 'fake', version: '1.0.1' },
     });
     const newAgent = await dryRun(root, ['T3@1.0', '--arm', 'baseline'], p());
-    expect(newAgent.stdout.split('\n')[0]).toBe(
-      'dry run T3@1.0 in baseline on fake-model: no dry run yet; this one may spend up to its cap, 1 EUR',
+    expect(newAgent.stdout.split('\n')[0]).toContain(
+      'no dry run counts (dry run 3 ran agent fake 1.0.0, the profile pins fake 1.0.1; ',
     );
   });
 
