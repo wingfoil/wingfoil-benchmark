@@ -93,3 +93,5 @@ profile and scenario stays valid.
   it is missing or invalid, the empty seed is recognised by asking git for an empty commit and not by git's words, which
   change with its locale, and the reasons and the `CHANGED` case it found untested are tested. These last fixes were not
   reviewed again.
+- **The full suites (2026-11-18, commit `433a9015`):** lint, build, `test` 2498 passed and 10 skipped, `test:bin` 22
+  passed, `test:docker` 22 passed and 2 skipped.
