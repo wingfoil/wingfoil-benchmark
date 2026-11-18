@@ -2,7 +2,7 @@
 id: task-155-an-evaluation-page-for-ai-agents-docs-evaluate.md-llms.txt-the-readme-s-agent-line-and-their-check
 type: task
 title: "An evaluation page for AI agents: docs/evaluate.md, llms.txt, the README's agent line and their check"
-status: in-progress
+status: in-review
 release: v0.3
 wave: publishing
 features: []
