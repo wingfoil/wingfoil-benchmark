@@ -3,14 +3,17 @@
 // preset, the stored estimate and the dry runs, so that no figure of docs/calibration/v0.3.md §6 is typed by hand. It
 // runs no agent, spends nothing and writes nothing; it prints Markdown.
 //
-// Usage: node scripts/budget-reading.mjs budget|loops <root> --campaign <file> --estimate <file> [--after <n>]
-//          [--skip <n>]
+// Usage: node scripts/budget-reading.mjs budget <root> --campaign <file> --estimate <file> [--after <n>] [--skip <n>]
+//          [--slept <n>]
+//        node scripts/budget-reading.mjs loops <root> [--after <n>] [--skip <n>]
+//   --campaign, --estimate  paths relative to <root>, or absolute
 //   budget     the table of the budget, the caps, fail_fast and the rate, each with what it was set against
 //   loops      how the dry runs' review loops ended
 //   --after    the dry runs numbered above <n> (default 0)
 //   --skip     a superseded dry run left out
+//   --slept    a dry run the machine slept through, left out of the longest step
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 import { parse } from 'yaml';
 
@@ -20,12 +23,13 @@ for (let index = 0; index < rest.length; index += 2)
   options[rest[index].replace(/^--/, '')] = rest[index + 1];
 if (!['budget', 'loops'].includes(kind) || root === undefined) {
   console.error(
-    'usage: budget-reading.mjs budget|loops <root> --campaign <file> --estimate <file> [--after <n>]',
+    'usage: budget-reading.mjs budget|loops <root> [--campaign <file> --estimate <file>] [--after <n>] [--skip <n>]',
   );
   process.exit(2);
 }
 const after = Number(options.after ?? 0);
 const skip = options.skip === undefined ? undefined : Number(options.skip);
+const slept = options.slept === undefined ? undefined : Number(options.slept);
 
 /** Every stored run of the dry runs read: its number, its record and its loop, if it ran one. */
 const records = [];
@@ -52,6 +56,11 @@ for (const n of readdirSync(base)
       }
 }
 
+if (records.length === 0) {
+  console.error('no dry run read');
+  process.exit(2);
+}
+
 if (kind === 'loops') {
   const loops = records.filter((record) => record.loop !== undefined);
   const others = loops.filter((record) => record.loop.outcome !== 'clean');
@@ -65,11 +74,20 @@ if (!options.campaign || !options.estimate) {
   console.error('budget needs --campaign and --estimate');
   process.exit(2);
 }
-const campaignFile = join(root, options.campaign);
+/** REQ-FMT-01, as `mergePreset` in src/campaign/load.ts: maps merge at every level, any other value is replaced. */
+const isMap = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
+const merge = (preset, file) => {
+  if (!isMap(preset) || !isMap(file)) return file;
+  const merged = { ...preset };
+  for (const [key, value] of Object.entries(file))
+    merged[key] = key in preset ? merge(preset[key], value) : value;
+  return merged;
+};
+const campaignFile = resolve(root, options.campaign);
 const own = parse(readFileSync(campaignFile, 'utf8'));
 const preset = own.extends ? parse(readFileSync(join(dirname(campaignFile), own.extends), 'utf8')) : {};
-const spec = { ...preset, ...own };
-const high = /high ([\d.]+) EUR at/.exec(readFileSync(options.estimate, 'utf8'))?.[1];
+const spec = merge(preset, own);
+const high = /high ([\d.]+) EUR at/.exec(readFileSync(resolve(root, options.estimate), 'utf8'))?.[1];
 if (high === undefined) {
   console.error('the estimate names no high in EUR');
   process.exit(2);
@@ -82,7 +100,11 @@ const largest = (items, pick) => items.reduce((top, item) => (pick(item) > pick(
 const tokens = ({ usage }) =>
   usage.inputTokens + usage.outputTokens + usage.cacheCreationInputTokens + usage.cacheReadInputTokens;
 const runCost = (record) => record.run.steps.reduce((sum, step) => sum + step.usage.costEur, 0);
-const longest = largest(steps, (step) => step.usage.durationMs);
+const longest = largest(
+  steps.filter((step) => step.n !== slept),
+  (step) => step.usage.durationMs,
+);
+const sleptNote = slept === undefined ? '' : `; \`${slept}\` left out, the machine slept through it`;
 const heaviest = largest(steps, tokens);
 const dearest = largest(records, runCost);
 const dearestLoop = largest(
@@ -112,7 +134,7 @@ row(
 row(
   'caps.step_time_s',
   spec.caps.step_time_s,
-  `the longest step ${Math.round(longest.usage.durationMs / 1000)} s (\`${longest.n}\`, step ${longest.step}); a guard`,
+  `the longest step ${Math.round(longest.usage.durationMs / 1000)} s (\`${longest.n}\`, step ${longest.step}${sleptNote}); a guard`,
 );
 row(
   'caps.step_tokens',

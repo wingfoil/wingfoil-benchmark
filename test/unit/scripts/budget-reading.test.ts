@@ -83,6 +83,56 @@ describe('scripts/budget-reading.mjs (task-154)', () => {
     expect(result.stdout).toContain('the dearest whole loop 0.4000 EUR (`2`)');
   });
 
+  it('merges a partial override as the campaign loader does, and leaves a slept dry run out of the durations', () => {
+    const root = fixture();
+    writeFileSync(
+      join(root, 'campaigns', 'c.yaml'),
+      'extends: presets/p.yaml\nbudget: { warn_eur: 15 }\ncaps: { run_cost_eur: 5 }\n',
+    );
+    const result = spawnSync(
+      'node',
+      [
+        SCRIPT,
+        'budget',
+        root,
+        '--campaign',
+        'campaigns/c.yaml',
+        '--estimate',
+        'estimate.txt',
+        '--skip',
+        '3',
+        '--slept',
+        '1',
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("| `budget.ceiling_eur` | 2 | 0.20 times the estimate's high |");
+    expect(result.stdout).toContain(
+      '| `caps.step_time_s` | 1800 | the longest step 2 s (`2`, step 1; `1` left out, the machine slept through it); a guard |',
+    );
+  });
+
+  it('stops with a message when no dry run is read', () => {
+    const result = spawnSync(
+      'node',
+      [
+        SCRIPT,
+        'budget',
+        fixture(),
+        '--campaign',
+        'campaigns/c.yaml',
+        '--estimate',
+        'estimate.txt',
+        '--after',
+        '99',
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('no dry run read');
+  });
+
   it('counts how the loops ended and names the ones that did not close clean', () => {
     const result = run(fixture(), 'loops');
     expect(result.stdout.trim()).toBe(

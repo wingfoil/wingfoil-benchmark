@@ -108,9 +108,37 @@ describe('scripts/hypotheses-reading.mjs (task-154)', () => {
     expect(result.stdout).toContain(
       '| H1 | the ratio falls on at least three of the four scenarios, and below 1.5× on S1 | not met: S1 2×',
     );
-    expect(result.stdout).toContain('| H2 | the ratio falls on S1, from 2.5× | not met: 3× |');
+    expect(result.stdout).toContain('| H2 | the ratio falls on S1, from 1.8× | not met: 3× |');
     expect(result.stdout).toContain('| H4 | 3/3 in every wingfoil run | not met: 0 of 2 runs |');
     expect(result.stdout).toContain('more than one test below the baseline: S2 `4` (21/24 against 24)');
+  });
+
+  it('says "not read" where a verdict lacks its data, and refuses an unknown option (review of task-154)', () => {
+    const root = tempDir('bench-hypotheses-');
+    dryRun(root, 1, 'baseline', 1, 10);
+    dryRun(root, 2, 'wingfoil', 1, 10);
+    dryRun(root, 3, 'baseline-docs', 1, 10);
+    const result = spawnSync('node', [SCRIPT, root], { encoding: 'utf8' });
+    expect(result.status).toBe(0);
+    const row = (id: string) =>
+      result.stdout
+        .split('\n')
+        .filter((line) => line.startsWith(`| ${id} |`))
+        .at(-1);
+    expect(row('H5')).toContain('| not read |');
+    expect(row('H8')).toContain('| not read: it needs S1, S2, S3 and S8 |');
+    expect(row('H10')).toContain('| not read |');
+    expect(row('H11')).toContain('| not read |');
+    const unknown = spawnSync('node', [SCRIPT, root, '--aftr', '1'], { encoding: 'utf8' });
+    expect(unknown.status).toBe(2);
+  });
+
+  it('leaves out a superseded dry run with --skip', () => {
+    const root = tempDir('bench-hypotheses-');
+    dryRun(root, 1, 'baseline', 0.2, 20);
+    dryRun(root, 2, 'baseline', 0.4, 30);
+    const result = spawnSync('node', [SCRIPT, root, '--skip', '2'], { encoding: 'utf8' });
+    expect(result.stdout).toContain(`| baseline | 1 | 0.2000 | 20 |`);
   });
 
   it('refuses to average scores of different totals and states how many runs a mean holds', () => {

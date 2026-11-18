@@ -6,10 +6,11 @@
 // replaced by the reference campaign's.
 // It runs no agent, spends nothing and writes nothing; it prints Markdown for docs/calibration/v0.3.md.
 //
-// Usage: node scripts/hypotheses-reading.mjs <root> [--version <v>] [--after <n>] [--through <n>]
+// Usage: node scripts/hypotheses-reading.mjs <root> [--version <v>] [--after <n>] [--through <n>] [--skip <n>]
 //   --version  the scenario version read (default 1.1)
 //   --after    the dry runs numbered above <n> (default 0)
 //   --through  the dry runs numbered up to <n> (default: every one)
+//   --skip     a superseded dry run left out
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -17,13 +18,17 @@ const [root, ...rest] = process.argv.slice(2);
 const options = {};
 for (let index = 0; index < rest.length; index += 2)
   options[rest[index].replace(/^--/, '')] = rest[index + 1];
-if (root === undefined) {
-  console.error('usage: hypotheses-reading.mjs <root> [--version <v>] [--after <n>] [--through <n>]');
+const known = ['version', 'after', 'through', 'skip'];
+if (root === undefined || Object.keys(options).some((name) => !known.includes(name))) {
+  console.error(
+    'usage: hypotheses-reading.mjs <root> [--version <v>] [--after <n>] [--through <n>] [--skip <n>]',
+  );
   process.exit(2);
 }
 const version = options.version ?? '1.1';
 const after = Number(options.after ?? 0);
 const through = options.through === undefined ? Infinity : Number(options.through);
+const skip = options.skip === undefined ? undefined : Number(options.skip);
 
 const directories = (dir) =>
   existsSync(dir) ? readdirSync(dir).filter((name) => statSync(join(dir, name)).isDirectory()) : [];
@@ -35,7 +40,7 @@ const keys = new Map();
 const base = join(root, 'results', 'dry-runs');
 for (const n of directories(base)
   .map(Number)
-  .filter((n) => n > after && n <= through)
+  .filter((n) => n > after && n <= through && n !== skip)
   .sort((a, b) => a - b)) {
   for (const scenario of directories(join(base, String(n), 'runs')).filter((name) =>
     name.endsWith(`@${version}`),
@@ -216,9 +221,9 @@ for (const model of models)
 
 // The verdicts, each against v0.1.md §11's "Holds when", on Sonnet 5.5, the model every arm ran.
 const READ_MODEL = models.includes('claude-sonnet-5-5') ? 'claude-sonnet-5-5' : models.at(-1);
-/** v0.1.md §11's "Today" (v0.2.2): the ratios H1 and H2 must fall from. */
-const TODAY = { S1: 2.31, S2: 1.51, S3: 2.73, S8: 2.1 };
-const TODAY_TURNS_S1 = 2.5;
+/** v0.2.md §9's bridge (v0.2.2 on Sonnet 5.5, the same model): the ratios H1 and H2 must fall from. */
+const TODAY = { S1: 1.81, S2: 1.43, S3: 2.18, S8: 1.87 };
+const TODAY_TURNS_S1 = 1.8;
 const IDS = ['S1', 'S2', 'S3', 'S8'];
 const runsOf = (id, arm) => keys.get(`${at(id)} ${arm} ${READ_MODEL}`)?.runs ?? [];
 const keyRatio = (id, arm, other, field) => {
@@ -232,27 +237,43 @@ const f1Holds = (run) => run.f1 !== undefined && run.f1.consistent >= 4;
 const meanTests = (runs, pick) => mean(runs.map(pick).filter((item) => item !== undefined));
 const control = (arm) => (arm === 'wingfoil' ? 'baseline-docs' : 'baseline-docs-configured');
 
-/** The runs more than one test below the baseline's mean, public and hold-out, every scenario. */
-const belowBaseline = (arm) =>
-  IDS.flatMap((id) => {
-    const baseline = runsOf(id, 'baseline');
-    if (baseline.length === 0) return [];
-    const side = (label, pick) => {
-      const level = meanTests(baseline, (run) => pick(run)?.passed);
-      return runsOf(id, arm)
-        .filter((run) => pick(run) !== undefined && pick(run).passed < level - 1)
-        .map(
-          (run) =>
+/** The runs more than one test below the baseline's mean, public and hold-out, and the sides that cannot be read. */
+const belowBaseline = (arm) => {
+  const below = [];
+  const unread = [];
+  for (const id of IDS) {
+    if (runsOf(id, arm).length === 0) continue;
+    for (const [label, pick] of [
+      ['', (run) => run.q1],
+      [' hold-out', (run) => run.holdout],
+    ]) {
+      const levels = runsOf(id, 'baseline').flatMap((run) => pick(run)?.passed ?? []);
+      if (levels.length === 0 || runsOf(id, arm).some((run) => pick(run) === undefined)) {
+        unread.push(`${id}${label}`);
+        continue;
+      }
+      const level = mean(levels);
+      for (const run of runsOf(id, arm))
+        if (pick(run).passed < level - 1)
+          below.push(
             `${id}${label} \`${run.n}\` (${pick(run).passed}/${pick(run).total} against ${round(level, 1)})`,
-        );
-    };
-    return [...side('', (run) => run.q1), ...side(' hold-out', (run) => run.holdout)];
-  });
+          );
+    }
+  }
+  return { below, unread };
+};
 
 const engineDeclared = () => {
   const file = join(root, 'arms', 'wingfoil', 'arm.yaml');
   return existsSync(file) && /^\s*workflow-engine:\s*true\s*$/m.test(readFileSync(file, 'utf8'));
 };
+/** The scenario versions read whose scenario.yaml names the engine, so that H7's second half can be stated. */
+const engineRequired = () =>
+  scenarios.filter((scenario) => {
+    const [id, number] = scenario.split('@');
+    const file = join(root, 'scenarios', id, number, 'scenario.yaml');
+    return existsSync(file) && readFileSync(file, 'utf8').includes('workflow-engine');
+  });
 
 const H11_PICKS = [
   ['S1', (run) => run.q1.passed],
@@ -311,8 +332,9 @@ const rows = [
       const other = runsOf('S8', control(arm));
       if (runs.length === 0 || other.length === 0) return 'not read';
       const kept = runs.filter(allChecks).length;
+      if ([...runs, ...other].some((run) => run.holdout === undefined)) return 'not read';
       const [publicA, publicB] = [runs, other].map((side) => meanTests(side, (run) => run.q1.passed));
-      const [holdA, holdB] = [runs, other].map((side) => meanTests(side, (run) => run.holdout?.passed));
+      const [holdA, holdB] = [runs, other].map((side) => meanTests(side, (run) => run.holdout.passed));
       return verdict(
         kept === runs.length && publicA >= publicB && holdA >= holdB,
         `${kept} of ${runs.length} runs keep every rule check; public ${round(publicA, 1)} against ` +
@@ -324,27 +346,41 @@ const rows = [
     'H6',
     'no scenario falls below its v0.1 wingfoil value by more than one test',
     (arm) => {
-      const below = belowBaseline(arm);
+      const { below, unread } = belowBaseline(arm);
       return (
         'not read against v0.1 (other scenario versions); more than one test below the baseline: ' +
-        (below.length === 0 ? 'none' : below.join(', '))
+        (below.length === 0 ? 'none' : below.join(', ')) +
+        (unread.length === 0 ? '' : `; not read: ${unread.join(', ')}`)
       );
     },
   ],
   [
     'H7',
-    '`workflow-engine: true`',
-    (arm) => (arm === 'wingfoil' ? verdict(engineDeclared(), '`arms/wingfoil/arm.yaml`') : '—'),
+    '`workflow-engine: true`, and a scenario that requires it is not an expected failure',
+    (arm) => {
+      if (arm !== 'wingfoil') return '—';
+      const required = engineRequired();
+      return verdict(
+        engineDeclared(),
+        `\`arms/wingfoil/arm.yaml\`; scenarios that require it: ${required.join(', ') || 'none'}`,
+      );
+    },
   ],
   [
     'H8',
     "the mean at most 1.1× the docs control, with M-F1 ≥ 4/5 and S2's checks 3/3",
     (arm) => {
-      const read = IDS.map((id) => keyRatio(id, arm, control(arm), 'eur')).filter((r) => r !== undefined);
-      if (read.length === 0) return 'not read';
+      const read = IDS.map((id) => keyRatio(id, arm, control(arm), 'eur'));
+      const [s3, s2] = [runsOf('S3', arm), runsOf('S2', arm)];
+      if (read.includes(undefined) || s3.length === 0 || s2.length === 0)
+        return 'not read: it needs S1, S2, S3 and S8';
       const m = mean(read);
-      const held = m <= 1.1 && runsOf('S3', arm).every(f1Holds) && runsOf('S2', arm).every(allChecks);
-      return verdict(held, `mean ${round(m, 2)}×`);
+      const f1 = s3.filter(f1Holds).length;
+      const checks = s2.filter(allChecks).length;
+      return verdict(
+        m <= 1.1 && f1 === s3.length && checks === s2.length,
+        `mean ${round(m, 2)}×; M-F1 held in ${f1} of ${s3.length} runs, S2's checks in ${checks} of ${s2.length}`,
+      );
     },
   ],
   ['H9', 'the advantage grows from L1 to L3', () => 'not read: these scenarios are L1'],
@@ -354,8 +390,9 @@ const rows = [
     (arm) => {
       if (arm !== 'wingfoil') return '—';
       const unsaturated = unsaturatedOf(READ_MODEL);
+      if (unsaturated.length === 0) return 'not read';
       const held = unsaturated.every((item) => item.split(' ')[1] === '0');
-      return verdict(held, `arms below it: ${unsaturated.join(', ') || 'none read'}`);
+      return verdict(held, `arms below it: ${unsaturated.join(', ')}`);
     },
   ],
   [
@@ -368,6 +405,7 @@ const rows = [
         gainOf(at(id), 'claude-haiku-5-5', pick),
         gainOf(at(id), 'claude-sonnet-5-5', pick),
       ]).filter(([weak, strong]) => weak !== undefined && strong !== undefined);
+      if (pairs.length === 0) return 'not read';
       const larger = pairs.filter(([weak, strong]) => weak > strong).length;
       const smaller = pairs.filter(([weak, strong]) => weak < strong).length;
       return verdict(
