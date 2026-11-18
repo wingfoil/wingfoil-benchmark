@@ -1,6 +1,11 @@
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import { renderMarkdown } from '../../../src/site/markdown.js';
+import { repoPath } from '../../support/paths.js';
 
 const html = (text: string, blocks: Record<string, string> = {}) => renderMarkdown(text, { blocks }).html;
 
@@ -106,5 +111,89 @@ describe('the site Markdown subset (task-046)', () => {
     expect(html("| a | b |\n|---|---|\n| it's a ` tick | two |\n")).toContain(
       '<tr><td>it&#39;s a ` tick</td><td>two</td></tr>',
     );
+  });
+});
+
+describe('ordered lists in the site Markdown subset (task-156, bug-037)', () => {
+  it('renders a numbered list as an ordered list, its items as a bullet item takes them', () => {
+    expect(html('1. a\n2. c\n')).toBe('<ol>\n<li>a</li>\n<li>c</li>\n</ol>\n');
+    expect(html('1. one\n   continued {#first}\n2. two\n')).toBe(
+      '<ol>\n<li id="first">one continued</li>\n<li>two</li>\n</ol>\n',
+    );
+    expect(html('1. a\n\n2. b\n')).toBe('<ol>\n<li>a</li>\n<li>b</li>\n</ol>\n');
+  });
+
+  it('keeps the number a list starts at', () => {
+    expect(html('3. a\n4. b\n')).toBe('<ol start="3">\n<li>a</li>\n<li>b</li>\n</ol>\n');
+  });
+
+  it('starts a new list when the marker changes', () => {
+    expect(html('- a\n1. b\n')).toBe('<ul>\n<li>a</li>\n</ul>\n<ol>\n<li>b</li>\n</ol>\n');
+    expect(html('1. a\n- b\n')).toBe('<ol>\n<li>a</li>\n</ol>\n<ul>\n<li>b</li>\n</ul>\n');
+  });
+
+  it('lets only a line starting 1. open a list inside a text', () => {
+    expect(html('Intro\n2026. was the year\n')).toBe('<p>Intro 2026. was the year</p>\n');
+    expect(html('Intro\n1. a\n')).toBe('<p>Intro</p>\n<ol>\n<li>a</li>\n</ol>\n');
+    expect(html('- a\n  2. b\n')).toBe('<ul>\n<li>a 2. b</li>\n</ul>\n');
+  });
+
+  it('nests a list of either kind inside an item of the other', () => {
+    expect(html('1. a\n   - b\n2. c\n')).toBe(
+      '<ol>\n<li>a\n<ul>\n<li>b</li>\n</ul>\n</li>\n<li>c</li>\n</ol>\n',
+    );
+    expect(html('- a\n  1. b\n  2. c\n- d\n')).toBe(
+      '<ul>\n<li>a\n<ol>\n<li>b</li>\n<li>c</li>\n</ol>\n</li>\n<li>d</li>\n</ul>\n',
+    );
+  });
+
+  it('keeps every nested list of an item', () => {
+    expect(html('1. a\n   - b\n   1. c\n')).toBe(
+      '<ol>\n<li>a\n<ul>\n<li>b</li>\n</ul>\n<ol>\n<li>c</li>\n</ol>\n</li>\n</ol>\n',
+    );
+  });
+
+  it('renders a bullet indented at the top level as a list', () => {
+    expect(html('  - a\n  - b\n')).toBe('<ul>\n<li>a</li>\n<li>b</li>\n</ul>\n');
+  });
+
+  it('finishes on every shape that used to hang, in a process a regression cannot block', () => {
+    const inputs = [
+      '1. a\n   - b\n2. c\n',
+      '  - a\n1. b\n',
+      '   - a\n',
+      ' * a\n  - b\n - c\n',
+      '- a\n   - b\n  - c\n- d\n',
+      '   1. a\n 2. b\n',
+      '| not a table\n  - a\n|---|\n',
+    ];
+    const module = pathToFileURL(repoPath('src/site/markdown.ts')).href;
+    const script =
+      `const { renderMarkdown } = await import(${JSON.stringify(module)});` +
+      `for (const input of JSON.parse(process.argv[1])) renderMarkdown(input);` +
+      `console.log('finished');`;
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--max-old-space-size=256',
+        '--import',
+        'tsx',
+        '--input-type=module',
+        '-e',
+        script,
+        JSON.stringify(inputs),
+      ],
+      { cwd: repoPath(''), encoding: 'utf8', timeout: 20_000 },
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.stdout.trim()).toBe('finished');
+  }, 30_000);
+
+  it('shows the eligibility page five criteria as an ordered list (characterization)', () => {
+    const page = html(readFileSync(repoPath('site-content/eligibility.md'), 'utf8'));
+    expect(page).toContain('<ol>\n<li><strong>agent-and-model</strong> — it runs with the campaign');
+    for (const id of ['pinnable', 'headless-container', 'workflow-harness', 'no-own-llm'])
+      expect(page).toContain(`<li><strong>${id}</strong> — `);
+    expect(page).not.toContain('<p>1. ');
   });
 });

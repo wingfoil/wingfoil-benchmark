@@ -71,3 +71,10 @@ and no Markdown input can stop the renderer from finishing.
 - **No spending:** no agent runs, and no campaign or dry run is touched.
 
 ## Execution notes
+
+- **Red first:** the new tests failed before the fix. Three of them hung in the test process and were stopped by a
+  timeout, which is the defect itself; the bounded test runs the renderer in a child process.
+- **The guard is structural:** a paragraph now starts from the line no other block took, and a list reads its own first
+  item, so the reader advances without a branch that no input could reach.
+- **The published sources (characterization):** all 32 rendered sources (the manuals, `site-content/`, the directives
+  and the notices) were rendered with main's build and with this branch's. Only `site-content/eligibility.md` differs.
