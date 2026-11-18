@@ -3,6 +3,7 @@
 // links on every run and leaves these out, so that it needs no network. It only reads the files and requests each link.
 //
 // Usage: node scripts/check-external-links.mjs [file…]   (default: llms.txt and docs/evaluate.md)
+/* global fetch, AbortSignal -- Node's own, which the lint's script globals do not list. */
 import { readFileSync } from 'node:fs';
 
 const TIMEOUT_MS = 15_000;
