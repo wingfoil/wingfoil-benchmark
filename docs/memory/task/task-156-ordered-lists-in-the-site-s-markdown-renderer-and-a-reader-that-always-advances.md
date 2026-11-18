@@ -85,3 +85,6 @@ and no Markdown input can stop the renderer from finishing.
   next item, and the shapes that once hung now render in a child process so a regression fails its own test.
 - **After the review's fixes:** 200 000 random list-shaped inputs finished with no word lost, none out of order and
   every list tag balanced. `scripts/pre-review.sh main` is green. These last fixes were not reviewed again.
+- **The full suites (2026-11-18, commit `2ef8599e`):** lint, build, `test` 2464 passed and 10 skipped, `test:bin` 22
+  passed, `test:docker` 22 passed and 2 skipped. The first run failed one test, because task-155 had no requirement.
+  The approver chose `REQ-NFR-02` for it, and main's fix was merged into this branch before the second run.
