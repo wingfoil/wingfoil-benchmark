@@ -83,3 +83,5 @@ and no Markdown input can stop the renderer from finishing.
 - **The independent review (2026-11-18) found no blocker.** Its findings are fixed: a wrapped number stays in its item
   and in written order, a number after a bullet item stays text, a blank line stays in a list only before that list's
   next item, and the shapes that once hung now render in a child process so a regression fails its own test.
+- **After the review's fixes:** 200 000 random list-shaped inputs finished with no word lost, none out of order and every
+  list tag balanced. `scripts/pre-review.sh main` is green. These last fixes were not reviewed again.
