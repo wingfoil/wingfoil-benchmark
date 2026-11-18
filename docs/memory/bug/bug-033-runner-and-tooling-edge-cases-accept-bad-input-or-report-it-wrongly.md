@@ -3,7 +3,7 @@ id: bug-033-runner-and-tooling-edge-cases-accept-bad-input-or-report-it-wrongly
 type: bug
 title: "Runner and tooling edge cases accept bad input or report it wrongly"
 status: approved
-# fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
+fixed_by: task-157-runner-and-tooling-edge-cases-refuse-bad-input-early-and-report-it-rightly
 tags: ["v0.3"]
 ---
 
