@@ -106,3 +106,5 @@ states v0.2's published results and v0.3's calibration, each with its version an
 - **A second independent review (2026-11-18) recomputed the page from the stored scores.** Its findings are fixed: S1's
   spread as the 21 runs show it, WingFoil's S8 result beside the arms that match it, and its S2 loss with both dry runs.
   These last edits were not reviewed again.
+- **The full suites (2026-11-18, commit `59374db9`):** lint, build, `test` 2509 passed and 10 skipped, `test:bin` 22
+  passed, `test:docker` 22 passed and 2 skipped.
