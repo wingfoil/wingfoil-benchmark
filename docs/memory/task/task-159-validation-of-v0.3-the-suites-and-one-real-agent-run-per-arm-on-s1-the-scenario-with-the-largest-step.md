@@ -85,13 +85,19 @@ consent. The runs go one at a time, from the main checkout, behind the load gate
 
 ## Execution notes
 
+**The environment (criterion 3).** `bench campaign validate` lists `BENCH_AGENT_TOKEN_FILE`, `BENCH_WINGFOIL_REPO`,
+`BENCH_SPECKIT_REPO`, `BENCH_HOLDOUT_PATH` and the effort of `claude-sonnet-5-5`, each set.
+
 **The suites (criterion 1).** `scripts/full-suites.sh main` at `9e35fcc3`: lint, tests (2521 passed), build, binary and
 Docker stages green, statement coverage 97.05 %.
 
 **The runs (criterion 4).** Execution `2ee46ad9e617/1`, 2026-11-18, 16:45 to 17:53 UTC: thirteen runs, all `completed`,
 none failed, each with its review loop recorded and clean. Twelve loops were clean at round 1. The wingfoil arm's was
-clean at round 2: round 1 found one blocker in the run's own code (a `./index.ts` import that its type check rejects),
-which the fixer corrected.
+clean at round 2. Round 1 found one blocker in the run's own code: a `./index.ts` import that its type check rejects.
+The fixer kept the import and added `rewriteRelativeImportExtensions` to `tsconfig.json`, which removes that error, and
+said that a full `tsc` still fails on other errors. Round 2 is clean under the loop's rule because it found only nits,
+so it does not show that the type check passes. The fixer's approval is a sixth intervention, outside the five that this
+run's ledger line counts for its steps.
 
 **Spending.** 8.5909 EUR API-equivalent, nothing billed per token: the steps 7.5161 EUR (8.4289 USD), the review loops
 1.0749 EUR. The estimate's high was 9.7266 EUR, the warning 12 EUR and the ceiling 15 EUR.
@@ -100,6 +106,8 @@ which the fixer corrected.
 hold-out, the hold-out checkout unchanged. S1@1.1 saturates at this size, so these runs validate the chain and say
 nothing about the arms' relative quality. `bench run show` read all thirteen. `bench transcripts pack` wrote 65
 transcripts and 3 harness artifacts under the git-ignored `releases/2ee46ad9e617-1/`; no release was created.
+**The pack is incomplete:** it leaves out the 15 review-loop transcripts and the 3 configuring transcripts that
+REQ-CLI-11 requires, filed as [bug-054](../bug/bug-054-bench-transcripts-pack-leaves-out-the-review-loop-s-and-the-configuring-sessions-transcripts-that-req-cli-11-requires.md) and not fixed here.
 `bench site build` built 55 pages in a throwaway worktree, since removed, with a catalogue entry that existed only
 there: `site/` in the main checkout is what `bench site publish` sends, so the validation never entered it. Nothing was
 published. Every run's agent, effort, model, approver policy, arm digest and harness version match the campaign file.
@@ -107,3 +115,7 @@ The secret scan is clean on the results, on both archives and on the built site.
 
 **The ledger and the release (criteria 6 and 7).** Thirteen lines in `docs/calibration/v0.3-ledger.md`, and rel-v0-3's
 Release checklist names this task and the execution.
+
+**Checks (criterion 8).** `scripts/pre-review.sh main` has nothing to compare on main itself, so it ran against
+`origin/main`, over this task's commits: green. An independent read-only review recomputed the costs, pins, scores and
+ledger lines from the records and found them correct. It found bug-054, and its corrections to these notes are applied.
