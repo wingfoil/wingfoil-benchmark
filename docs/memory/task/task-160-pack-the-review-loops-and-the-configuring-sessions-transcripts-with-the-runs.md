@@ -2,7 +2,7 @@
 id: task-160-pack-the-review-loops-and-the-configuring-sessions-transcripts-with-the-runs
 type: task
 title: "Pack the review loops' and the configuring sessions' transcripts with the runs'"
-status: in-progress
+status: in-review
 release: v0.3
 wave: validation
 features: [F5.6, F7.5, F4.9]
