@@ -8,7 +8,6 @@ import { describe, expect, it } from 'vitest';
 import { renderOpenSpecConfig } from '../../../src/arms/index.js';
 import { checkCampaign, runCampaign } from '../../../src/runner/index.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
-import { registerEntry, TEST_REGISTER, writeRegister } from '../../support/eligibility-fixture.js';
 import { repoPath } from '../../support/paths.js';
 import { doubles } from '../../support/runner-doubles.js';
 
@@ -79,6 +78,12 @@ const record = (outputDir: string) =>
     generated_sha256?: string;
   };
 
+/** A checked campaign with another pin for the openspec arm, as no campaign check would let through. */
+function withPin<T extends { campaign: { spec: object } }>(checked: T, openspec: Record<string, unknown>): T {
+  const spec = { ...checked.campaign.spec, harnesses: { openspec } };
+  return { ...checked, campaign: { ...checked.campaign, spec } };
+}
+
 describe('the OpenSpec harness, built from the npm registry (REQ-FMT-12, REQ-RUN-14, task-071)', () => {
   it('builds it by version in the campaign image, with no clone and no git, and records its tarball as its commit', async () => {
     const { root, checked } = openspecRepo(false);
@@ -140,13 +145,10 @@ describe('the OpenSpec harness, built from the npm registry (REQ-FMT-12, REQ-RUN
     );
   });
 
-  it('refuses a commit pin: the registry has none', async () => {
-    const { checked } = openspecRepo(false, {
-      tool: 'openspec',
-      version: '1.14.0',
-      commit: '1'.repeat(40),
-    });
-    await expect(runCampaign(checked, doubles({ onRunOnce: build }))).rejects.toThrow(
+  it('refuses a commit pin at run time too, a guard behind the campaign check (bug-033)', async () => {
+    const { checked } = openspecRepo(false);
+    const pinned = withPin(checked, { tool: 'openspec', version: '1.14.0', commit: '1'.repeat(40) });
+    await expect(runCampaign(pinned, doubles({ onRunOnce: build }))).rejects.toThrow(
       'the openspec harness pins commit 1111111111111111111111111111111111111111, but openspec is fetched from the npm registry by version',
     );
   });
@@ -202,25 +204,10 @@ describe('renderOpenSpecConfig (REQ-FMT-14, task-071)', () => {
 });
 
 describe('a registry pin that is not a release (task-071 review)', () => {
-  it('is refused: npm would read it as a tag', async () => {
-    const repo = writeRepo(
-      {
-        ...completeCampaignYaml(),
-        arms: ['baseline', 'openspec'],
-        harnesses: { openspec: { tool: 'openspec', version: 'abc1234' } },
-        scenarios: [{ id: 'S1', version: '1.0' }],
-        repetitions: { S1: 1 },
-        agent: { name: 'fake', version: '1.0.0' },
-        models: { default: 'fake-model' },
-      },
-      ['S1@1.0'],
-    );
-    rmSync(join(repo.root, 'arms', 'openspec'), { recursive: true, force: true });
-    cpSync(repoPath('arms/openspec'), join(repo.root, 'arms', 'openspec'), { recursive: true });
-    writeRegister(repo.root, [...TEST_REGISTER, registerEntry('openspec', 'abc1234')]);
-    const checked = checkCampaign(repo.file);
-    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
-    await expect(runCampaign(checked.value, doubles({ onRunOnce: build }))).rejects.toThrow(
+  it('is refused at run time too, a guard behind the campaign check (bug-033): npm would read it as a tag', async () => {
+    const { checked } = openspecRepo(false);
+    const pinned = withPin(checked, { tool: 'openspec', version: 'abc1234' });
+    await expect(runCampaign(pinned, doubles({ onRunOnce: build }))).rejects.toThrow(
       'the openspec harness pins abc1234, which is not a released version of openspec',
     );
   });

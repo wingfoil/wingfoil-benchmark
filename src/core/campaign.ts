@@ -307,6 +307,52 @@ export interface ArmRequirement {
   readonly configuredOf?: string;
 }
 
+/** The tools fetched from the npm registry by version, with no clone (task-071): their package, by tool. */
+export const REGISTRY_PACKAGES: Readonly<Record<string, string>> = { openspec: '@fission-ai/openspec' };
+
+/** A released version, as a registry pin must be (task-071): npm reads anything else as a tag. */
+export const RELEASED_VERSION = /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+
+/**
+ * What a registry tool's pin must be (REQ-FMT-12, bug-033): a released version and no commit, refused here and not
+ * after an image is built. Only the `arms` checked are read; a configured arm's pin is its base arm's entry.
+ */
+export function registryPinIssues(
+  harnesses: Readonly<
+    Record<string, { readonly tool: string; readonly version: string; readonly commit?: string }>
+  >,
+  arms: readonly ArmRequirement[],
+): Issue[] {
+  const keys = new Set(
+    arms.flatMap(({ name, requires, configuredOf }) =>
+      requires === undefined ? [] : [configuredOf ?? name],
+    ),
+  );
+  return [...keys].sort().flatMap((key) => {
+    const harness = Object.hasOwn(harnesses, key) ? harnesses[key] : undefined;
+    if (harness === undefined || !Object.hasOwn(REGISTRY_PACKAGES, harness.tool)) return [];
+    const { tool, version, commit } = harness;
+    return [
+      ...(commit === undefined
+        ? []
+        : [
+            {
+              path: formatPath(['harnesses', key, 'commit']),
+              message: `${tool} is fetched from the npm registry by version: it has no commit to pin`,
+            },
+          ]),
+      ...(RELEASED_VERSION.test(version)
+        ? []
+        : [
+            {
+              path: formatPath(['harnesses', key, 'version']),
+              message: `'${version}' is not a released version of ${tool}, which the npm registry would read as a tag`,
+            },
+          ]),
+    ];
+  });
+}
+
 /**
  * Harness coverage (REQ-FMT-01, dl-003): an arm whose definition requires a tool pins that tool's
  * harness, and an arm that requires none pins nothing. Read from each arm's `requires`, so that a new

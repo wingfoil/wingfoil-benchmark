@@ -43,6 +43,9 @@ export {
   EFFORT_LEVELS,
   effortRefusal,
   harnessCoverage,
+  REGISTRY_PACKAGES,
+  registryPinIssues,
+  RELEASED_VERSION,
   missingEffort,
   modelId,
 } from './campaign.js';

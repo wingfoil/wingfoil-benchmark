@@ -10,6 +10,7 @@ import type { RunOnceRequest } from '../../../src/core/index.js';
 import { writeArmsNamed } from '../../support/arm-fixture.js';
 import { completeCampaignYaml } from '../../support/campaign-fixture.js';
 import { dryRunProfileYaml, writeDryRunProfile } from '../../support/dry-run-fixture.js';
+import { registerEntry, TEST_REGISTER, writeRegister } from '../../support/eligibility-fixture.js';
 import { FIXER_PROMPT, REVIEW_PROMPT, reviewLoopYaml } from '../../support/review-fixture.js';
 import { repoPath } from '../../support/paths.js';
 import { doubles } from '../../support/runner-doubles.js';
@@ -352,6 +353,7 @@ describe('bench scenario dry-run: the run (F3.3, REQ-RES-01, REQ-NFR-06)', () =>
     vi.stubEnv('BENCH_WINGFOIL_REPO', '/clones/wingfoil');
     const root = repository();
     const other = '0a1b2c3';
+    writeRegister(root, [...TEST_REGISTER, registerEntry('wingfoil', other)]);
     const p = () =>
       doubles({ commits: { '3df305e': SHA, [other]: '0a1b2c3d'.padEnd(40, '0') }, onRunOnce: oneOff });
     await dryRun(root, ['T3@1.0', '--arm', 'baseline'], p());
