@@ -40,7 +40,7 @@ export interface DryRunKey {
   readonly agent?: { readonly name: string; readonly version: string };
   /**
    * Set by a dry run quoting its own key (bug-033): its skip reasons say what the profile pins, and name every kind of
-   * dry run that does not count. An estimate's stay as they are.
+   * dry run that does not count. An estimate's reasons stay as they are.
    */
   readonly pinnedBy?: string;
 }
@@ -141,7 +141,9 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
           run.dry_run !== true
             ? `dry run ${execution} is not marked a dry run`
             : run.outcome !== 'completed'
-              ? `dry run ${execution} ended ${String(run.outcome)}`
+              ? run.outcome === undefined
+                ? `dry run ${execution} records no outcome`
+                : `dry run ${execution} ended ${String(run.outcome)}`
               : `dry run ${execution} ran other content of this scenario version`;
       }
       continue;

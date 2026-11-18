@@ -125,6 +125,18 @@ describe('scripts/full-suites.sh (dl-016, task-075)', () => {
     );
   });
 
+  it('says CHANGED when the worktree changes during the suites (bug-033)', () => {
+    const { root, out, env } = fixture();
+    writeFileSync(
+      join(root, 'bin', 'npm'),
+      '#!/usr/bin/env bash\n[ "$1" = run ] && echo edited > edited.txt\nexit 0\n',
+    );
+    expect(spawnSync('bash', [SCRIPT, 'task/x'], { env, encoding: 'utf8' }).status).toBe(0);
+    expect(readFileSync(join(day(out), 'summary.txt'), 'utf8')).toMatch(
+      /^task\/x [0-9a-f]+ CHANGED: LINT 0/m,
+    );
+  });
+
   it('says which branches it could not run, and a name that matches no worktree', () => {
     const { root, out, env } = fixture();
     expect(spawnSync('bash', [SCRIPT, 'task/x', 'task/typo'], { env, encoding: 'utf8' }).status).toBe(0);

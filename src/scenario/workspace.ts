@@ -31,12 +31,23 @@ export async function prepareWorkspace(directory: string, scenario: Scenario, gi
   try {
     await git.commitAll(directory, SEED_COMMIT);
   } catch (error) {
-    // A seed whose every file git ignores loads, and only git can tell (bug-033).
-    if (!/nothing (added )?to commit/.test((error as Error).message)) throw error;
-    throw new Error(
-      `the seed of ${scenario.id}@${scenario.version} gives its first commit nothing: git ignores every file it holds`,
-      { cause: error },
-    );
+    if (await commitsEmpty(directory, git)) {
+      throw new Error(
+        `the seed of ${scenario.id}@${scenario.version} gives its first commit nothing: git records none of the files it holds`,
+        { cause: error },
+      );
+    }
+    throw error;
+  }
+}
+
+/** Whether only an empty commit is left to make (bug-033): asked of git itself, whose words change with its locale. */
+async function commitsEmpty(directory: string, git: GitPort): Promise<boolean> {
+  try {
+    await git.commitAll(directory, SEED_COMMIT, { allowEmpty: true });
+    return true;
+  } catch {
+    return false;
   }
 }
 

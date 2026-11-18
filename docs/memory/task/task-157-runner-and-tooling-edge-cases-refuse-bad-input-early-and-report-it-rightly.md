@@ -89,3 +89,7 @@ profile and scenario stays valid.
 - **The review's other findings are fixed:** the dry run names every kind of dry run that does not count, also when an
   older one still counts; a seed git cannot commit fails in the benchmark's words; and the regressions it found
   untested are tested. A seed holding only links stays refused by the earlier link check, at the link's own path.
+- **A second independent review (2026-11-18) found no blocker.** Its findings are fixed: a note names the register when
+  it is missing or invalid, the empty seed is recognised by asking git for an empty commit and not by git's words, which
+  change with its locale, and the reasons and the `CHANGED` case it found untested are tested. These last fixes were not
+  reviewed again.

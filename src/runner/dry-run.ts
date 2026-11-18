@@ -125,7 +125,9 @@ export function checkDryRun(request: DryRunRequest, root: string): Result<Checke
   const pins = registryPinIssues(profile.value.harnesses, arms);
   if (pins.length > 0) return fail(pins);
   // A version the register does not admit runs, and is noted: dry runs are how it is studied (task-063, bug-033).
-  const notes = eligibilityOfPins(profile.value.harnesses, arms, root).map((issue) => issue.message);
+  const notes = eligibilityOfPins(profile.value.harnesses, arms, root).map((issue) =>
+    issue.path.startsWith('harnesses') ? issue.message : `${issue.path}: ${issue.message}`,
+  );
   // A configured arm, or a docs control of one, runs a configuration as a campaign's does (REQ-FMT-01 as
   // amended in 1.50, REQ-CLI-05 as amended in 1.54).
   const configured = configuredIssues(profile.value, [scenario.value], arms, root);

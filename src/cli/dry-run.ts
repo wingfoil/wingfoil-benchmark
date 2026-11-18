@@ -173,8 +173,8 @@ export async function dryRunCommand(
     latest === undefined
       ? `dry run ${what}: ${none}; this one may spend up to its cap, ${profile.caps.run_cost_eur} EUR` +
           `${loopBoundText}\n`
-      : `dry run ${what}: ${counted} cost ${money(latest.costUsd, rate)} (${relative(root, latest.dir)})${newer}` +
-          `${loopBound === undefined ? '' : `, its steps only${loopBoundText}`}\n`,
+      : `dry run ${what}: ${counted} cost ${money(latest.costUsd, rate)} (${relative(root, latest.dir)})` +
+          `${loopBound === undefined ? '' : `, its steps only${loopBoundText}`}${newer}\n`,
   );
   for (const note of checked.value.notes) io.stdout(`dry run ${what}: note: ${note}\n`);
 

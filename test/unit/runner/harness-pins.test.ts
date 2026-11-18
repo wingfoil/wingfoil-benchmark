@@ -1,5 +1,5 @@
 // bug-033, items 3 and 4: what a harness pin must be, checked before any image is built, by a campaign and a dry run.
-import { copyFileSync, cpSync, rmSync } from 'node:fs';
+import { copyFileSync, cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -110,6 +110,19 @@ describe("the dry run and the eligibility register (bug-033, item 3; the approve
     expect(notes(repo.root, 'wingfoil')).toEqual([]);
     writeRegister(repo.root, []);
     expect(notes(repo.root, 'baseline')).toEqual([]);
+  });
+
+  it('names the register in the note when it is missing or invalid, and still runs', () => {
+    const repo = repository('wingfoil', PIN);
+    rmSync(join(repo.root, 'eligibility'), { recursive: true, force: true });
+    expect(notes(repo.root, 'wingfoil')).toEqual([
+      'eligibility/register.yaml: not found: a harness arm can pin only a tool the register admits (REQ-FMT-11)',
+    ]);
+    mkdirSync(join(repo.root, 'eligibility'));
+    writeFileSync(join(repo.root, 'eligibility', 'register.yaml'), 'criteria: 3\nentries: nope\n');
+    const invalid = notes(repo.root, 'wingfoil');
+    expect(invalid.length).toBeGreaterThan(0);
+    for (const note of invalid) expect(note).toMatch(/^eligibility\/register\.yaml/);
   });
 
   it('refuses a campaign on the same pin all the same', () => {
