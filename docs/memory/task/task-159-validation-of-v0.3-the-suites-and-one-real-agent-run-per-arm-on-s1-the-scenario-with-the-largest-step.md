@@ -2,7 +2,7 @@
 id: task-159-validation-of-v0.3-the-suites-and-one-real-agent-run-per-arm-on-s1-the-scenario-with-the-largest-step
 type: task
 title: "Validation of v0.3: the suites and one real-agent run per arm on S1, the scenario with the largest step"
-status: in-progress
+status: in-review
 release: v0.3
 wave: validation
 features: []
