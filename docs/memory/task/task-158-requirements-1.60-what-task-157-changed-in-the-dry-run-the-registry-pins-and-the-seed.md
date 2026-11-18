@@ -53,3 +53,5 @@ this, and the approver asked for this task on 2026-11-18.
 - **The independent review (2026-11-18) found no blocker.** Three sentences claimed more than the code does, and they
   now say what it checks: a registry pin's form and not the registry's content, and a dry run that left a readable
   record. Criteria 1 and 3 use the same wording. These last edits were not reviewed again.
+- **The full suites (2026-11-18, commit `470da864`):** lint, build, `test` 2498 passed and 10 skipped, `test:bin` 22
+  passed, `test:docker` 22 passed and 2 skipped.
