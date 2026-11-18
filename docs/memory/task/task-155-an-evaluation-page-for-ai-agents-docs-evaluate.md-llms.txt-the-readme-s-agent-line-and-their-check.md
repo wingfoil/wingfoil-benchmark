@@ -7,7 +7,7 @@ release: v0.3
 wave: publishing
 features: []
 acceptance: []
-requirements: []
+requirements: [REQ-NFR-02]
 fixes: []
 tags: ["v0.3","docs","agents"]
 ---
