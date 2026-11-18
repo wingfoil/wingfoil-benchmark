@@ -78,3 +78,15 @@ configuration no run read stays out of the asset, describes behaviour the fix mu
 `2ee46ad9e617/1`, its S1@1.1 configuring sessions and the harness cache: 83 transcripts (65 of the steps, 15 of the
 review loops, 3 of the configuring sessions), nothing missing, and the thirteen `run.json` files differ from the
 committed ones by the asset's digest alone. Criterion 8 repeats this on main after the merge.
+
+**The independent review (dl-020).** No blocker. Its three should-fix findings and its nit are applied, each with a test
+that was red first:
+
+- A run the asset holds other transcripts of, whose step transcripts are gone, is now named in the output. It keeps its
+  record of the asset, as criterion 4 requires.
+- A link in any folder of a transcript's path is refused, not only a link at the file itself.
+- The tests now pin which review transcripts are expected, a run holding only its review transcripts, the numeric round
+  folders, and the refusal of malformed `loop.json` and `configured` records. Those records are refused by name instead
+  of throwing.
+
+The rehearsal on the scratch copy gives the same 83 transcripts after these changes.
