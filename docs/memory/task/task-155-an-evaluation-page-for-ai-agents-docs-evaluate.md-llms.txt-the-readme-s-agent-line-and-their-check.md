@@ -100,3 +100,6 @@ states v0.2's published results and v0.3's calibration, each with its version an
 - **External links:** `scripts/check-external-links.mjs` checked the 7 external links on 2026-11-18, and all answered.
 - **v0.3's results are not stated:** the reference campaign has not run. The page gives v0.2's results and v0.3's
   calibration, and must be updated when the campaign is published (plan-005 step 5).
+- **The independent review (2026-11-18) found three blockers, all fixed:** S10 was described as not measured, OpenSpec's
+  20 of 20 did not say that content checks v2 re-read it as 19, and §5's caches left its scratch folder. The other
+  findings are fixed too. `scripts/pre-review.sh` now always runs the page's check.
