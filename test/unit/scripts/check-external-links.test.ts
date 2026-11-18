@@ -45,6 +45,13 @@ describe('scripts/check-external-links.mjs (task-155)', () => {
     expect(result.output).toContain('1 external link checked, 0 failed');
   });
 
+  it('reads an address in a code fence or in plain text, without the punctuation after it', async () => {
+    const result = await check('```bash\ngit clone ' + base + '/gone\n```\nSee ' + base + '/ok.\n');
+    expect(result.code).toBe(1);
+    expect(result.output).toContain(`${base}/gone: 404`);
+    expect(result.output).toContain('2 external links checked, 1 failed');
+  });
+
   it('fails naming the link that does not answer', async () => {
     const result = await check(`[a](${base}/ok)\n[b](${base}/gone)\n`);
     expect(result.code).toBe(1);

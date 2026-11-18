@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The checks before a review round (dl-020 option C, task-098): changed Markdown checked for width and a final
 # newline; Prettier on every file the branch changed; eslint on changed sources; tsc; the touched test files with the
-# traceability test; test:bin when the CLI, the site or a bin test changed (the default vitest config excludes
+# traceability and evaluation-page tests; test:bin when the CLI, the site or a bin test changed (the default vitest config excludes
 # test/bin/ and test/docker/). At the lowest priority, vitest with 2 workers (dl-016); it stops at the first red
 # check and names it. No agent, no credential, nothing written. The full suites stay scripts/full-suites.sh's.
 # Usage: scripts/pre-review.sh <base>   (the branch the task's branch forks from, usually main)
@@ -60,7 +60,8 @@ mapfile -t sources < <(printf '%s\n' "${changed[@]}" | grep -E '\.(ts|mts|js|mjs
 if [ "${#sources[@]}" -gt 0 ]; then check eslint npx eslint "${sources[@]}"; fi
 check tsc npx tsc --noEmit -p .
 mapfile -t tests < <(printf '%s\n' "${changed[@]}" | grep -E '^test/.*\.test\.ts$' || true)
-check tests npx vitest run --maxWorkers=2 "${tests[@]}" test/acceptance/traceability.test.ts
+check tests npx vitest run --maxWorkers=2 "${tests[@]}" test/acceptance/traceability.test.ts \
+  test/unit/docs/evaluate-page.test.ts
 if printf '%s\n' "${changed[@]}" | grep -qE '^(src/(cli|site)|test/bin)/'; then
   check test:bin npm run test:bin -- --maxWorkers=2
 fi

@@ -5,16 +5,17 @@
 // Usage: node scripts/check-external-links.mjs [file…]   (default: llms.txt and docs/evaluate.md)
 /* global fetch, AbortSignal -- Node's own, which the lint's script globals do not list. */
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const TIMEOUT_MS = 15_000;
 const files = process.argv.slice(2);
-const read = files.length > 0 ? files : ['llms.txt', 'docs/evaluate.md'];
+const root = fileURLToPath(new URL('..', import.meta.url));
+const read = files.length > 0 ? files : [join(root, 'llms.txt'), join(root, 'docs/evaluate.md')];
 
-/** Every http(s) address of a Markdown link or an autolink in `text`. */
+/** Every http(s) address in `text`: in a link, an autolink, a code fence or bare, without the punctuation after it. */
 function linksOf(text) {
-  const inLinks = [...text.matchAll(/\]\((https?:\/\/[^)\s]+)\)/g)].map((match) => match[1]);
-  const autolinks = [...text.matchAll(/<(https?:\/\/[^>\s]+)>/g)].map((match) => match[1]);
-  return [...inLinks, ...autolinks];
+  return [...text.matchAll(/https?:\/\/[^\s<>()[\]"'`]+/g)].map((match) => match[0].replace(/[.,;:]+$/, ''));
 }
 
 /** Why `url` does not answer, or undefined when it does. */

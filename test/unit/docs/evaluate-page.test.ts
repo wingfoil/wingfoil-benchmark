@@ -76,7 +76,21 @@ describe('the evaluation page for AI agents (task-155)', () => {
     const page = read('docs/evaluate.md').replace(/\n {2}/g, ' ');
     const last = page.slice(page.indexOf('## Where it sits in the system'));
     for (const line of SYSTEM) expect(last).toContain(line);
+    expect(last.match(/^- /gm)).toHaveLength(SYSTEM.length);
     expect(page).toContain('https://wingfoil.github.io/wingfoil/docs/comparison.md');
+  });
+
+  it("resolves the page's links to its own headings, and the stored runs its commands read", () => {
+    const page = read('docs/evaluate.md');
+    const anchors = [...page.matchAll(/^## (.+)$/gm)].map((match) =>
+      (match[1] as string).toLowerCase().replace(/[^a-z0-9 -]/g, '').replace(/ /g, '-'),
+    );
+    for (const target of targets(page).filter((one) => one.startsWith('#')))
+      expect(anchors, target).toContain(target.slice(1));
+    const paths = [...page.matchAll(/^\s+(results\/\S+\/r1)/gm)].map((match) => match[1] as string);
+    expect(paths).toHaveLength(2);
+    for (const path of paths) expect(tracked.has(`${path}/run.json`), path).toBe(true);
+    expect(tracked.has('campaigns/v0-3-reference.yaml')).toBe(true);
   });
 
   it('says in the first lines of the README where an AI agent starts', () => {
