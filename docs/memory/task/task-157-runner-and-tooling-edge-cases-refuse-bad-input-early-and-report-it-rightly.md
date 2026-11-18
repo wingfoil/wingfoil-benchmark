@@ -2,7 +2,7 @@
 id: task-157-runner-and-tooling-edge-cases-refuse-bad-input-early-and-report-it-rightly
 type: task
 title: "Runner and tooling edge cases: refuse bad input early and report it rightly"
-status: backlog
+status: in-progress
 release: v0.3
 wave: publishing
 features: [F7.4]
