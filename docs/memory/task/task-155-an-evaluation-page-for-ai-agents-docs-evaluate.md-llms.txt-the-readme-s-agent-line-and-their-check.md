@@ -103,3 +103,6 @@ states v0.2's published results and v0.3's calibration, each with its version an
 - **The independent review (2026-11-18) found three blockers, all fixed:** S10 was described as not measured, OpenSpec's
   20 of 20 did not say that content checks v2 re-read it as 19, and §5's caches left its scratch folder. The other
   findings are fixed too. `scripts/pre-review.sh` now always runs the page's check.
+- **A second independent review (2026-11-18) recomputed the page from the stored scores.** Its findings are fixed: S1's
+  spread as the 21 runs show it, WingFoil's S8 result beside the arms that match it, and its S2 loss with both dry runs.
+  These last edits were not reviewed again.
