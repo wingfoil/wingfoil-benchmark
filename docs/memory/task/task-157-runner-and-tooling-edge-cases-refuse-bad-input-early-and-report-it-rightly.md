@@ -43,8 +43,8 @@ profile and scenario stays valid.
 1. **An empty seed (item 1):** a scenario whose seed holds no file that a run would copy (it is empty, or holds only
    empty directories or symbolic links) is refused when the scenario loads, at the `seed` field, in the benchmark's own
    words.
-2. **The dry run's register (item 3):** `checkDryRun` refuses a harness arm whose pinned tool and version the eligibility
-   register does not admit, with `campaign validate`'s message.
+2. **The dry run's register (item 3):** `checkDryRun` refuses a harness arm whose pinned tool and version the
+   eligibility register does not admit, with `campaign validate`'s message.
 3. **A registry pin (item 4):** `campaign validate` and `checkDryRun` refuse, before any image is built, a registry tool
    pinned by `commit` or by a version that is not a release. The run-time refusal stays as a guard.
 4. **The suites' report (item 5):** when `git` fails in a worktree, the summary line says so and does not read as clean.
