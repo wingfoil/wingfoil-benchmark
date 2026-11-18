@@ -146,6 +146,28 @@ describe('reading the comparisons of an execution (REQ-RES-02 as amended, task-0
     expect(read.ok && read.value.map((c) => c.earlier.campaign)).toEqual(['0123456789ab', 'fedcba987654']);
   });
 
+  it('orders by campaign before the number (bug-033)', () => {
+    const root = tempDir('bench-site-cmp-');
+    write(
+      root,
+      '0123456789ab-2.json',
+      JSON.stringify({
+        ...comparison(),
+        earlier: { campaign: '0123456789ab', execution: 2, model: 'sonnet' },
+      }),
+    );
+    write(
+      root,
+      'fedcba987654-1.json',
+      JSON.stringify({
+        ...comparison(),
+        earlier: { campaign: 'fedcba987654', execution: 1, model: 'sonnet' },
+      }),
+    );
+    const read = readComparisons(root, 'abcdef012345', 2);
+    expect(read.ok && read.value.map((c) => c.earlier.campaign)).toEqual(['0123456789ab', 'fedcba987654']);
+  });
+
   it('orders the executions of one campaign by number, so 2 comes before 10 (bug-033)', () => {
     const root = tempDir('bench-site-cmp-');
     for (const execution of [10, 2, 1]) {

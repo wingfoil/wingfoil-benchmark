@@ -58,8 +58,8 @@ const comparisonShape = z
 
 /**
  * The comparisons whose newer side is execution `<campaign>/<execution>` (REQ-RES-02 as amended, REQ-CLI-12,
- * task-084): every `results/comparisons/<campaign>-<execution>/*.json`, in file-name order; none when there is none. A
- * file that cannot be read, or that names another newer execution, is refused, naming it.
+ * task-084): every `results/comparisons/<campaign>-<execution>/*.json`, by campaign then by execution; none when there
+ * is none. A file that cannot be read, or that names another newer execution, is refused, naming it.
  */
 export function readComparisons(
   root: string,
