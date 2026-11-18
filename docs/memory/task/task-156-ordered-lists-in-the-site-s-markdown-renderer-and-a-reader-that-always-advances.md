@@ -2,7 +2,7 @@
 id: task-156-ordered-lists-in-the-site-s-markdown-renderer-and-a-reader-that-always-advances
 type: task
 title: "Ordered lists in the site's Markdown renderer, and a reader that always advances"
-status: pending
+status: backlog
 release: v0.3
 wave: publishing
 features: [F5.8, F7.4]
