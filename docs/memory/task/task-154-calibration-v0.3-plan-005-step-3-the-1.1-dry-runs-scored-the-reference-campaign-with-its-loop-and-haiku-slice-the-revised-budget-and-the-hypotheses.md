@@ -2,7 +2,7 @@
 id: task-154-calibration-v0.3-plan-005-step-3-the-1.1-dry-runs-scored-the-reference-campaign-with-its-loop-and-haiku-slice-the-revised-budget-and-the-hypotheses
 type: task
 title: "Calibration v0.3 (plan-005 step 3): the 1.1 dry runs scored, the reference campaign with its loop and Haiku slice, the revised budget and the hypotheses"
-status: approved
+status: done
 release: v0.3
 wave: calibration
 features: [F4.9, F7.5]
