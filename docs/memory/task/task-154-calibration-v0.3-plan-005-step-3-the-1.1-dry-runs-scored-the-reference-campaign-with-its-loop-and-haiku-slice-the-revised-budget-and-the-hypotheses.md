@@ -120,3 +120,10 @@ What is settled before it:
   records, and `npx` passes them as one shell string longer than the kernel's 128 KiB limit for a single argument, so
   Prettier exits 249 and prints nothing. The script's checks were run by hand instead: Markdown passed in the script,
   Prettier in batches of 200 files, then eslint, tsc, and the touched tests with the traceability test, all green.
+- **The independent review (2026-11-18) found no wrong figure.** Its findings are fixed on this branch: main's dry-run
+  profile test is restored beside the new one, the budget table, the verdicts and the loops' count are generated
+  (`scripts/budget-reading.mjs`, `scripts/hypotheses-reading.mjs`), H6 names the run below the baseline, a mean over
+  different totals is refused, and the ledger names a not-clean loop's round once.
+- **Before merging into main:** main's checkout holds dry runs `216`-`263` untracked, with their git-ignored transcripts,
+  the only copy. Git refuses the merge until the paths the branch tracks are gone. Remove only those
+  (`git ls-tree -r --name-only <branch> results/dry-runs/<n>`), never the whole directories and never `git clean`.
