@@ -680,6 +680,13 @@ describe('bench campaign run and an unreadable run record (task-081 review)', ()
     );
     const empty = await runWith(ports, 'campaign', 'run', file, '--resume', `${id}/1`);
     expect(empty.stderr).toContain(`campaign: not started: ${record}: it is not a run record`);
+    // Nor is one that parses to a list (bug-033).
+    writeFileSync(
+      join(resultsRoot, id, '1', 'runs', 'S1@1.0', 'baseline', 'fake-model', 'r1', 'run.json'),
+      '[]',
+    );
+    const list = await runWith(ports, 'campaign', 'run', file, '--resume', `${id}/1`);
+    expect(list.stderr).toContain(`campaign: not started: ${record}: it is not a run record`);
     expect(ports.recorded.builds).toEqual([]);
   });
 });

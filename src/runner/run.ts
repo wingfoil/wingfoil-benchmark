@@ -692,7 +692,7 @@ function readRecord(file: string, resultsDir: string): Record<string, unknown> {
     throw new Error(`${relative(resultsDir, file)} cannot be read: ${reasonOf(error)}`, { cause: error });
   }
   // A record that parses to anything but an object is no record either (task-081's review).
-  if (record === null || typeof record !== 'object') {
+  if (record === null || typeof record !== 'object' || Array.isArray(record)) {
     throw new Error(`${relative(resultsDir, file)} cannot be read: it is not a run record`);
   }
   return record as Record<string, unknown>;
