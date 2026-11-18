@@ -2,7 +2,7 @@
 id: dl-036-a-role-isolation-scenario-for-v0.4-s-planning-a-rule-only-the-reviewer-receives
 type: decision-log
 title: "A role-isolation scenario for v0.4's planning: a rule only the reviewer receives"
-status: draft
+status: pending
 tags: ["v0.4","scenario","governance"]
 ---
 
