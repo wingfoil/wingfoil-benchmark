@@ -70,3 +70,11 @@ says how many of each kind it packed and which it could not find.
 - **No spending:** no agent runs, and no campaign or dry run is started.
 
 ## Execution notes
+
+**Tests.** Ten new tests in `test/unit/results/transcripts.test.ts`. Nine were red before the fix; the tenth, that a
+configuration no run read stays out of the asset, describes behaviour the fix must keep.
+
+**Rehearsal on the real records (before the merge).** The fixed command ran on a scratch copy of execution
+`2ee46ad9e617/1`, its S1@1.1 configuring sessions and the harness cache: 83 transcripts (65 of the steps, 15 of the
+review loops, 3 of the configuring sessions), nothing missing, and the thirteen `run.json` files differ from the
+committed ones by the asset's digest alone. Criterion 8 repeats this on main after the merge.
