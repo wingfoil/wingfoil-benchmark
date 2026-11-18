@@ -89,6 +89,45 @@ describe('scripts/full-suites.sh (dl-016, task-075)', () => {
     );
   });
 
+  /** A `git` that fails its `status` from the given call on, every other command being the real one's (bug-033). */
+  function failingStatus(root: string, env: NodeJS.ProcessEnv, from: number) {
+    const real = execFileSync('bash', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+    const count = join(root, 'status-calls');
+    writeFileSync(
+      join(root, 'bin', 'git'),
+      [
+        '#!/usr/bin/env bash',
+        'if [ "$1" = status ]; then',
+        `  n=$(( $(cat '${count}' 2>/dev/null || echo 0) + 1 )); echo "$n" > '${count}'`,
+        `  [ "$n" -ge ${from} ] && exit 128`,
+        'fi',
+        `exec '${real}' "$@"`,
+      ].join('\n'),
+    );
+    chmodSync(join(root, 'bin', 'git'), 0o755);
+    return env;
+  }
+
+  it('says so when git fails before the suites, and does not read the worktree as clean (bug-033)', () => {
+    const { root, out, env } = fixture();
+    expect(
+      spawnSync('bash', [SCRIPT, 'task/x'], { env: failingStatus(root, env, 1), encoding: 'utf8' }).status,
+    ).toBe(0);
+    expect(readFileSync(join(day(out), 'summary.txt'), 'utf8')).toMatch(
+      /^task\/x [0-9a-f]+ GIT-ERROR: LINT 0/m,
+    );
+  });
+
+  it('says so when git fails after the suites, and does not read the worktree as unchanged (bug-033)', () => {
+    const { root, out, env } = fixture();
+    expect(
+      spawnSync('bash', [SCRIPT, 'task/x'], { env: failingStatus(root, env, 2), encoding: 'utf8' }).status,
+    ).toBe(0);
+    expect(readFileSync(join(day(out), 'summary.txt'), 'utf8')).toMatch(
+      /^task\/x [0-9a-f]+ GIT-ERROR: LINT 0/m,
+    );
+  });
+
   it('says which branches it could not run, and a name that matches no worktree', () => {
     const { root, out, env } = fixture();
     expect(spawnSync('bash', [SCRIPT, 'task/x', 'task/typo'], { env, encoding: 'utf8' }).status).toBe(0);
