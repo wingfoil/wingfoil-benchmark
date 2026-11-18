@@ -1,0 +1,112 @@
+diff --git a/PROJECT_RULES.md b/PROJECT_RULES.md
+index 2bc1bc7bbd0b46d28c702d7e4b24a99e0523cfdf..336358ec774cb50be61d6711d92bc633bbfd34b9 100644
+--- a/PROJECT_RULES.md
++++ b/PROJECT_RULES.md
+@@ -1,3 +1,10 @@
+ # Project rules
+ 
+ This project declares no rules beyond its README.
++
++## Decisions taken
++
++- Cancellation refund (`cancel`): the brief did not give a policy, so this one was assumed and needs the
++  school's confirmation. Full refund with at least 48 h notice before the start, half (rounded down) with at
++  least 24 h, nothing later. Cancelling at or after the end is refused. Cancelled bookings stay recorded
++  (so a second cancel fails) but no longer hold equipment.
+diff --git a/src/index.ts b/src/index.ts
+index ada49b4adae006679a8acedb44b9e4dd91197b6f..6e2e5dabfe3da9d00092c8aa962e8f3084fa70c5 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -43,11 +43,19 @@ export interface RentalService {
+   book(request: RentalRequest): Booking;
+   /** Sorted ids of the equipment (of `kind`, if given) that is free for the whole period. */
+   availability(query: AvailabilityQuery): string[];
++  /**
++   * Cancels a booking at the instant `at` (ISO-8601, UTC) and frees its equipment. A booking can be cancelled
++   * once. `refund` is in euro cents: all of the total if `at` is at least 48 hours before the start, half of it
++   * (rounded down) if at least 24 hours before, nothing later. Cancelling at or after the end is refused.
++   */
++  cancel(bookingId: string, at: string): { bookingId: string; refund: number };
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+ const HOUR_MS = 60 * 60 * 1000;
+ const LONG_RENTAL_DAYS = 3;
++const FULL_REFUND_NOTICE_MS = 2 * DAY_MS;
++const HALF_REFUND_NOTICE_MS = DAY_MS;
+ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+ 
+ function parseHourUtc(value: unknown, name: string): number {
+@@ -62,7 +70,7 @@ function parseHourUtc(value: unknown, name: string): number {
+ 
+ export function createRentalService(): RentalService {
+   const items = new Map<string, Equipment>();
+-  const bookings: { id: string; itemId: string; from: number; to: number }[] = [];
++  const bookings: { id: string; itemId: string; from: number; to: number; total: number; cancelled: boolean }[] = [];
+   let nextBookingId = 1;
+ 
+   function price(request: RentalRequest): { quote: Quote; from: number; to: number } {
+@@ -121,18 +129,34 @@ export function createRentalService(): RentalService {
+       if (kind !== undefined && kind !== 'board' && kind !== 'sail') throw new Error("kind must be 'board' or 'sail'");
+       return [...items.values()]
+         .filter((item) => kind === undefined || item.kind === kind)
+-        .filter((item) => !bookings.some((b) => b.itemId === item.id && from < b.to && b.from < to))
++        .filter((item) => !bookings.some((b) => !b.cancelled && b.itemId === item.id && from < b.to && b.from < to))
+         .map((item) => item.id)
+         .sort();
+     },
+ 
+     book(request) {
+       const { quote, from, to } = price(request);
+-      const clash = bookings.some((b) => b.itemId === quote.itemId && from < b.to && b.from < to);
++      const clash = bookings.some((b) => !b.cancelled && b.itemId === quote.itemId && from < b.to && b.from < to);
+       if (clash) throw new Error(`Item ${quote.itemId} is not free for the whole period`);
+       const id = `booking-${nextBookingId++}`;
+-      bookings.push({ id, itemId: quote.itemId, from, to });
++      bookings.push({ id, itemId: quote.itemId, from, to, total: quote.total, cancelled: false });
+       return { id, ...quote };
+     },
++
++    cancel(bookingId, at) {
++      const booking = bookings.find((b) => b.id === bookingId);
++      if (!booking) throw new Error(`Unknown booking: ${String(bookingId)}`);
++      if (typeof at !== 'string' || !ISO_UTC.test(at) || Number.isNaN(Date.parse(at))) {
++        throw new Error('at must be an ISO-8601 UTC string (e.g. 2026-07-01T00:00:00Z)');
++      }
++      if (booking.cancelled) throw new Error(`Booking already cancelled: ${booking.id}`);
++      const when = Date.parse(at);
++      if (when >= booking.to) throw new Error('Cannot cancel a booking after its end');
++      const notice = booking.from - when;
++      const refund =
++        notice >= FULL_REFUND_NOTICE_MS ? booking.total : notice >= HALF_REFUND_NOTICE_MS ? Math.floor(booking.total / 2) : 0;
++      booking.cancelled = true;
++      return { bookingId: booking.id, refund };
++    },
+   };
+ }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 65ca8fd34fda65af8f232dc06110969f0ee7797c..3904108e64cf729fa287dfeca90841b551d70af6 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -79,3 +79,21 @@ test('items without an hourly price cannot be rented by the hour', () => {
+ function req2(itemId: string, start: string, end: string) {
+   return { itemId, start, end };
+ }
++
++test('cancel refunds by notice, frees the item, and only works once', () => {
++  const s = setup();
++  const a = s.book(req('2026-07-10T00:00:00Z', '2026-07-12T00:00:00Z'));
++  assert.deepEqual(s.cancel(a.id, '2026-07-08T00:00:00Z'), { bookingId: a.id, refund: 5000 });
++  assert.throws(() => s.cancel(a.id, '2026-07-08T00:00:00Z'));
++  assert.deepEqual(s.availability({ start: '2026-07-10T00:00:00Z', end: '2026-07-12T00:00:00Z' }), ['b1']);
++  const b = s.book(req('2026-07-10T00:00:00Z', '2026-07-12T00:00:00Z'));
++  assert.equal(s.cancel(b.id, '2026-07-08T12:30:00Z').refund, 2500);
++  const c = s.book(req('2026-07-10T00:00:00Z', '2026-07-11T00:00:00Z'));
++  assert.equal(s.cancel(c.id, '2026-07-09T00:00:00Z').refund, 1250);
++  const d = s.book(req('2026-07-10T00:00:00Z', '2026-07-11T00:00:00Z'));
++  assert.equal(s.cancel(d.id, '2026-07-10T05:00:00Z').refund, 0);
++  const e = s.book(req('2026-07-10T00:00:00Z', '2026-07-11T00:00:00Z'));
++  assert.throws(() => s.cancel(e.id, '2026-07-11T00:00:00Z'));
++  assert.throws(() => s.cancel('nope', '2026-07-01T00:00:00Z'));
++  assert.throws(() => s.cancel(e.id, 'garbage'));
++});

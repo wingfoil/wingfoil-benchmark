@@ -43,6 +43,10 @@ and v0.2's follow-ups merged, filed or dropped.
 <!-- delivery done · calibration (dry runs, budget revision) · validation · reference campaign ·
      publishing · retrospective — with links to the elements that prove each one. -->
 
+- **Calibration:** [task-154](../task/task-154-calibration-v0.3-plan-005-step-3-the-1.1-dry-runs-scored-the-reference-campaign-with-its-loop-and-haiku-slice-the-revised-budget-and-the-hypotheses.md): the dry runs `216`-`263`, the estimate, the budget the approver approved on
+  2026-11-18 (warn 65 EUR, ceiling 80 EUR) and the hypotheses on 1.1, in
+  [docs/calibration/v0.3.md](../../calibration/v0.3.md) §6.
+
 ## Retrospective
 
 <!-- What went well, what to change, and the WingFoil usage notes handed to WingFoil. -->

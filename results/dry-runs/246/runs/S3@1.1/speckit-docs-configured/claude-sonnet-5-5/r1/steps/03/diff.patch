@@ -1,0 +1,85 @@
+diff --git a/specs/long-rental-discount/spec.md b/specs/long-rental-discount/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fa7189c4cbf718b4b138a26739a4415b9a224dc3
+--- /dev/null
++++ b/specs/long-rental-discount/spec.md
+@@ -0,0 +1,9 @@
++# Long-rental discount
++
++A rental of 3 days or more costs 10% less than its full price (days x daily price). Quotes and bookings
++show the reduced total. Rentals of 1 or 2 days are unchanged.
++
++## Open questions (to settle with /speckit-clarify)
++
++- Rounding: the 10% reduction can give a fraction of a cent. Implemented as rounding to the nearest cent
++  (`Math.round`) until the school decides otherwise.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 21325fcb26a76b7aa274ad8ac4b6e95098539c1b..996f0b112f58eb9c807871f12bd2503ca2df01b0 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -17,7 +17,7 @@ test('quote multiplies the daily price by the number of days', () => {
+     itemId: 'board-1',
+     start: '2026-07-01T00:00:00.000Z',
+     end: '2026-07-04T00:00:00.000Z',
+-    total: 7500,
++    total: 6750,
+   });
+   assert.equal(s.quote({ itemId: 'board-1', start: d(1), end: d(2) }).total, 2500);
+ });
+@@ -103,3 +103,18 @@ test('availability rejects invalid periods and kinds', () => {
+   assert.throws(() => s.availability({ start: d(1), end: d(2), kind: 'boat' as never }));
+   assert.deepEqual(createRentalService().availability({ start: d(1), end: d(2) }), []);
+ });
++
++test('rentals of 3 days or more cost 10% less, in quotes and bookings', () => {
++  const s = setup();
++  assert.equal(s.quote({ itemId: 'board-1', start: d(1), end: d(3) }).total, 5000);
++  assert.equal(s.quote({ itemId: 'board-1', start: d(1), end: d(4) }).total, 6750);
++  assert.equal(s.quote({ itemId: 'board-1', start: d(1), end: d(11) }).total, 22500);
++  assert.equal(s.book({ itemId: 'board-1', start: d(1), end: d(4) }).total, 6750);
++});
++
++test('discounted totals are rounded to whole euro cents', () => {
++  const s = createRentalService();
++  s.addEquipment({ id: 'x', kind: 'board', dailyPrice: 1001 });
++  // 3003 * 0.9 = 2702.7
++  assert.equal(s.quote({ itemId: 'x', start: d(1), end: d(4) }).total, 2703);
++});
+diff --git a/src/index.ts b/src/index.ts
+index 1781d96ec3cd661edb2a20a932ec4c25e29d3f30..3dc28e1053fd85311cf2b517b249a26973e0693a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -44,6 +44,11 @@ export interface RentalService {
+   availability(query: AvailabilityQuery): string[];
+ }
+ 
++/** A rental of at least this many days gets the long-rental discount. */
++const LONG_RENTAL_MIN_DAYS = 3;
++/** Long-rental price as a percentage of the full price (10% off). */
++const LONG_RENTAL_PERCENT = 90;
++
+ const DAY_MS = 24 * 60 * 60 * 1000;
+ const MIDNIGHT_UTC = /^\d{4}-\d{2}-\d{2}T00:00:00(\.0+)?Z$/;
+ 
+@@ -58,6 +63,12 @@ function parseMidnightUtc(value: string, name: string): number {
+   return ms;
+ }
+ 
++/** Full price, reduced by 10% from 3 days; rounded to the nearest euro cent. */
++function rentalTotal(days: number, dailyPrice: number): number {
++  const full = days * dailyPrice;
++  return days >= LONG_RENTAL_MIN_DAYS ? Math.round((full * LONG_RENTAL_PERCENT) / 100) : full;
++}
++
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+   const bookings: Array<Booking & { startMs: number; endMs: number }> = [];
+@@ -77,7 +88,7 @@ export function createRentalService(): RentalService {
+       itemId: item.id,
+       start: new Date(startMs).toISOString(),
+       end: new Date(endMs).toISOString(),
+-      total: days * item.dailyPrice,
++      total: rentalTotal(days, item.dailyPrice),
+       startMs,
+       endMs,
+     };

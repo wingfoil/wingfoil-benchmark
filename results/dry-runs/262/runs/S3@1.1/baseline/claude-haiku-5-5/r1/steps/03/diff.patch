@@ -1,0 +1,78 @@
+diff --git a/src/index.ts b/src/index.ts
+index ba010466b3b6bb940799c7be550c6a96eed202b3..92f5c56e5da99ac159ed80d147d567a4ec679dcf 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -49,6 +49,9 @@ export interface RentalService {
+ const DAY_MS = 24 * 60 * 60 * 1000;
+ const KINDS: readonly string[] = ['board', 'sail'];
+ const DAY_PATTERN = /^(\d{4}-\d{2}-\d{2})(T00:00:00(\.000)?Z)?$/;
++/** Rentals of at least this many days get the long-rental discount. */
++const LONG_RENTAL_DAYS = 3;
++const LONG_RENTAL_DISCOUNT_PERCENT = 10;
+ 
+ interface Period {
+   start: number;
+@@ -87,7 +90,11 @@ function priceFor(item: Equipment, days: number): number {
+   if (!Number.isSafeInteger(total)) {
+     throw new Error('the total price is not a whole number of cents');
+   }
+-  return total;
++  if (days < LONG_RENTAL_DAYS) {
++    return total;
++  }
++  // Ten percent off, rounded half up to a whole cent.
++  return Math.round((total * (100 - LONG_RENTAL_DISCOUNT_PERCENT)) / 100);
+ }
+ 
+ export function createRentalService(): RentalService {
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 4faee2ad98d3857b981fc80762785fb056178766..ab575de3e6932ff7938b94861d58d33461cfd8b1 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -11,8 +11,8 @@ function serviceWithBoard() {
+ test('quote multiplies the daily price by the number of whole days', () => {
+   const service = serviceWithBoard();
+   assert.deepEqual(
+-    service.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' }),
+-    { itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z', total: 7500 },
++    service.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z' }),
++    { itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z', total: 5000 },
+   );
+ });
+ 
+@@ -22,6 +22,21 @@ test('a period ending the day after it starts is one day', () => {
+   assert.equal(quote.total, 2500);
+ });
+ 
++test('a rental of 3 days or more costs 10% less', () => {
++  const service = serviceWithBoard();
++  const quote = (end: string) => service.quote({ itemId: 'board-1', start: '2026-07-01', end }).total;
++  assert.equal(quote('2026-07-03'), 5000);
++  assert.equal(quote('2026-07-04'), 6750);
++  assert.equal(quote('2026-07-08'), 15750);
++});
++
++test('the long-rental discount rounds half up to a whole cent', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1001 });
++  // 3 * 1001 = 3003 cents, 10% off is 2702.7 cents.
++  assert.equal(service.quote({ itemId: 'sail-1', start: '2026-07-01', end: '2026-07-04' }).total, 2703);
++});
++
+ test('quote does not reserve the item', () => {
+   const service = serviceWithBoard();
+   const request = { itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' };
+@@ -40,6 +55,13 @@ test('book returns an id together with the quoted details', () => {
+   );
+ });
+ 
++test('book charges the discounted total for a rental of 3 days or more', () => {
++  const service = serviceWithBoard();
++  const request = { itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' };
++  assert.equal(service.quote(request).total, 6750);
++  assert.equal(service.book(request).total, 6750);
++});
++
+ test('each booking gets its own id', () => {
+   const service = createRentalService();
+   service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1000 });

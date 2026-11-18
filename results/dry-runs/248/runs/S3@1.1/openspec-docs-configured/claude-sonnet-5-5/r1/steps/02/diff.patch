@@ -1,0 +1,67 @@
+diff --git a/src/index.ts b/src/index.ts
+index 8c91afaab145edd144800fcbe9334c21bda1b472..e2dbb9ef6553d0ba9392a1bfed49d39e47555afe 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -23,10 +23,17 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++export interface AvailabilityQuery {
++  start: string; // ISO-8601, midnight UTC
++  end: string; // ISO-8601, midnight UTC, start of the day after the last day
++  kind?: EquipmentKind;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+@@ -101,5 +108,21 @@ export function createRentalService(): RentalService {
+       bookings.push({ ...booking, startMs, endMs });
+       return booking;
+     },
++
++    availability(query) {
++      const startMs = parseMidnightUtc(query?.start, 'start');
++      const endMs = parseMidnightUtc(query.end, 'end');
++      if (endMs <= startMs) {
++        throw new Error('end must be after start');
++      }
++      if (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail') {
++        throw new Error("Equipment kind must be 'board' or 'sail'");
++      }
++      return [...equipment.values()]
++        .filter((item) => query.kind === undefined || item.kind === query.kind)
++        .filter((item) => !bookings.some((b) => b.itemId === item.id && startMs < b.endMs && b.startMs < endMs))
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }
+diff --git a/tests/rental.test.js b/tests/rental.test.js
+index f2cfce89e72d0c68d2b4372aa07e05d3394732c6..1ef15d2d0510b1b10638996034d09e0f160c1ef9 100644
+--- a/tests/rental.test.js
++++ b/tests/rental.test.js
+@@ -41,3 +41,18 @@ test('addEquipment validates input', () => {
+   assert.throws(() => s.addEquipment({ id: 'z', kind: 'boat', dailyPrice: 1 }));
+   assert.throws(() => s.addEquipment({ id: 'z', kind: 'sail', dailyPrice: 10.5 }));
+ });
++
++test('availability lists free equipment ids, sorted, optionally by kind', () => {
++  const s = setup();
++  s.addEquipment({ id: 'a-sail', kind: 'sail', dailyPrice: 1000 });
++  s.addEquipment({ id: 'b0', kind: 'board', dailyPrice: 1000 });
++  s.book(req('2026-06-02T00:00:00Z', '2026-06-04T00:00:00Z'));
++  const q = (start, end, kind) => s.availability({ start, end, kind });
++  assert.deepEqual(q('2026-06-01T00:00:00Z', '2026-06-05T00:00:00Z'), ['a-sail', 'b0']);
++  assert.deepEqual(q('2026-06-01T00:00:00Z', '2026-06-05T00:00:00Z', 'board'), ['b0']);
++  assert.deepEqual(q('2026-06-01T00:00:00Z', '2026-06-02T00:00:00Z', 'board'), ['b0', 'b1']);
++  assert.deepEqual(q('2026-06-04T00:00:00Z', '2026-06-05T00:00:00Z', 'board'), ['b0', 'b1']);
++  assert.deepEqual(q('2026-06-01T00:00:00Z', '2026-06-05T00:00:00Z', 'sail'), ['a-sail']);
++  assert.throws(() => q('2026-06-05T00:00:00Z', '2026-06-05T00:00:00Z'));
++  assert.throws(() => q('2026-06-01T00:00:00Z', '2026-06-05T00:00:00Z', 'boat'));
++});

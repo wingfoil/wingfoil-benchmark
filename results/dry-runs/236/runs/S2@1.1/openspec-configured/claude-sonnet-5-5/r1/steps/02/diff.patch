@@ -1,0 +1,236 @@
+diff --git a/openspec/changes/archive/2026-11-17-fix-coupon-base-and-last-day/.openspec.yaml b/openspec/changes/archive/2026-11-17-fix-coupon-base-and-last-day/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..bbe8b3936527ad38e9220450a60063edbac5eb4c
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-fix-coupon-base-and-last-day/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-11-17
+diff --git a/openspec/changes/archive/2026-11-17-fix-coupon-base-and-last-day/design.md b/openspec/changes/archive/2026-11-17-fix-coupon-base-and-last-day/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..77e5dceb2915330bb5e091c8f74cbced9fb72398
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-fix-coupon-base-and-last-day/design.md
+@@ -0,0 +1,18 @@
++## Context
++
++`priceOrder` in `src/pricing.ts` passes `grossTotal` as the base to `couponDiscount`, while `Coupons.redeemable` in `src/coupons.ts` compares the date with `>= 0` against `validUntil`. Both contradict the README.
++
++## Goals / Non-Goals
++
++**Goals:** make code match the README for coupon base and last-day validity.
++**Non-Goals:** shipping VAT, the 50% cap logic, any API change.
++
++## Decisions
++
++- In `priceOrder`, compute the coupon on `grossTotal - volumeTotal` (the sum of `afterVolume`). The cap still uses `grossTotal` as its reference and `volumeTotal` as already-discounted, as the README requires. Money stays in integer cents via `percentOf` in `src/money.ts`.
++- In `redeemable`, change the expiry check to `compareDates(date, coupon.validUntil) > 0`.
++- Minimum-amount check already uses the subtotal after volume (`orders.ts`); unchanged.
++
++## Risks / Trade-offs
++
++- Totals of existing orders with both a volume discount and a percentage coupon change (they were too low); this is the intended correction.
+diff --git a/openspec/changes/archive/2026-11-17-fix-coupon-base-and-last-day/proposal.md b/openspec/changes/archive/2026-11-17-fix-coupon-base-and-last-day/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5b0fedd64ca4f7e2b862a0faf75633a22c0f0e7b
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-fix-coupon-base-and-last-day/proposal.md
+@@ -0,0 +1,30 @@
++# Proposal
++
++## Why
++
++Two reports show the code disagreeing with the README business rules. Finance: a percentage coupon is applied to the gross amount instead of the subtotal after volume discounts, so orders with both get too much off (12 notebooks at €5.00 with a 10% coupon come to €48.00 instead of €48.60). Customer: a coupon is refused as expired on its last valid day (AUTUMN, valid until 2026-11-30, refused on 2026-11-30).
++
++## What Changes
++
++- The percentage coupon amount is computed on the subtotal after volume discounts, not on the gross amount.
++- A coupon is redeemable on its last day (`validUntil`); it is refused as expired only from the day after.
++- Tests covering both cases, including the boundaries.
++
++No README rule changes: the README already states both behaviours ("applies to the order's subtotal after volume discounts"; "from its first day to its last day, both included"). Affected README rules: Discounts (coupon base, coupon validity).
++
++## Capabilities
++
++### New Capabilities
++- `coupon-discounts`: coupon base (subtotal after volume discounts), validity period inclusive of both days.
++
++### Modified Capabilities
++
++## Impact
++
++- `src/pricing.ts` (coupon base), `src/coupons.ts` (`redeemable` last-day comparison), `test/*.test.ts`.
++- No API, dependency or README change.
++
++## Out of scope
++
++- Shipping VAT. A customer asked to remove VAT on delivery, but the README says shipping is subject to VAT at 22%. Changing that is a business-rule (and tax) decision not authorised by this request; it is left unchanged and reported for a decision.
++- Any other coupon, discount, or cap behaviour.
+diff --git a/openspec/changes/archive/2026-11-17-fix-coupon-base-and-last-day/specs/coupon-discounts/spec.md b/openspec/changes/archive/2026-11-17-fix-coupon-base-and-last-day/specs/coupon-discounts/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..458ee3dfee8731c6d6940cd8881bb6a71743a658
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-fix-coupon-base-and-last-day/specs/coupon-discounts/spec.md
+@@ -0,0 +1,39 @@
++## ADDED Requirements
++
++### Requirement: Coupon applies to the subtotal after volume discounts
++A coupon SHALL take its percentage, or its fixed amount up to the subtotal, off the order's subtotal after volume discounts, in integer cents rounded half up, subject to the 50%-of-gross cap on all discounts together.
++
++#### Scenario: Percentage coupon with a volume discount
++- **WHEN** an order has 12 units at 500 cents (gross 6000, volume discount 600, subtotal 5400) and a 10% coupon
++- **THEN** the coupon takes 540 cents off and the goods come to 4860 cents
++
++#### Scenario: Percentage coupon without a volume discount
++- **WHEN** an order has 9 units at 500 cents (4500) and a 10% coupon
++- **THEN** the coupon takes 450 cents off and the goods come to 4050 cents
++
++#### Scenario: Rounding at half a cent
++- **WHEN** the subtotal after volume discounts is 1005 cents and the coupon is 10% (100.5 cents)
++- **THEN** the coupon takes 101 cents off
++
++#### Scenario: Fixed coupon never exceeds the subtotal
++- **WHEN** the subtotal after volume discounts is 5400 cents and a fixed coupon is 6000 cents
++- **THEN** the coupon takes at most 5400 cents off, further limited by the 50% cap on gross
++
++### Requirement: Coupon validity includes both its first and last day
++A coupon SHALL be redeemable on every day from its first day to its last day, both included.
++
++#### Scenario: Last day
++- **WHEN** a coupon is valid from 2026-09-01 to 2026-11-30 and is used on 2026-11-30
++- **THEN** it is accepted
++
++#### Scenario: Day after the last day
++- **WHEN** the same coupon is used on 2026-12-01
++- **THEN** it is refused as expired
++
++#### Scenario: First day
++- **WHEN** the same coupon is used on 2026-09-01
++- **THEN** it is accepted
++
++#### Scenario: Day before the first day
++- **WHEN** the same coupon is used on 2026-08-31
++- **THEN** it is refused as not valid yet
+diff --git a/openspec/changes/archive/2026-11-17-fix-coupon-base-and-last-day/tasks.md b/openspec/changes/archive/2026-11-17-fix-coupon-base-and-last-day/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8eb973ef788c8a46116e8604aa156c0dab442efa
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-17-fix-coupon-base-and-last-day/tasks.md
+@@ -0,0 +1,13 @@
++## 1. Fixes
++
++- [x] 1.1 In `src/pricing.ts`, compute the coupon on the subtotal after volume discounts (`grossTotal - volumeTotal`)
++- [x] 1.2 In `src/coupons.ts`, make `redeemable` accept the last valid day (`> 0` instead of `>= 0`)
++
++## 2. Tests
++
++- [x] 2.1 Test in `test/coupons.test.ts`: 12 notebooks at 500 cents with a 10% coupon give goods of 4860 cents
++- [x] 2.2 Test in `test/coupons.test.ts`: coupon accepted on first and last day, refused the day before and the day after
++
++## 3. Verify
++
++- [x] 3.1 Run `npm test` and confirm everything passes
+diff --git a/openspec/specs/coupon-discounts/spec.md b/openspec/specs/coupon-discounts/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d98b1aaca972dbf146eb9e2756ddaf7bbc52aaf4
+--- /dev/null
++++ b/openspec/specs/coupon-discounts/spec.md
+@@ -0,0 +1,44 @@
++# coupon-discounts Specification
++
++## Purpose
++TBD - created by archiving change fix-coupon-base-and-last-day. Update Purpose after archive.
++
++## Requirements
++
++### Requirement: Coupon applies to the subtotal after volume discounts
++A coupon SHALL take its percentage, or its fixed amount up to the subtotal, off the order's subtotal after volume discounts, in integer cents rounded half up, subject to the 50%-of-gross cap on all discounts together.
++
++#### Scenario: Percentage coupon with a volume discount
++- **WHEN** an order has 12 units at 500 cents (gross 6000, volume discount 600, subtotal 5400) and a 10% coupon
++- **THEN** the coupon takes 540 cents off and the goods come to 4860 cents
++
++#### Scenario: Percentage coupon without a volume discount
++- **WHEN** an order has 9 units at 500 cents (4500) and a 10% coupon
++- **THEN** the coupon takes 450 cents off and the goods come to 4050 cents
++
++#### Scenario: Rounding at half a cent
++- **WHEN** the subtotal after volume discounts is 1005 cents and the coupon is 10% (100.5 cents)
++- **THEN** the coupon takes 101 cents off
++
++#### Scenario: Fixed coupon never exceeds the subtotal
++- **WHEN** the subtotal after volume discounts is 5400 cents and a fixed coupon is 6000 cents
++- **THEN** the coupon takes at most 5400 cents off, further limited by the 50% cap on gross
++
++### Requirement: Coupon validity includes both its first and last day
++A coupon SHALL be redeemable on every day from its first day to its last day, both included.
++
++#### Scenario: Last day
++- **WHEN** a coupon is valid from 2026-09-01 to 2026-11-30 and is used on 2026-11-30
++- **THEN** it is accepted
++
++#### Scenario: Day after the last day
++- **WHEN** the same coupon is used on 2026-12-01
++- **THEN** it is refused as expired
++
++#### Scenario: First day
++- **WHEN** the same coupon is used on 2026-09-01
++- **THEN** it is accepted
++
++#### Scenario: Day before the first day
++- **WHEN** the same coupon is used on 2026-08-31
++- **THEN** it is refused as not valid yet
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..751ac9ae7bbf5660ce0272cc7ec55ddd9af76bb5 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -56,7 +56,7 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const volumeTotal = sum(volume);
+ 
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal - volumeTotal), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 1fdc2519dc031050b1b5593605af611816478518..d9e66d1ea711d09eed74de623492743cbcbb01e9 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -33,6 +33,23 @@ describe('coupons', () => {
+     assert.throws(() => orders.quote({ ...request, date: '2026-04-01' }), CouponError);
+   });
+ 
++  it('accepts a coupon on its first and last day', () => {
++    const { orders } = shop();
++    const request = { customer: 'c-1', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'SPRING' };
++    assert.equal(orders.quote({ ...request, date: '2026-03-01' }).totals.couponDiscountCents, 200);
++    assert.equal(orders.quote({ ...request, date: '2026-03-31' }).totals.couponDiscountCents, 200);
++  });
++
++  it('applies a percentage coupon to the subtotal after volume discounts', () => {
++    const { orders, catalog, inventory } = shop();
++    catalog.add({ sku: 'NB-1', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 100 });
++    inventory.restock('NB-1', 20);
++    const totals = orders.quote({ customer: 'c-1', date: '2026-03-15', lines: [{ sku: 'NB-1', quantity: 12 }], coupon: 'SPRING' }).totals;
++    assert.equal(totals.volumeDiscountCents, 600);
++    assert.equal(totals.couponDiscountCents, 540);
++    assert.equal(totals.goodsCents, 4860);
++  });
++
+   it('lets a single-use coupon be used once', () => {
+     const { orders, coupons } = shop();
+     coupons.add({ code: 'ONCE', kind: 'fixed', value: 100, validFrom: '2026-01-01', validUntil: '2026-12-31', singleUse: true });

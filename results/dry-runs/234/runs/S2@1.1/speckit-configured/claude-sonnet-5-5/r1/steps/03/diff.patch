@@ -1,0 +1,63 @@
+diff --git a/specs/003-coupon-giveback-and-free-shipping/spec.md b/specs/003-coupon-giveback-and-free-shipping/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..65103d926b1004bbe112550351ecddf614a4648b
+--- /dev/null
++++ b/specs/003-coupon-giveback-and-free-shipping/spec.md
+@@ -0,0 +1,13 @@
++# Feature Specification: Coupon give-back on cancel; free shipping at €50.00
++
++**Created**: 2026-11-17 | **Status**: Implemented
++Affected README rules: Orders (cancelling gives back a single-use coupon), Discounts (single-use), Shipping (free from €50.00).
++
++- **Report 1 (Paolo)**: welcome code refused after cancelling the order that used it. Cause: `OrderService.cancel`
++  called `Coupons.giveBack(code, order.customer)`, but coupons record the order id, so nothing was returned.
++  Fix: pass `order.id`. FR-001: cancelling the using order makes a single-use coupon redeemable again.
++- **Report 2 (support)**: €4.90 charged on exactly €50.00 of goods. Already fixed in d2f9555 (`goods >= 5000`);
++  a new end-to-end test (2 × €25.00 → shipping 0) confirms it. No code change. If an order was placed before
++  that fix, it is historical data, not a current defect.
++
++Boundary cases tested: exactly €50.00 goods (shipping 0); €49.99 (490, existing test).
+diff --git a/src/orders.ts b/src/orders.ts
+index 0c0b1ae889c9df13dffa9de7ed1924a4e8b09afd..a029a93fd6f94a43d5ecd351af29cda4d205ab99 100644
+--- a/src/orders.ts
++++ b/src/orders.ts
+@@ -153,7 +153,7 @@ export class OrderService {
+       throw new OrderStateError(`order ${id} can no longer be cancelled`);
+     }
+     for (const line of order.lines) this.#inventory.release(line.sku, line.quantity, id);
+-    if (order.coupon !== undefined) this.#coupons.giveBack(order.coupon, order.customer);
++    if (order.coupon !== undefined) this.#coupons.giveBack(order.coupon, order.id);
+     const cancelled: Order = { ...order, status: 'cancelled', cancelledOn: date };
+     this.#orders.set(id, cancelled);
+     return cancelled;
+diff --git a/test/fixes.test.ts b/test/fixes.test.ts
+index 57b1d080a6b2279bfd18c3583e7ee4afd75b92bf..aede68533aecf2de7d05d1eb80f8670014b250b5 100644
+--- a/test/fixes.test.ts
++++ b/test/fixes.test.ts
+@@ -35,3 +35,26 @@ test('a coupon is redeemable on its last day, not after', async () => {
+   assert.equal(coupons.redeemable('autumn', '2026-11-30', 1000).code, 'AUTUMN');
+   assert.throws(() => coupons.redeemable('autumn', '2026-12-01', 1000));
+ });
++
++test('cancelling an order gives its single-use coupon back for a new order', async () => {
++  const { createShop } = await import('../src/index.ts');
++  const shop = createShop();
++  shop.catalog.add({ sku: 'SH-1', name: 'Shirt', priceCents: 2000, vatClass: 'standard', weightGrams: 100 });
++  shop.inventory.restock('SH-1', 10);
++  shop.coupons.add({ code: 'WELCOME', kind: 'fixed', value: 500, validFrom: '2026-01-01', validUntil: '2026-12-31', singleUse: true });
++  const first = shop.orders.place({ customer: 'Paolo', date: '2026-11-01', lines: [{ sku: 'SH-1', quantity: 1 }], coupon: 'welcome' });
++  shop.orders.cancel(first.id, '2026-11-01');
++  assert.equal(shop.coupons.usedBy('WELCOME'), undefined);
++  const second = shop.orders.place({ customer: 'Paolo', date: '2026-11-01', lines: [{ sku: 'SH-1', quantity: 1 }], coupon: 'WELCOME' });
++  assert.equal(shop.coupons.usedBy('WELCOME'), second.id);
++});
++
++test('an order whose goods come to exactly €50.00 ships free', async () => {
++  const { createShop } = await import('../src/index.ts');
++  const shop = createShop();
++  shop.catalog.add({ sku: 'SH-2', name: 'Shirt', priceCents: 2500, vatClass: 'standard', weightGrams: 100 });
++  shop.inventory.restock('SH-2', 10);
++  const order = shop.orders.place({ customer: 'Anna', date: '2026-11-01', lines: [{ sku: 'SH-2', quantity: 2 }] });
++  assert.equal(order.totals.goodsCents, 5000);
++  assert.equal(order.totals.shippingCents, 0);
++});

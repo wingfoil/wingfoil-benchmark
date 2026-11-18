@@ -1,0 +1,67 @@
+diff --git a/specs/002-coupon-base-and-expiry/spec.md b/specs/002-coupon-base-and-expiry/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e8d92004d5afc62121e77d0593eb999c22a57099
+--- /dev/null
++++ b/specs/002-coupon-base-and-expiry/spec.md
+@@ -0,0 +1,10 @@
++# Feature Specification: Coupon base and last valid day
++
++**Created**: 2026-11-17 | **Status**: Implemented (items 1-2); item 3 blocked on clarification
++**Input**: (1) finance: volume discount + % coupon over-discounts; (2) customer: AUTUMN refused on its last day; (3) customer: no VAT on shipping.
++
++Affected README rules: Discounts (coupon applies to subtotal after volume discounts; valid first to last day inclusive), Shipping/VAT.
++
++- **FR-001**: A percentage coupon MUST be computed on the subtotal after volume discounts. 12 × €5.00 + 10% coupon → goods €48.60.
++- **FR-002**: A coupon MUST be redeemable on its last day (inclusive); the day after it is expired.
++- **Item 3 (NOT implemented)**: README says "Shipping is subject to VAT at the standard rate (22%)". The request contradicts it; needs a business decision (and README change) via /speckit-clarify before any code change.
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..53183f46b7ff4708ad43e87ff2b9cbce26653019 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -55,8 +55,9 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const afterVolume = gross.map((amount, index) => amount - (volume[index] ?? 0));
+   const volumeTotal = sum(volume);
+ 
++  const subtotal = grossTotal - volumeTotal;
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined ? 0 : capped(couponDiscount(coupon, subtotal), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+diff --git a/test/fixes.test.ts b/test/fixes.test.ts
+index 85597552d78b66b9ae103216e189edd77874a6ce..57b1d080a6b2279bfd18c3583e7ee4afd75b92bf 100644
+--- a/test/fixes.test.ts
++++ b/test/fixes.test.ts
+@@ -20,3 +20,18 @@ test('line VAT rounds half up', () => {
+   assert.equal(lineVat(199, 'standard'), 44);
+   assert.equal(lineVat(25, 'reduced'), 3);
+ });
++
++test('percentage coupon applies to the subtotal after volume discounts', async () => {
++  const { priceOrder } = await import('../src/pricing.ts');
++  const product = { sku: 'NB-1', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 100 } as const;
++  const coupon = { code: 'X', kind: 'percent', value: 10, validFrom: '2026-01-01', validUntil: '2026-12-31', minimumCents: 0, singleUse: false } as const;
++  assert.equal(priceOrder([{ product, quantity: 12 }], coupon).totals.goodsCents, 4860);
++});
++
++test('a coupon is redeemable on its last day, not after', async () => {
++  const { Coupons } = await import('../src/coupons.ts');
++  const coupons = new Coupons();
++  coupons.add({ code: 'AUTUMN', kind: 'percent', value: 10, validFrom: '2026-09-01', validUntil: '2026-11-30' });
++  assert.equal(coupons.redeemable('autumn', '2026-11-30', 1000).code, 'AUTUMN');
++  assert.throws(() => coupons.redeemable('autumn', '2026-12-01', 1000));
++});

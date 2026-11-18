@@ -1,0 +1,101 @@
+diff --git a/src/index.ts b/src/index.ts
+index c6b3ee257b8afd484e0b473eb4d5bbcbb2878bac..c115005734f806de2b80445c94be666a7dd7923e 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -235,3 +235,34 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   }
+   return root;
+ }
++
++/**
++ * JSON Merge Patch, RFC 7396 (which obsoletes RFC 7386; the algorithm is identical).
++ */
++
++function mergeValue(target: Json, patch: Json): Json {
++  if (!isObject(patch)) return structuredClone(patch);
++  // Section 2: a non-object target is treated as an empty object.
++  const result: Record<string, unknown> = {};
++  if (isObject(target)) {
++    for (const key of Object.keys(target)) setMember(result, key, structuredClone(target[key]));
++  }
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) delete result[key];
++    else setMember(result, key, mergeValue(Object.hasOwn(result, key) ? result[key] : undefined, value));
++  }
++  return result;
++}
++
++/**
++ * Applies a JSON Merge Patch (RFC 7396 section 2) to `target` and returns the merged document.
++ *
++ * A non-object patch replaces the target; an object patch is merged member by member, where a
++ * `null` member removes the key and other members are merged recursively. Arrays are replaced
++ * as a whole, never merged. Neither input is mutated and the result shares no structure with
++ * them.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  return mergeValue(target, patch);
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..bcaaa68ba5c5055823e679fa939869a5afa92552
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,56 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch as mp } from "../src/index.ts";
++
++test("RFC 7396 section 3 example", () => {
++  const target = { title: "Goodbye!", author: { givenName: "John", familyName: "Doe" }, tags: ["example", "sample"], content: "This will be unchanged" };
++  const patch = { title: "Hello!", phoneNumber: "+01-123-456-7890", author: { familyName: null }, tags: ["example"] };
++  assert.deepEqual(mp(target, patch), { title: "Hello!", author: { givenName: "John" }, tags: ["example"], content: "This will be unchanged", phoneNumber: "+01-123-456-7890" });
++});
++
++test("RFC 7396 appendix A test cases", () => {
++  assert.deepEqual(mp({ a: "b" }, { a: "c" }), { a: "c" });
++  assert.deepEqual(mp({ a: "b" }, { b: "c" }), { a: "b", b: "c" });
++  assert.deepEqual(mp({ a: "b" }, { a: null }), {});
++  assert.deepEqual(mp({ a: "b", b: "c" }, { a: null }), { b: "c" });
++  assert.deepEqual(mp({ a: ["b"] }, { a: "c" }), { a: "c" });
++  assert.deepEqual(mp({ a: "c" }, { a: ["b"] }), { a: ["b"] });
++  assert.deepEqual(mp({ a: { b: "c" } }, { a: { b: "d", c: null } }), { a: { b: "d" } });
++  assert.deepEqual(mp({ a: [{ b: "c" }] }, { a: [1] }), { a: [1] });
++  assert.deepEqual(mp(["a", "b"], ["c", "d"]), ["c", "d"]);
++  assert.deepEqual(mp({ a: "b" }, ["c"]), ["c"]);
++  assert.deepEqual(mp({ a: "foo" }, null), null);
++  assert.deepEqual(mp({ a: "foo" }, "bar"), "bar");
++  assert.deepEqual(mp({ e: null }, { a: 1 }), { e: null, a: 1 });
++  assert.deepEqual(mp([1, 2], { a: "b", c: null }), { a: "b" });
++  assert.deepEqual(mp({}, { a: { bb: { ccc: null } } }), { a: { bb: {} } });
++});
++
++test("non-object targets are treated as {}; removing a missing key is a no-op", () => {
++  assert.deepEqual(mp(5, { a: 1 }), { a: 1 });
++  assert.deepEqual(mp(null, { a: { b: null } }), { a: {} });
++  assert.deepEqual(mp({ a: 1 }, { z: null }), { a: 1 });
++  assert.deepEqual(mp({ a: 1 }, {}), { a: 1 });
++});
++
++test("inputs are not mutated and result shares no structure", () => {
++  const target = { a: { b: 1 }, l: [1] };
++  const patch = { a: { c: { d: 1 } }, l: [2] };
++  const t = structuredClone(target), p = structuredClone(patch);
++  const out = mp(target, patch) as any;
++  assert.deepEqual(target, t);
++  assert.deepEqual(patch, p);
++  assert.notEqual(out.a.c, patch.a.c);
++  assert.notEqual(out.l, patch.l);
++  assert.notEqual(out.a, target.a);
++});
++
++test("hostile keys such as __proto__ are plain members", () => {
++  const out = mp({}, JSON.parse('{"__proto__":{"polluted":true},"constructor":1}')) as any;
++  assert.equal(({} as any).polluted, undefined);
++  assert.equal(Object.getPrototypeOf(out), Object.prototype);
++  assert.deepEqual(Object.keys(out), ["__proto__", "constructor"]);
++  assert.deepEqual(Object.getOwnPropertyDescriptor(out, "__proto__")!.value, { polluted: true });
++  const removed = mp(JSON.parse('{"__proto__":1,"a":2}'), JSON.parse('{"__proto__":null}')) as any;
++  assert.deepEqual(Object.keys(removed), ["a"]);
++});

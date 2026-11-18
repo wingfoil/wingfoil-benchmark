@@ -1,0 +1,212 @@
+diff --git a/README.md b/README.md
+index ff92be649ff3f610b38798b3310751534d032814..21dc8c14c72009925fa9548b9a8e37ac63899b44 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,10 @@
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+ other projects of the team, so its behaviour must follow the published standards it implements.
++
++## API
++
++- `resolvePointer(document, pointer)`: JSON Pointer (RFC 6901). Returns the value the pointer refers to;
++  throws `JsonPointerError` if the pointer is invalid (§3) or does not resolve to a value (§4, including
++  the `-` array token). Only own members are followed; the document is not modified. The URI fragment
++  form (§6) is not supported.
+diff --git a/specs/001-json-pointer/plan.md b/specs/001-json-pointer/plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..cb3b88d4a0aa4ebd9d1cbdb37006f70f0c4bd77f
+--- /dev/null
++++ b/specs/001-json-pointer/plan.md
+@@ -0,0 +1,13 @@
++# Plan: JSON Pointer resolution
++Spec: specs/001-json-pointer/spec.md. Standard: RFC 6901 §3, §4, §5.
++
++## Design
++`src/pointer.ts` holds `JsonPointerError` and `resolvePointer`; `src/index.ts` re-exports them. Pure function: split on `/`, decode `~1` then `~0`, walk with own-property checks; arrays accept `0|[1-9][0-9]*` within range.
++
++## Constitution Check
++- I: standard and sections named; rules implemented exactly. PASS
++- II: no dependencies. PASS
++- III: tests in `test/pointer.test.ts` written first. PASS
++- IV: no mutation, own-property only, typed error. PASS
++- V: strict TS, doc comments, exported from index. PASS
++- VI: single small module. PASS
+diff --git a/specs/001-json-pointer/spec.md b/specs/001-json-pointer/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..010d71a86e8be51cf5394064917808ae0d3a3c23
+--- /dev/null
++++ b/specs/001-json-pointer/spec.md
+@@ -0,0 +1,44 @@
++# Feature Specification: JSON Pointer resolution
++
++**Created**: 2026-11-17 | **Status**: Draft
++**Input**: Implement JSON Pointer (RFC 6901) as `resolvePointer(document, pointer)`.
++**Standard**: RFC 6901 (JSON Pointer) §3 syntax, §4 evaluation, §5 JSON string representation. The URI fragment form (§6) is out of scope.
++
++## User Scenarios & Testing
++
++### User Story 1 - Read a value by pointer (Priority: P1)
++A service gives a JSON document and a pointer and gets back the referenced value.
++
++**Independent Test**: resolve every example of RFC 6901 §5 against its sample document.
++
++**Acceptance Scenarios**:
++1. **Given** any document, **When** the pointer is `""`, **Then** the whole document is returned.
++2. **Given** `{"foo":["bar","baz"]}`, **When** pointer is `/foo/0`, **Then** `"bar"`.
++3. **Given** keys `a/b`, `m~n`, `""`, **When** pointers `/a~1b`, `/m~0n`, `/`, **Then** their values are returned (`~1` decoded before `~0`; `~01` means the key `~1`).
++4. **Given** a member whose value is `null`, **When** it is resolved, **Then** `null` is returned (not an error).
++
++### User Story 2 - Reject invalid or unresolvable pointers (Priority: P1)
++**Acceptance Scenarios**:
++1. A non-empty pointer not starting with `/` throws (§3).
++2. A `~` not followed by `0` or `1` throws (§3).
++3. A missing member, out-of-range index, or `-` (nonexistent element, §4) throws.
++4. Array indices with leading zeros, signs, or non-digits throw; descending into a primitive or `null` throws.
++5. Names such as `__proto__`, `constructor`, `toString` resolve only if they are own members of the object; inherited ones throw.
++
++### Edge Cases
++- The document and its contents are never mutated.
++- A non-string pointer is rejected with the same error type.
++
++## Requirements
++
++- **FR-001**: `resolvePointer(document, pointer)` is exported from `src/index.ts`.
++- **FR-002**: Pointer syntax follows RFC 6901 §3; violations throw `JsonPointerError`.
++- **FR-003**: Evaluation follows §4, including escape decoding and array index rules; failure to resolve throws `JsonPointerError`.
++- **FR-004**: Only own members are followed; inputs are not mutated.
++- **FR-005**: An existing member with value `null` is returned; a missing one throws.
++
++## Success Criteria
++- All RFC 6901 §5 examples pass; every invalid/unresolvable case above throws.
++
++## Assumptions
++- Documents are values as produced by JSON parsing. Members with duplicate names are not a concern.
+diff --git a/specs/001-json-pointer/tasks.md b/specs/001-json-pointer/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9f91762235b6669b227318b6306cf9c8f494022a
+--- /dev/null
++++ b/specs/001-json-pointer/tasks.md
+@@ -0,0 +1,5 @@
++# Tasks
++- [x] T001 Add devDependency typescript and test tooling so `node --test` runs TS tests
++- [x] T002 Write failing tests `test/pointer.test.ts` (RFC §5 examples, errors, null vs missing, own-props)
++- [x] T003 Implement `src/pointer.ts` and export from `src/index.ts`
++- [x] T004 Run tests and `tsc`; update README
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..09c3fdd51d83680c23f480b5eac92a4631d37c9e
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,44 @@
++/** Error thrown for an invalid JSON Pointer or one that does not resolve to a value. */
++export class JsonPointerError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "JsonPointerError";
++  }
++}
++
++const hasOwn = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
++
++/**
++ * Resolves a JSON Pointer against a JSON document, as specified by RFC 6901.
++ *
++ * Syntax follows section 3 and evaluation section 4: `""` is the whole document, `~1` and `~0`
++ * decode to `/` and `~` (in that order), array indices are `0` or digits without a leading zero,
++ * and `-` (the nonexistent element after the last) does not resolve. Only own members are followed.
++ * The input is never modified.
++ *
++ * @throws {JsonPointerError} if the pointer is invalid or does not resolve to a value.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  if (typeof pointer !== "string") throw new JsonPointerError("pointer must be a string");
++  if (pointer === "") return document;
++  if (pointer[0] !== "/") throw new JsonPointerError(`invalid pointer "${pointer}": must start with "/"`);
++
++  let current: unknown = document;
++  for (const raw of pointer.slice(1).split("/")) {
++    if (/~(?![01])/.test(raw)) throw new JsonPointerError(`invalid escape in "${raw}": "~" must be followed by 0 or 1`);
++    const token = raw.replace(/~1/g, "/").replace(/~0/g, "~");
++
++    if (Array.isArray(current)) {
++      if (!/^(0|[1-9][0-9]*)$/.test(token)) throw new JsonPointerError(`invalid array index "${token}"`);
++      const index = Number(token);
++      if (index >= current.length) throw new JsonPointerError(`array index ${token} is out of range`);
++      current = current[index];
++    } else if (typeof current === "object" && current !== null) {
++      if (!hasOwn(current, token)) throw new JsonPointerError(`no member "${token}"`);
++      current = (current as Record<string, unknown>)[token];
++    } else {
++      throw new JsonPointerError(`cannot resolve "${token}" in a primitive value`);
++    }
++  }
++  return current;
++}
+diff --git a/test/pointer.test.ts b/test/pointer.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..989f60bd4d533646fc87f60081d558764dcdac6d
+--- /dev/null
++++ b/test/pointer.test.ts
+@@ -0,0 +1,61 @@
++import { test } from "node:test";
++import assert from "node:assert";
++import { resolvePointer, JsonPointerError } from "../src/index.ts";
++
++const doc = JSON.parse(`{
++  "foo": ["bar", "baz"], "": 0, "a/b": 1, "c%d": 2, "e^f": 3, "g|h": 4,
++  "i\\\\j": 5, "k\\"l": 6, " ": 7, "m~n": 8, "n": null, "~1": 9, "__proto__": 10
++}`);
++
++test("RFC 6901 section 5 examples", () => {
++  assert.strictEqual(resolvePointer(doc, ""), doc);
++  assert.deepStrictEqual(resolvePointer(doc, "/foo"), ["bar", "baz"]);
++  assert.strictEqual(resolvePointer(doc, "/foo/0"), "bar");
++  const expected: Array<[string, number]> = [
++    ["/", 0], ["/a~1b", 1], ["/c%d", 2], ["/e^f", 3], ["/g|h", 4],
++    ["/i\\j", 5], ['/k"l', 6], ["/ ", 7], ["/m~0n", 8],
++  ];
++  for (const [p, v] of expected) assert.strictEqual(resolvePointer(doc, p), v);
++});
++
++test("escape order: ~01 is the key ~1", () => {
++  assert.strictEqual(resolvePointer(doc, "/~01"), 9);
++});
++
++test("null is a value, missing is an error", () => {
++  assert.strictEqual(resolvePointer(doc, "/n"), null);
++  assert.throws(() => resolvePointer(doc, "/nope"), JsonPointerError);
++  assert.throws(() => resolvePointer(doc, "/n/x"), JsonPointerError);
++});
++
++test("invalid syntax", () => {
++  for (const p of ["foo", "~0", "/a~", "/a~2", "/~x", "#/foo"])
++    assert.throws(() => resolvePointer(doc, p), JsonPointerError, p);
++  assert.throws(() => resolvePointer(doc, 5 as unknown as string), JsonPointerError);
++});
++
++test("array indices", () => {
++  const a = [10, 20, 30];
++  assert.strictEqual(resolvePointer(a, "/2"), 30);
++  for (const p of ["/3", "/-", "/01", "/+1", "/-1", "/1.0", "/x", "/", "/1e0"])
++    assert.throws(() => resolvePointer(a, p), JsonPointerError, p);
++  assert.strictEqual(resolvePointer([[1]], "/0/0"), 1);
++  assert.throws(() => resolvePointer(a, "/length"), JsonPointerError);
++});
++
++test("primitives cannot be descended into", () => {
++  assert.throws(() => resolvePointer("abc", "/0"), JsonPointerError);
++  assert.throws(() => resolvePointer(5, "/x"), JsonPointerError);
++  assert.strictEqual(resolvePointer(5, ""), 5);
++});
++
++test("only own members; no mutation", () => {
++  const o = JSON.parse('{"a":{"b":1}}');
++  const copy = structuredClone(o);
++  for (const k of ["constructor", "toString", "prototype", "hasOwnProperty"])
++    assert.throws(() => resolvePointer(o, "/" + k), JsonPointerError, k);
++  assert.throws(() => resolvePointer(o, "/__proto__"), JsonPointerError);
++  assert.strictEqual(resolvePointer(doc, "/__proto__"), 10);
++  resolvePointer(o, "/a/b");
++  assert.deepStrictEqual(o, copy);
++});

@@ -1,0 +1,51 @@
+diff --git a/README.md b/README.md
+index 9a14be52caf2c7a0794a7f4a793f390b88d15325..7b5a21ffdd9892d3668d7fa36960daa8979496f6 100644
+--- a/README.md
++++ b/README.md
+@@ -39,6 +39,7 @@ applyPatch({ foo: "bar" }, [{ op: "add", path: "/baz", value: "qux" }]); // { fo
+   when a pointer is malformed. A failing operation aborts the whole patch; nothing is returned.
+ - Neither `document` nor `patch` is mutated, and the result shares no structure with either.
+ - Removing the whole document (`remove` with path `""`) and moving a value into its own child are errors.
++- A `move` whose `from` equals its `path` is a no-op (the source must exist), also for the whole document. A `value` of `undefined` counts as missing.
+ - `test` compares as RFC 6902 section 4.6 says: object member order is ignored, types must match.
+ - `__proto__` and similar keys are handled as ordinary own members and never touch the prototype chain.
+ 
+diff --git a/src/index.ts b/src/index.ts
+index 7b929e712df7d5f6aba69c1edaadca34bbab708d..69f4dee56a4384e8b2c43ac8208438bf408f6481 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -97,7 +97,7 @@ function validate(operation: unknown): Operation {
+   if ((op === "move" || op === "copy") && typeof operation.from !== "string") {
+     throw new Error(`Invalid JSON Patch: "${op}" needs a string "from"`);
+   }
+-  if ((op === "add" || op === "replace" || op === "test") && !Object.hasOwn(operation, "value")) {
++  if ((op === "add" || op === "replace" || op === "test") && operation.value === undefined) {
+     throw new Error(`Invalid JSON Patch: "${op}" needs a "value"`);
+   }
+   return operation as unknown as Operation;
+@@ -186,6 +186,9 @@ function applyOperation(document: unknown, operation: Operation): unknown {
+       const source = parsePointer(from as string);
+       const target = parsePointer(path);
+       const moved = resolveTokens(document, source);
++      if (source.length === target.length && source.every((t, i) => t === target[i])) {
++        return document;
++      }
+       if (source.length < target.length && source.every((t, i) => t === target[i])) {
+         throw new Error("JSON Patch: a value cannot be moved into one of its own children");
+       }
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 76471fdfb9a2c75c3b9bc16998be9f1f5d5c99aa..edb373e5ce96fd07b3c7e389c5fc04a31f098a1f 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -118,3 +118,11 @@ test("__proto__ keys do not pollute prototypes", () => {
+   assert.throws(() => applyPatch({}, [{ op: "add", path: "/constructor/prototype/polluted", value: true }]));
+   assert.equal(({} as Record<string, unknown>).polluted, undefined);
+ });
++
++test("RFC 6902 section 4.4: moving the whole document onto itself is a no-op", () => {
++  assert.deepEqual(applyPatch({ a: 1 }, [{ op: "move", from: "", path: "" }]), { a: 1 });
++});
++
++test("RFC 6902 section 4: a value that is undefined is not a JSON value, so it counts as missing", () => {
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: undefined }]), /needs a "value"/);
++});

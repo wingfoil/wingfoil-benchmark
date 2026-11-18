@@ -2,7 +2,7 @@
 id: task-154-calibration-v0.3-plan-005-step-3-the-1.1-dry-runs-scored-the-reference-campaign-with-its-loop-and-haiku-slice-the-revised-budget-and-the-hypotheses
 type: task
 title: "Calibration v0.3 (plan-005 step 3): the 1.1 dry runs scored, the reference campaign with its loop and Haiku slice, the revised budget and the hypotheses"
-status: backlog
+status: approved
 release: v0.3
 wave: calibration
 features: [F4.9, F7.5]
@@ -103,3 +103,31 @@ What is settled before it:
   compare. A new ECB rate is the approver's choice at the budget gate.
 
 ## Execution notes
+
+- **Stage A:** the ledger gained `208`-`215`; `155`-`215` were scored (`160` superseded by `204`).
+- **The machine stopped stage A once:** an ACPI hang left docker unresponsive and the disk was full. The approver freed
+  the space and rebooted; the score left behind one container, removed before resuming.
+- **`dist` was rebuilt in this worktree while scores were using it:** `src` had not changed, so the scores stand.
+- **Stage B's first launch stopped after `216`:** the launching script lacked `BENCH_SPECKIT_REPO`, so two launches
+  failed before any session and nothing was spent. The variable was added and the remaining 47 dry runs were launched.
+- **Stage B:** `216`-`263`, 48 of 48 completed, 24.67 EUR against the 35 EUR ceiling (steps 20.00, loops 4.67). No stop
+  of the launching script fired. The machine slept during `260`, which completed; its step durations are not reliable.
+- **A running dry run's `loop.json` is provisional:** it says `interrupted` at the 2 EUR bound until the loop ends, so a
+  spend read during a session can overstate. The launching script reads between dry runs.
+- **The budget gate:** the estimate's high, 50.8545 EUR, passed the preset's provisional 50 EUR ceiling. The approver
+  approved `warn_eur` 65 and `ceiling_eur` 80 in chat on 2026-11-18 ("ok, avviso 65 € e tetto 80 €, procedi").
+- **`scripts/pre-review.sh main` stops at Prettier on this branch:** the branch changes 1474 files, nearly all dry-run
+  records, and `npx` passes them as one shell string longer than the kernel's 128 KiB limit for a single argument, so
+  Prettier exits 249 and prints nothing. The script's checks were run by hand instead: Markdown passed in the script,
+  Prettier in batches of 200 files, then eslint, tsc, and the touched tests with the traceability test, all green.
+- **The independent review (2026-11-18) found no wrong figure.** Its findings are fixed on this branch: main's dry-run
+  profile test is restored beside the new one, the budget table, the verdicts and the loops' count are generated
+  (`scripts/budget-reading.mjs`, `scripts/hypotheses-reading.mjs`), H6 names the run below the baseline, a mean over
+  different totals is refused, and the ledger names a not-clean loop's round once.
+- **Before merging into main:** main's checkout holds dry runs `216`-`263` untracked, with their git-ignored
+  transcripts, the only copy. Git refuses the merge until the paths the branch tracks are gone. Remove only those
+  (`git ls-tree -r --name-only <branch> results/dry-runs/<n>`), never the whole directories and never `git clean`.
+- **A second independent review (2026-11-18) found no blocker.** Its findings are fixed: H1 and H2 now fall from the
+  v0.2.2 bridge on Sonnet 5.5 and not from v0.1's values on another model, a verdict lacking its data says "not read",
+  `budget-reading.mjs` merges a preset as the campaign loader does, and `260` is left out of the longest step. These
+  last fixes were not reviewed again.

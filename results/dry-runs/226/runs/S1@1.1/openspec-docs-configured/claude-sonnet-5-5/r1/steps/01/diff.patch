@@ -1,0 +1,183 @@
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..0aafd075c5456ae75e1468f87554894ae7b18799
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,57 @@
++/**
++ * JSON Pointer, RFC 6901.
++ */
++
++/** Splits a pointer into unescaped reference tokens (RFC 6901 sections 3 and 4). */
++function parsePointer(pointer: string): string[] {
++  if (typeof pointer !== "string") {
++    throw new TypeError("JSON Pointer must be a string");
++  }
++  if (pointer === "") return [];
++  if (pointer[0] !== "/") {
++    throw new SyntaxError(`Invalid JSON Pointer: must be empty or start with "/": ${pointer}`);
++  }
++  return pointer
++    .slice(1)
++    .split("/")
++    .map((token) => {
++      if (/~(?![01])/.test(token)) {
++        throw new SyntaxError(`Invalid JSON Pointer: "~" must be followed by 0 or 1: ${pointer}`);
++      }
++      // Section 4: ~1 first, then ~0, so "~01" becomes "~1".
++      return token.replace(/~1/g, "/").replace(/~0/g, "~");
++    });
++}
++
++/**
++ * Returns the value of `document` referred to by `pointer` (RFC 6901 section 4).
++ *
++ * Throws if the pointer is syntactically invalid (section 3) or does not resolve to a
++ * value of the document, including the "-" array token (section 4), which refers to a
++ * nonexistent element. The document is never mutated.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  let current = document;
++  for (const token of parsePointer(pointer)) {
++    if (Array.isArray(current)) {
++      // Section 4: index is "0" or digits without leading zeros.
++      if (!/^(0|[1-9][0-9]*)$/.test(token)) {
++        throw new Error(`JSON Pointer does not resolve: invalid array index "${token}"`);
++      }
++      const index = Number(token);
++      if (index >= current.length) {
++        throw new Error(`JSON Pointer does not resolve: array index ${token} out of range`);
++      }
++      current = current[index];
++    } else if (typeof current === "object" && current !== null) {
++      // Own properties only, so "__proto__" or "constructor" never reach the prototype chain.
++      if (!Object.hasOwn(current, token)) {
++        throw new Error(`JSON Pointer does not resolve: no member "${token}"`);
++      }
++      current = (current as Record<string, unknown>)[token];
++    } else {
++      throw new Error(`JSON Pointer does not resolve: cannot descend into a scalar at "${token}"`);
++    }
++  }
++  return current;
++}
+diff --git a/test/pointer.test.ts b/test/pointer.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..b3454486afca710662b6cb79383c995bb5ccf195
+--- /dev/null
++++ b/test/pointer.test.ts
+@@ -0,0 +1,114 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { resolvePointer } from "../src/index.ts";
++
++// RFC 6901 section 5 example document.
++const doc = {
++  foo: ["bar", "baz"],
++  "": 0,
++  "a/b": 1,
++  "c%d": 2,
++  "e^f": 3,
++  "g|h": 4,
++  "i\\j": 5,
++  'k"l': 6,
++  " ": 7,
++  "m~n": 8,
++};
++
++test("RFC 6901 section 5 examples", () => {
++  assert.equal(resolvePointer(doc, ""), doc);
++  assert.deepEqual(resolvePointer(doc, "/foo"), ["bar", "baz"]);
++  assert.equal(resolvePointer(doc, "/foo/0"), "bar");
++  assert.equal(resolvePointer(doc, "/"), 0);
++  assert.equal(resolvePointer(doc, "/a~1b"), 1);
++  assert.equal(resolvePointer(doc, "/c%d"), 2);
++  assert.equal(resolvePointer(doc, "/e^f"), 3);
++  assert.equal(resolvePointer(doc, "/g|h"), 4);
++  assert.equal(resolvePointer(doc, "/i\\j"), 5);
++  assert.equal(resolvePointer(doc, '/k"l'), 6);
++  assert.equal(resolvePointer(doc, "/ "), 7);
++  assert.equal(resolvePointer(doc, "/m~0n"), 8);
++});
++
++test("escape order: ~01 is the key ~1", () => {
++  assert.equal(resolvePointer({ "~1": "x", "/": "y" }, "/~01"), "x");
++});
++
++test("empty pointer returns any document, including scalars and null", () => {
++  assert.equal(resolvePointer(null, ""), null);
++  assert.equal(resolvePointer(5, ""), 5);
++});
++
++test("null and falsy values are returned, not treated as missing", () => {
++  assert.equal(resolvePointer({ a: null }, "/a"), null);
++  assert.equal(resolvePointer({ a: false }, "/a"), false);
++  assert.equal(resolvePointer([0], "/0"), 0);
++});
++
++test("nested arrays and objects", () => {
++  assert.equal(resolvePointer({ a: [{ b: [1, 2, 3] }] }, "/a/0/b/2"), 3);
++});
++
++test("invalid pointer syntax throws", () => {
++  assert.throws(() => resolvePointer(doc, "foo"));
++  assert.throws(() => resolvePointer(doc, "/a~"));
++  assert.throws(() => resolvePointer(doc, "/a~2"));
++  assert.throws(() => resolvePointer(doc, "/~"));
++  assert.throws(() => resolvePointer(doc, "#/foo"));
++  assert.throws(() => resolvePointer(doc, undefined as unknown as string));
++});
++
++test("invalid syntax throws even if the document is trivially resolvable", () => {
++  assert.throws(() => resolvePointer({ "a~": 1 }, "/a~"));
++});
++
++test("missing member throws", () => {
++  assert.throws(() => resolvePointer(doc, "/nope"));
++  assert.throws(() => resolvePointer(doc, "/foo/0/x"));
++});
++
++test("array index errors", () => {
++  assert.throws(() => resolvePointer(doc, "/foo/2"));
++  assert.throws(() => resolvePointer(doc, "/foo/-"));
++  assert.throws(() => resolvePointer(doc, "/foo/00"));
++  assert.throws(() => resolvePointer(doc, "/foo/01"));
++  assert.throws(() => resolvePointer(doc, "/foo/-1"));
++  assert.throws(() => resolvePointer(doc, "/foo/+1"));
++  assert.throws(() => resolvePointer(doc, "/foo/1.0"));
++  assert.throws(() => resolvePointer(doc, "/foo/"));
++  assert.throws(() => resolvePointer(doc, "/foo/length"));
++  assert.throws(() => resolvePointer(doc, "/foo/99999999999999999999"));
++});
++
++test('"-" is a regular key on objects', () => {
++  assert.equal(resolvePointer({ "-": 1 }, "/-"), 1);
++});
++
++test("descending into a scalar or null throws", () => {
++  assert.throws(() => resolvePointer({ a: 1 }, "/a/b"));
++  assert.throws(() => resolvePointer({ a: null }, "/a/b"));
++  assert.throws(() => resolvePointer({ a: "str" }, "/a/length"));
++  assert.throws(() => resolvePointer({ a: "str" }, "/a/0"));
++});
++
++test("hostile keys never reach the prototype chain", () => {
++  assert.throws(() => resolvePointer({}, "/__proto__"));
++  assert.throws(() => resolvePointer({}, "/constructor"));
++  assert.throws(() => resolvePointer({}, "/toString"));
++  assert.throws(() => resolvePointer({ a: {} }, "/a/__proto__/x"));
++  assert.throws(() => resolvePointer([], "/__proto__"));
++  const parsed = JSON.parse('{"__proto__": {"x": 1}}');
++  assert.equal(resolvePointer(parsed, "/__proto__/x"), 1);
++});
++
++test("duplicate keys: last one wins as parsed by JSON.parse", () => {
++  assert.equal(resolvePointer(JSON.parse('{"a":1,"a":2}'), "/a"), 2);
++});
++
++test("does not mutate the document", () => {
++  const d = { a: [1, { b: 2 }] };
++  const copy = structuredClone(d);
++  resolvePointer(d, "/a/1/b");
++  assert.deepEqual(d, copy);
++});

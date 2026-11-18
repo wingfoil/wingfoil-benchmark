@@ -1,0 +1,100 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b4a66cd01b680099911a7fe05f595da2e7f2db45
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "Fix discount, coupon expiry, shipping VAT"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-fix-coupon-base-after-volume-discount-coupon-last-day-decline-shipping-vat-removal.md b/docs/memory/task/task-002-fix-coupon-base-after-volume-discount-coupon-last-day-decline-shipping-vat-removal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..20aac8070e0b8084a99f469e3026a671bee61460
+--- /dev/null
++++ b/docs/memory/task/task-002-fix-coupon-base-after-volume-discount-coupon-last-day-decline-shipping-vat-removal.md
+@@ -0,0 +1,22 @@
++---
++id: task-002-fix-coupon-base-after-volume-discount-coupon-last-day-decline-shipping-vat-removal
++type: task
++title: "Fix coupon base after volume discount, coupon last day; decline shipping VAT removal"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++## Request
++
++Three reports:
++1. Percentage coupon was computed on the gross amount instead of the subtotal after volume discounts (12 × €5.00, 10% coupon: expected €48.60). Fixed in `src/pricing.ts`.
++2. Coupon AUTUMN refused on its last day (30 November). The last day is included; fixed in `src/coupons.ts` (`redeemable`).
++3. Remove VAT on shipping: NOT done. README (authoritative) says shipping is subject to 22% VAT, shown on its own receipt line. Needs a business/README decision.
++
++Tests added in `test/coupons.test.ts`; `npm test` passes (19 tests).
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..8d2e07ede7fc792a7a1ada9fffd4bebfedb73c6c 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -56,7 +56,7 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const volumeTotal = sum(volume);
+ 
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined ? 0 : capped(couponDiscount(coupon, sum(afterVolume)), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 1fdc2519dc031050b1b5593605af611816478518..bd15d0e80819edf12dd4e78acce1e99b03397ae4 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -40,4 +40,18 @@ describe('coupons', () => {
+     assert.equal(coupons.usedBy('ONCE'), 'ORD-0001');
+     assert.throws(() => orders.place({ customer: 'c-2', date: '2026-05-05', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'ONCE' }), CouponError);
+   });
++
++  it('accepts a coupon on its last day', () => {
++    const { orders } = shop();
++    const order = orders.quote({ customer: 'c-1', date: '2026-03-31', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'SPRING' });
++    assert.equal(order.totals.couponDiscountCents, 200);
++  });
++
++  it('applies a percentage coupon to the subtotal after volume discounts', () => {
++    const s = shop();
++    s.catalog.add({ sku: 'NB-1', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 100 });
++    s.inventory.restock('NB-1', 20);
++    const order = s.orders.quote({ customer: 'c-1', date: '2026-03-15', lines: [{ sku: 'NB-1', quantity: 12 }], coupon: 'SPRING' });
++    assert.equal(order.totals.goodsCents, 4860);
++  });
+ });

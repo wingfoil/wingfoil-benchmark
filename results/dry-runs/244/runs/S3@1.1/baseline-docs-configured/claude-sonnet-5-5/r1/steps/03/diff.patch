@@ -1,0 +1,90 @@
+diff --git a/src/index.ts b/src/index.ts
+index 4c8f1d468fb5da26e62c19fcea9bfebdf4c48f16..67cda2124270a483ab02bf4f09f4eee9706784e2 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -39,7 +39,7 @@ export interface AvailabilityQuery {
+ export interface RentalService {
+   /** Registers an item for rental; throws on an invalid item or a duplicate id. */
+   addEquipment(item: Equipment): void;
+-  /** Prices a rental; throws for an unknown item or a period that is not whole UTC days. */
++  /** Prices a rental, 10% off from 3 days; throws for an unknown item or a period that is not whole UTC days. */
+   quote(request: RentalRequest): RentalQuote;
+   /** Books an item; throws like `quote`, and when the item is already booked during the period. */
+   book(request: RentalRequest): Booking;
+@@ -48,6 +48,7 @@ export interface RentalService {
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
++const LONG_STAY_DAYS = 3;
+ const UTC_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+ 
+ /** Parses an ISO-8601 UTC instant that falls exactly on midnight; returns epoch milliseconds. */
+@@ -78,6 +79,11 @@ function validateEquipment(item: Equipment): void {
+   }
+ }
+ 
++/** Applies the long-stay reward: 10% off from 3 days, the discount rounded half up to the cent. */
++function applyLongStayDiscount(fullPrice: number, days: number): number {
++  return days >= LONG_STAY_DAYS ? fullPrice - Math.floor((fullPrice + 5) / 10) : fullPrice;
++}
++
+ /** Creates an empty rental service that keeps equipment and bookings in memory. */
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+@@ -102,10 +108,12 @@ export function createRentalService(): RentalService {
+       throw new Error(`Unknown item: ${String(request?.itemId)}`);
+     }
+     const { from, to } = parsePeriod(request);
+-    const total = item.dailyPrice * ((to - from) / DAY_MS);
+-    if (!Number.isSafeInteger(total)) {
++    const days = (to - from) / DAY_MS;
++    const fullPrice = item.dailyPrice * days;
++    if (!Number.isSafeInteger(fullPrice)) {
+       throw new Error('Total is too large');
+     }
++    const total = applyLongStayDiscount(fullPrice, days);
+     return { itemId: item.id, start: request.start, end: request.end, total, from, to };
+   }
+ 
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 4c5a7010c1cf8b6ae016b1d39279b27b351e4d10..5a7c62a8973b2adf8a89acda8d0971685c39dd8a 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -11,12 +11,12 @@ function service() {
+ 
+ const may = (d: number) => `2026-05-${String(d).padStart(2, '0')}T00:00:00Z`;
+ 
+-test('quote prices whole days in cents', () => {
++test('quote prices whole days in cents, with the long-stay discount', () => {
+   assert.deepStrictEqual(service().quote({ itemId: 'board-1', start: may(1), end: may(4) }), {
+     itemId: 'board-1',
+     start: may(1),
+     end: may(4),
+-    total: 7500,
++    total: 6750,
+   });
+ });
+ 
+@@ -24,6 +24,22 @@ test('quote accepts a single day', () => {
+   assert.strictEqual(service().quote({ itemId: 'sail-1', start: may(1), end: may(2) }).total, 1500);
+ });
+ 
++test('a rental of 3 days or more costs 10% less, in quotes and bookings', () => {
++  const s = service();
++  assert.strictEqual(s.quote({ itemId: 'board-1', start: may(1), end: may(3) }).total, 5000);
++  assert.strictEqual(s.quote({ itemId: 'board-1', start: may(1), end: may(4) }).total, 6750);
++  assert.strictEqual(s.quote({ itemId: 'board-1', start: may(1), end: may(11) }).total, 22500);
++  assert.strictEqual(s.book({ itemId: 'board-1', start: may(1), end: may(4) }).total, 6750);
++});
++
++test('the long-stay discount is rounded half up to the cent', () => {
++  const s = createRentalService();
++  s.addEquipment({ id: 'a', kind: 'board', dailyPrice: 5 });
++  s.addEquipment({ id: 'b', kind: 'board', dailyPrice: 1 });
++  assert.strictEqual(s.quote({ itemId: 'a', start: may(1), end: may(4) }).total, 13);
++  assert.strictEqual(s.quote({ itemId: 'b', start: may(1), end: may(4) }).total, 3);
++});
++
+ test('quote rejects unknown items and bad periods', () => {
+   const s = service();
+   assert.throws(() => s.quote({ itemId: 'nope', start: may(1), end: may(2) }));

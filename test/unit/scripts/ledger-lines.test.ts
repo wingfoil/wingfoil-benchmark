@@ -94,6 +94,78 @@ describe('scripts/ledger-lines.mjs (task-144)', () => {
     );
   });
 
+  it("adds a review loop's cost and outcome to its dry run's line (task-154)", () => {
+    const root = tempDir('bench-ledger-lines-');
+    const dir = join(
+      root,
+      'results',
+      'dry-runs',
+      '5',
+      'runs',
+      'S3@1.1',
+      'wingfoil',
+      'claude-sonnet-5-5',
+      'r1',
+    );
+    mkdirSync(join(dir, 'review', '1'), { recursive: true });
+    mkdirSync(join(dir, 'review', '2'), { recursive: true });
+    const step = { usage: { costUsd: 1, costEur: 0.5 } };
+    const body = { agent: AGENT, model: 'claude-sonnet-5-5', effort: 'medium', outcome: 'completed' };
+    writeFileSync(join(dir, 'run.json'), JSON.stringify({ ...body, steps: [step, step], interventions: [] }));
+    writeFileSync(
+      join(dir, 'review', 'loop.json'),
+      JSON.stringify({ outcome: 'no fix', cost_eur: 0.15, rounds: [{ n: 1 }, { n: 2 }] }),
+    );
+    writeFileSync(
+      join(dir, 'review', '1', 'reviewer-usage.json'),
+      JSON.stringify({ costUsd: 0.1, costEur: 0.05 }),
+    );
+    writeFileSync(
+      join(dir, 'review', '1', 'fixer-usage.json'),
+      JSON.stringify({ usage: { costUsd: 0.06, costEur: 0.03 }, interventions: [] }),
+    );
+    writeFileSync(
+      join(dir, 'review', '2', 'reviewer-usage.json'),
+      JSON.stringify({ costUsd: 0.14, costEur: 0.07 }),
+    );
+    const result = run(['dry-runs', root, ...COMMON, '--after', '4']);
+    expect(result.status).toBe(0);
+    const [line] = result.stdout.trim().split('\n');
+    expect(line).toContain(
+      '| dry run of S3@1.1, wingfoil arm (`dry-runs/5`, 2 steps, 0 interventions; completed; ' +
+        'review loop no fix at round 2) |',
+    );
+    expect(line).toContain(
+      '| 2.3000 USD (1.1500 €) API-equivalent: steps 2.0000 USD (1.0000 €), review loop 0.3000 USD (0.1500 €); ' +
+        'nothing billed per token |',
+    );
+  });
+
+  it('names the round of a loop that ended not clean only once (review of task-154)', () => {
+    const root = tempDir('bench-ledger-lines-');
+    const dir = join(
+      root,
+      'results',
+      'dry-runs',
+      '5',
+      'runs',
+      'S8@1.1',
+      'wingfoil',
+      'claude-sonnet-5-5',
+      'r1',
+    );
+    mkdirSync(join(dir, 'review'), { recursive: true });
+    const body = { agent: AGENT, model: 'claude-sonnet-5-5', effort: 'medium', outcome: 'completed' };
+    writeFileSync(join(dir, 'run.json'), JSON.stringify({ ...body, steps: [], interventions: [] }));
+    writeFileSync(
+      join(dir, 'review', 'loop.json'),
+      JSON.stringify({ outcome: 'not clean at 5', cost_eur: 0, rounds: [] }),
+    );
+    const result = run(['dry-runs', root, ...COMMON]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('completed; review loop not clean at 5) |');
+  });
+
   it('says "unknown date" for a dry run whose transcript is not there, as in a clone', () => {
     const root = tempDir('bench-ledger-lines-');
     const dir = join(
