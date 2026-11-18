@@ -131,3 +131,7 @@ What is settled before it:
   v0.2.2 bridge on Sonnet 5.5 and not from v0.1's values on another model, a verdict lacking its data says "not read",
   `budget-reading.mjs` merges a preset as the campaign loader does, and `260` is left out of the longest step. These
   last fixes were not reviewed again.
+- **The full suites (2026-11-18, commit `4bdf2aed`):** lint, build, `test` 2452 passed and 10 skipped, `test:bin` 22
+  passed, `test:docker` 22 passed and 2 skipped.
+- **The merge:** the 1354 tracked paths main's checkout held for `216`-`263` matched the branch byte for byte and were
+  removed before merging. The 285 git-ignored transcripts stayed, and every file's checksum is unchanged.
