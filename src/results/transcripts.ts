@@ -66,6 +66,8 @@ export interface TranscriptPack {
   readonly transcripts: number;
   readonly kinds: TranscriptKinds;
   readonly runsWithout: readonly string[];
+  /** The runs the asset holds other transcripts of, whose steps' this machine no longer holds, sorted. */
+  readonly runsWithoutSteps: readonly string[];
   /** The review and configuring transcripts the records name and this machine no longer holds, sorted. */
   readonly missing: readonly string[];
   /** The harness artifacts the runs installed (REQ-CLI-11 as amended); absent when no run installed one. */
@@ -131,6 +133,7 @@ export async function packTranscripts(
   const unreadable: Issue[] = [];
   const withTranscripts: string[] = [];
   const runsWithout: string[] = [];
+  const runsWithoutSteps: string[] = [];
   for (const run of runs) {
     // The run's earlier attempts first (REQ-CLI-11 as amended in 1.26, task-080), in their order, then its own.
     const attemptsDir = join(executionDir, relativeRun(run), 'attempts');
@@ -175,13 +178,16 @@ export async function packTranscripts(
     }
     if (held) withTranscripts.push(run);
     else runsWithout.push(run);
+    if (held && own.length === 0) runsWithoutSteps.push(`${where}/${relativeRun(run)}`);
   }
   if (unreadable.length > 0) return fail(unreadable);
   const paths = [...sources.keys()];
   kinds.configuring = paths.filter((path) => path.startsWith(`${CONFIGURING}/`)).length;
   if (paths.length === 0) return fail([{ path: where, message: 'has no transcript on disk to pack' }]);
   // A link would pack what it points to (task-047's third review): only regular files are transcripts.
-  const irregular = paths.filter((path) => !lstatSync(sources.get(path) ?? '').isFile());
+  const irregular = paths.filter(
+    (path) => !regularFile(path.startsWith(`${CONFIGURING}/`) ? join(root, 'results') : executionDir, path),
+  );
   if (irregular.length > 0) {
     return fail(irregular.map((path) => ({ path, message: 'is not a regular file: a transcript is never a link' })));
   }
@@ -194,7 +200,15 @@ export async function packTranscripts(
       mkdirSync(dirname(join(copies, path)), { recursive: true });
       copyFileSync(sources.get(path) ?? '', join(copies, path));
     }
-    const found = { paths, runs, withTranscripts, runsWithout, kinds, missing: [...missing].sort() };
+    const found = {
+      paths,
+      runs,
+      withTranscripts,
+      runsWithout,
+      runsWithoutSteps: runsWithoutSteps.sort(),
+      kinds,
+      missing: [...missing].sort(),
+    };
     return await packCopies(root, executionDir, copies, aggregate, found, options);
   } finally {
     rmSync(copies, { recursive: true, force: true });
@@ -212,12 +226,13 @@ async function packCopies(
     readonly runs: readonly string[];
     readonly withTranscripts: readonly string[];
     readonly runsWithout: readonly string[];
+    readonly runsWithoutSteps: readonly string[];
     readonly kinds: TranscriptKinds;
     readonly missing: readonly string[];
   },
   options: { readonly process: ProcessPort; readonly secrets: readonly KnownSecret[] },
 ): Promise<Result<TranscriptPack>> {
-  const { paths, runs, withTranscripts, runsWithout, kinds, missing } = found;
+  const { paths, runs, withTranscripts, runsWithout, runsWithoutSteps, kinds, missing } = found;
   const relativeRun = (run: string) => run.split('/').slice(2).join('/');
   const issues: Issue[] = [];
   for (const path of paths) {
@@ -328,6 +343,7 @@ async function packCopies(
     transcripts: paths.length,
     kinds,
     runsWithout,
+    runsWithoutSteps,
     missing,
     ...(harnesses.value === undefined ? {} : { harnesses: harnesses.value }),
   });
@@ -343,7 +359,8 @@ function reviewTranscripts(
   dir: string,
 ): Result<{ readonly present: readonly string[]; readonly absent: readonly string[] }> {
   const review = join(executionDir, dir, 'review');
-  if (!existsSync(review)) return ok({ present: [], absent: [] });
+  if (!present(review)) return ok({ present: [], absent: [] });
+  if (!lstatSync(review).isDirectory()) return fail([{ path: `${dir}/review`, message: 'is not a directory' }]);
   const expected = new Set<string>();
   const loopFile = join(review, 'loop.json');
   if (existsSync(loopFile)) {
@@ -378,7 +395,7 @@ function configurationRead(
   executionDir: string,
   run: string,
 ): Result<{ readonly of: string; readonly records: number } | undefined> {
-  let configured: { of?: unknown; records?: unknown } | undefined;
+  let configured: { of?: unknown; records?: unknown } | null | undefined;
   try {
     configured = (JSON.parse(readFileSync(join(executionDir, run, 'run.json'), 'utf8')) as { configured?: typeof configured })
       .configured;
@@ -386,7 +403,7 @@ function configurationRead(
     return ok(undefined);
   }
   if (configured === undefined) return ok(undefined);
-  const { of, records } = configured;
+  const { of, records } = configured ?? {};
   if (typeof of !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(of) || !Number.isInteger(records) || (records as number) < 1) {
     return fail([{ path: `${run}/run.json`, message: 'its configured record names no harness and sessions' }]);
   }
@@ -498,6 +515,17 @@ function cachedAt(cacheRoot: string, recordedDir: string, byVersion: string | un
 
 function sha256Of(file: string): string {
   return createHash('sha256').update(readFileSync(file)).digest('hex');
+}
+
+/** Whether `path` under `base` is a regular file reached through no link, in any folder of the path (REQ-RES-06). */
+function regularFile(base: string, path: string): boolean {
+  const parts = path.split('/');
+  let at = base;
+  return parts.every((part, index) => {
+    at = join(at, part);
+    const entry = lstatSync(at);
+    return !entry.isSymbolicLink() && (index < parts.length - 1 || entry.isFile());
+  });
 }
 
 /** Whether `path` is there, a link that leads nowhere included (`existsSync` follows links). */
