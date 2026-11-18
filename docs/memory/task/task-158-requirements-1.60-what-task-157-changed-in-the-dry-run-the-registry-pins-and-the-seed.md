@@ -25,13 +25,13 @@ this, and the approver asked for this task on 2026-11-18.
 <!-- A specification change: no code, no Gherkin scenario and no red test. Each amendment is checked against the code. -->
 
 1. **REQ-CLI-05, amended in 1.60:**
-   - a dry run refuses a registry tool's pin that cannot be fetched, as `validate` does (REQ-FMT-12);
+   - a dry run refuses a registry tool's pin of the wrong form, as `validate` does (REQ-FMT-12);
    - a dry run on a harness version the register does not admit still runs, and prints what a campaign would be refused
      for, because dry runs are how a version is studied before it is assessed (REQ-FMT-11);
    - when the latest dry run of its key does not count, the dry run says why, also when an older one still counts.
 2. **REQ-FMT-11, amended in 1.60:** the refusal it states is a campaign's. A dry run only notes it (REQ-CLI-05).
-3. **REQ-FMT-12, amended in 1.60:** a tool fetched from the npm registry is pinned by a released version and no commit,
-   and `validate` and the dry run refuse any other pin before an image is built.
+3. **REQ-FMT-12, amended in 1.60:** a tool fetched from the npm registry is pinned by a version of a release's form and
+   no commit, and `validate` and the dry run refuse any other form before an image is built.
 4. **REQ-FMT-04, amended in 1.60:** a scenario's seed holds at least one file a commit can record. The validator refuses
    one that holds none, and a run refuses a seed whose every file git ignores, in the benchmark's words.
 5. **The document:** its version becomes 1.60 and its date the day of the change. Each amendment is written as
@@ -48,5 +48,8 @@ this, and the approver asked for this task on 2026-11-18.
 ## Execution notes
 
 - **Read against the code (2026-11-18):** each amendment was compared with `src/runner/dry-run.ts`,
-  `src/runner/harness-pins.ts`, `src/core/campaign.ts`, `src/cli/dry-run.ts`, `src/results/dry-runs.ts`,
-  `src/scenario/load.ts` and `src/scenario/workspace.ts`.
+  `src/runner/harness-pins.ts`, `src/runner/harness.ts`, `src/core/campaign.ts`, `src/core/eligibility.ts`,
+  `src/cli/dry-run.ts`, `src/results/dry-runs.ts`, `src/scenario/load.ts` and `src/scenario/workspace.ts`.
+- **The independent review (2026-11-18) found no blocker.** Three sentences claimed more than the code does, and they
+  now say what it checks: a registry pin's form and not the registry's content, and a dry run that left a readable
+  record. Criteria 1 and 3 use the same wording. These last edits were not reviewed again.
