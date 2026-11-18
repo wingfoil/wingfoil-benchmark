@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The hypotheses read on the scored dry runs (task-154, plan-005 step 3): per scenario version and arm, the mean over
 // every completed and scored dry run of that key (n stated) of its run's cost, turns, final M-Q1, hold-out final,
-// checks and M-F1; then the ratios v0.1.md §11's hypotheses read (H1, H2, H3, H4, H5, H8, H11), each arm against its
+// checks and M-F1; then the readings of v0.1.md §11's hypotheses (H1-H6, H8, H10, H11), each arm against its
 // comparison, the configured arms beside their base arms. Every value is n-small and preliminary: calibration's, to be
 // replaced by the reference campaign's.
 // It runs no agent, spends nothing and writes nothing; it prints Markdown for docs/calibration/v0.3.md.
@@ -149,7 +149,58 @@ for (const model of models) {
     `| H5 | S8's checks; hold-out final ${pair((arm) => `${value(at('S8'), arm, model, 'checks')}; ${value(at('S8'), arm, model, 'holdout')}`)}`,
   );
   console.log(
+    `| H6 | M-Q1 final; hold-out final, per scenario ${pair(
+      (arm) =>
+        scenarios
+          .filter((scenario) => keys.has(`${scenario} ${arm} ${model}`))
+          .map(
+            (scenario) =>
+              `${scenario.split('@')[0]} ${value(scenario, arm, model, 'q1')}; ${value(scenario, arm, model, 'holdout')}`,
+          )
+          .join(', ') || '—',
+    )}`,
+  );
+  console.log(
     `| H8 | cost ÷ its docs control ${pair((arm) => ratios('eur', model, arm, arm === 'wingfoil' ? 'baseline-docs' : 'baseline-docs-configured'))}`,
   );
   console.log('');
+  const unsaturated = scenarios.flatMap((scenario) => {
+    const entries = arms
+      .map((arm) => keys.get(`${scenario} ${arm} ${model}`))
+      .filter((entry) => entry !== undefined && entry.runs.some((run) => run.checks.total > 0));
+    if (entries.length === 0) return [];
+    const below = entries.filter(
+      (entry) => mean(entry.runs.map((run) => run.checks.passed)) < entry.runs[0].checks.total,
+    );
+    return [`${scenario.split('@')[0]} ${below.length} of ${entries.length}`];
+  });
+  console.log(`H10 on ${model}, arms whose checks are not saturated: ${unsaturated.join(', ') || '—'}`);
+  console.log('');
 }
+
+/** The mean of one figure of a key's dry runs; undefined when the key or the figure is missing. */
+const meanOf = (scenario, arm, model, pick) => {
+  const picked =
+    keys
+      .get(`${scenario} ${arm} ${model}`)
+      ?.runs.map(pick)
+      .filter((item) => item !== undefined) ?? [];
+  return picked.length === 0 ? undefined : mean(picked);
+};
+/** The wingfoil arm's gain over the baseline on one figure, signed; `—` when a side is missing. */
+const gain = (scenario, model, pick) => {
+  const wingfoil = meanOf(scenario, 'wingfoil', model, pick);
+  const baseline = meanOf(scenario, 'baseline', model, pick);
+  if (wingfoil === undefined || baseline === undefined) return '—';
+  const difference = round(wingfoil - baseline, 1);
+  return `${difference > 0 ? '+' : ''}${difference}`;
+};
+console.log('**H11** (the wingfoil arm minus the baseline, per model)');
+console.log('');
+console.log('| Model | S1 M-Q1 (tests) | S3 M-Q1 (tests) | S3 M-F1 |');
+console.log('|---|---|---|---|');
+for (const model of models)
+  console.log(
+    `| ${model} | ${gain(at('S1'), model, (run) => run.q1.passed)} | ${gain(at('S3'), model, (run) => run.q1.passed)} | ` +
+      `${gain(at('S3'), model, (run) => run.f1?.consistent)} |`,
+  );
