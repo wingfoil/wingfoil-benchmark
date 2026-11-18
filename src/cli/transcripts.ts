@@ -37,8 +37,13 @@ export async function transcriptsCommand(
   }
   const packed = await packTranscripts(root, execution, { process, secrets });
   if (!packed.ok) return report(packed.issues, io);
-  const { release, archive, sha256, transcripts, runsWithout, harnesses } = packed.value;
+  const { release, archive, sha256, transcripts, kinds, runsWithout, missing, harnesses } = packed.value;
   io.stdout(`transcripts: ${archive} (${transcripts} transcripts, sha256:${sha256})\n`);
+  io.stdout(
+    `${kinds.steps} of the steps, ${kinds.reviewLoops} of the review loops, ` +
+      `${kinds.configuring} of the configuring sessions\n`,
+  );
+  for (const path of missing) io.stdout(`transcript not on this machine: ${path}\n`);
   if (runsWithout.length > 0) {
     io.stdout(
       `${runsWithout.length} run${runsWithout.length === 1 ? ' has' : 's have'} no transcript on disk\n`,

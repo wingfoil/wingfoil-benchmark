@@ -327,3 +327,209 @@ describe("bench transcripts pack and earlier attempts (REQ-CLI-11 as amended in 
     );
   }, 120_000);
 });
+
+describe("bench transcripts pack and the review loops' transcripts (REQ-CLI-11 as amended in 1.58, task-160)", () => {
+  /** A review loop of `rounds` under the run, each round's sessions written unless listed in `absent`. */
+  function reviewLoop(
+    executionDir: string,
+    run: string,
+    rounds: readonly { readonly n: number; readonly fixed: boolean }[],
+    absent: readonly string[] = [],
+    text = '{"type":"result","result":"reviewed"}\n',
+  ): void {
+    const review = join(executionDir, run, 'review');
+    mkdirSync(review, { recursive: true });
+    writeFileSync(join(review, 'loop.json'), JSON.stringify({ outcome: 'clean', rounds }));
+    for (const { n, fixed } of rounds) {
+      mkdirSync(join(review, String(n)), { recursive: true });
+      for (const name of ['reviewer.jsonl', ...(fixed ? ['fixer.jsonl'] : [])]) {
+        if (!absent.includes(`${n}/${name}`)) writeFileSync(join(review, String(n), name), text);
+      }
+    }
+  }
+
+  it("packs every round's reviewer and fixer under the run's path, and counts them apart", async () => {
+    const { root, executionDir } = await withTranscripts();
+    reviewLoop(executionDir, RUN('TC', 'baseline'), [
+      { n: 1, fixed: true },
+      { n: 2, fixed: false },
+    ]);
+
+    const packed = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(packed.code, packed.stderr).toBe(0);
+    const base = 'runs/TC@1.0/baseline/fake-model/r1';
+    expect(execFileSync('tar', ['-tzf', join(root, ARCHIVE)], { encoding: 'utf8' })).toBe(
+      `${base}/review/1/fixer.jsonl\n${base}/review/1/reviewer.jsonl\n${base}/review/2/reviewer.jsonl\n` +
+        `${base}/steps/01/transcript.jsonl\nruns/TD@1.0/wingfoil/fake-model/r1/steps/01/transcript.jsonl\n`,
+    );
+    expect(packed.stdout).toContain(`(5 transcripts, sha256:${sha256Of(join(root, ARCHIVE))})\n`);
+    expect(packed.stdout).toContain('2 of the steps, 3 of the review loops, 0 of the configuring sessions\n');
+  }, 120_000);
+
+  it("packs an earlier attempt's review loop, and a fixer's session its round does not mark as fixed", async () => {
+    const { root, executionDir } = await withTranscripts();
+    const attempt = join(RUN('TC', 'baseline'), 'attempts', '1');
+    reviewLoop(executionDir, attempt, [{ n: 1, fixed: false }]);
+    writeFileSync(join(executionDir, attempt, 'review', '1', 'fixer.jsonl'), '{"type":"result","result":"failed"}\n');
+
+    const packed = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(packed.code, packed.stderr).toBe(0);
+    const listed = execFileSync('tar', ['-tzf', join(root, ARCHIVE)], { encoding: 'utf8' });
+    expect(listed).toContain('runs/TC@1.0/baseline/fake-model/r1/attempts/1/review/1/reviewer.jsonl\n');
+    expect(listed).toContain('runs/TC@1.0/baseline/fake-model/r1/attempts/1/review/1/fixer.jsonl\n');
+  }, 120_000);
+
+  it('refuses a review transcript that holds a secret or is a link, and changes nothing', async () => {
+    const secret = await withTranscripts();
+    reviewLoop(
+      secret.executionDir,
+      RUN('TC', 'baseline'),
+      [{ n: 1, fixed: false }],
+      [],
+      '{"note":"sk-ant-api03-SECRETVALUE"}\n',
+    );
+    const refused = await benchSite(secret.root, 'transcripts', 'pack', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain(
+      'runs/TC@1.0/baseline/fake-model/r1/review/1/reviewer.jsonl:1: holds what looks like an Anthropic key or token',
+    );
+    expect(refused.stderr).not.toContain('SECRETVALUE');
+    expect(existsSync(join(secret.root, ARCHIVE))).toBe(false);
+
+    const link = await withTranscripts();
+    reviewLoop(link.executionDir, RUN('TC', 'baseline'), [{ n: 1, fixed: false }], ['1/reviewer.jsonl']);
+    symlinkSync(
+      join(link.root, 'token.txt'),
+      join(link.executionDir, RUN('TC', 'baseline'), 'review', '1', 'reviewer.jsonl'),
+    );
+    const linked = await benchSite(link.root, 'transcripts', 'pack', EXECUTION);
+    expect(linked.code).toBe(1);
+    expect(linked.stderr).toContain('review/1/reviewer.jsonl: is not a regular file');
+    expect(existsSync(join(link.root, ARCHIVE))).toBe(false);
+  }, 120_000);
+
+  it('names a review transcript the loop recorded and the disk no longer holds, and packs the others', async () => {
+    const { root, executionDir } = await withTranscripts();
+    reviewLoop(executionDir, RUN('TC', 'baseline'), [{ n: 1, fixed: true }], ['1/fixer.jsonl']);
+
+    const packed = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(packed.code, packed.stderr).toBe(0);
+    expect(packed.stdout).toContain(
+      'transcript not on this machine: results/abcdef012345/1/runs/TC@1.0/baseline/fake-model/r1/review/1/fixer.jsonl\n',
+    );
+    expect(packed.stdout).toContain('2 of the steps, 1 of the review loops, 0 of the configuring sessions\n');
+  }, 120_000);
+
+  it('refuses a loop record it cannot read, and changes nothing', async () => {
+    const { root, executionDir } = await withTranscripts();
+    reviewLoop(executionDir, RUN('TC', 'baseline'), [{ n: 1, fixed: false }]);
+    writeFileSync(join(executionDir, RUN('TC', 'baseline'), 'review', 'loop.json'), '{ not json');
+
+    const refused = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain('runs/TC@1.0/baseline/fake-model/r1/review/loop.json: cannot be read');
+    expect(existsSync(join(root, ARCHIVE))).toBe(false);
+  }, 120_000);
+});
+
+describe("bench transcripts pack and the configuring sessions' transcripts (REQ-CLI-11 as amended in 1.50, task-160)", () => {
+  const SESSION = (root: string, n: number) =>
+    join(root, 'results', 'configuring', 'TC@1.0', 'wingfoil', String(n), 'transcript.jsonl');
+  const ASSET = (n: number) => `configuring/TC@1.0/wingfoil/${n}/transcript.jsonl`;
+
+  /** Marks the run as reading WingFoil's configuration of TC@1.0, of `records` sessions. */
+  function readsConfiguration(executionDir: string, run: string, records: number): void {
+    const file = join(executionDir, run, 'run.json');
+    const record = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    writeFileSync(file, `${JSON.stringify({ ...record, configured: { of: 'wingfoil', records, cost_eur: 0.07 } })}\n`);
+  }
+
+  function session(root: string, n: number, text = '{"type":"result","result":"configured"}\n'): void {
+    mkdirSync(join(SESSION(root, n), '..'), { recursive: true });
+    writeFileSync(SESSION(root, n), text);
+  }
+
+  it('packs each session once however many runs read it, and records the asset in those runs', async () => {
+    const { root, executionDir } = await withTranscripts();
+    readsConfiguration(executionDir, RUN('TC', 'baseline'), 2);
+    // This run has no transcript of its own on disk: the configuration it read is what it holds.
+    readsConfiguration(executionDir, RUN('TC', 'wingfoil'), 2);
+    session(root, 1);
+    session(root, 2);
+
+    const packed = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(packed.code, packed.stderr).toBe(0);
+    expect(execFileSync('tar', ['-tzf', join(root, ARCHIVE)], { encoding: 'utf8' })).toBe(
+      `${ASSET(1)}\n${ASSET(2)}\n` +
+        'runs/TC@1.0/baseline/fake-model/r1/steps/01/transcript.jsonl\n' +
+        'runs/TD@1.0/wingfoil/fake-model/r1/steps/01/transcript.jsonl\n',
+    );
+    expect(packed.stdout).toContain('2 of the steps, 0 of the review loops, 2 of the configuring sessions\n');
+    const record = JSON.parse(
+      readFileSync(join(executionDir, RUN('TC', 'wingfoil'), 'run.json'), 'utf8'),
+    ) as { transcripts?: unknown };
+    expect(record.transcripts).toEqual({
+      release: 'abcdef012345-1',
+      asset: 'transcripts.tar.gz',
+      sha256: sha256Of(join(root, ARCHIVE)),
+    });
+    expect(packed.stdout).toContain('3 runs have no transcript on disk');
+
+    // The same transcripts give the same bytes
+    const sha = sha256Of(join(root, ARCHIVE));
+    rmSync(join(root, ARCHIVE));
+    expect((await benchSite(root, 'transcripts', 'pack', EXECUTION)).code).toBe(0);
+    expect(sha256Of(join(root, ARCHIVE))).toBe(sha);
+  }, 120_000);
+
+  it('leaves out a configuration no run of the execution read', async () => {
+    const { root } = await withTranscripts();
+    session(root, 1);
+    const packed = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(packed.code, packed.stderr).toBe(0);
+    expect(execFileSync('tar', ['-tzf', join(root, ARCHIVE)], { encoding: 'utf8' })).not.toContain('configuring/');
+  }, 120_000);
+
+  it('names a session missing from this machine, and packs the others', async () => {
+    const { root, executionDir } = await withTranscripts();
+    readsConfiguration(executionDir, RUN('TC', 'baseline'), 2);
+    session(root, 1);
+
+    const packed = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(packed.code, packed.stderr).toBe(0);
+    expect(packed.stdout).toContain(
+      'transcript not on this machine: results/configuring/TC@1.0/wingfoil/2/transcript.jsonl\n',
+    );
+    expect(packed.stdout).toContain('2 of the steps, 0 of the review loops, 1 of the configuring sessions\n');
+  }, 120_000);
+
+  it('refuses a session that holds a secret or is a link, naming its path in the asset', async () => {
+    const secret = await withTranscripts();
+    readsConfiguration(secret.executionDir, RUN('TC', 'baseline'), 1);
+    session(secret.root, 1, '{"note":"sk-ant-api03-SECRETVALUE"}\n');
+    const refused = await benchSite(secret.root, 'transcripts', 'pack', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain(`${ASSET(1)}:1: holds what looks like an Anthropic key or token`);
+    expect(refused.stderr).not.toContain('SECRETVALUE');
+    expect(existsSync(join(secret.root, ARCHIVE))).toBe(false);
+
+    const link = await withTranscripts();
+    readsConfiguration(link.executionDir, RUN('TC', 'baseline'), 1);
+    mkdirSync(join(SESSION(link.root, 1), '..'), { recursive: true });
+    symlinkSync(join(link.root, 'token.txt'), SESSION(link.root, 1));
+    const linked = await benchSite(link.root, 'transcripts', 'pack', EXECUTION);
+    expect(linked.code).toBe(1);
+    expect(linked.stderr).toContain(`${ASSET(1)}: is not a regular file`);
+  }, 120_000);
+
+  it('refuses a configuration record that does not say which sessions it read', async () => {
+    const { root, executionDir } = await withTranscripts();
+    const file = join(executionDir, RUN('TC', 'baseline'), 'run.json');
+    const record = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    writeFileSync(file, JSON.stringify({ ...record, configured: { of: '../../elsewhere', records: 1 } }));
+    const refused = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain('runs/TC@1.0/baseline/fake-model/r1/run.json: its configured record');
+    expect(existsSync(join(root, ARCHIVE))).toBe(false);
+  }, 120_000);
+});
