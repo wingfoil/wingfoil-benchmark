@@ -16,8 +16,9 @@ tags: ["validation","real-agent"]
 
 This is plan-005 step 4 (validation, `release-cycle` 7, role qa), after calibration (task-154, the budget approved on
 2026-11-18). The phase asks for the suites green, then one real-agent run per arm of the release's campaign, all on the
-scenario with the largest step transcript in calibration's dry runs (dl-010 B). Every arm's environment is checked first,
-the approver consents with the model and a ceiling, the runs start from the main checkout, and each is a ledger line.
+scenario with the largest step transcript in calibration's dry runs (dl-010 B). Every arm's environment is checked
+first, the approver consents with the model and a ceiling, the runs start from the main checkout, and each is a ledger
+line.
 
 **Done** means:
 
