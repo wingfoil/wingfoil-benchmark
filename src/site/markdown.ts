@@ -2,8 +2,9 @@ import { escapeHtml } from './render.js';
 
 /**
  * The site's Markdown subset (task-046): what `site-content/method.md`, the arms' manuals, S8's directives
- * and S1's `NOTICE.md` use, and nothing more. Headings, paragraphs and list items take an anchor at their
- * end (`{#anchor}`); a comment alone on its line is replaced by a generated block of that name, or dropped.
+ * and S1's `NOTICE.md` use, and nothing more; bullet and numbered lists nest in each other (task-156).
+ * Headings, paragraphs and list items take an anchor at their end (`{#anchor}`); a comment alone on its
+ * line is replaced by a generated block of that name, or dropped.
  * Every text is escaped; a link leads only to a relative page or an `https` address. Fixed rules, so the
  * same text gives the same bytes (REQ-NFR-05).
  */
@@ -27,7 +28,8 @@ export interface RenderedMarkdown {
 
 const ANCHOR = /\s*\{#([a-z0-9][a-z0-9-]*)\}\s*$/;
 const HEADING = /^(#{1,6})\s+(.*)$/;
-const ITEM = /^( {0,3})[-*]\s+(.*)$/;
+/** A list item: its indent, its number when it is a numbered one, and its text. */
+const ITEM = /^( {0,3})(?:[-*]|(\d{1,9})\.)\s+(.*)$/;
 const COMMENT = /^<!--\s*(.*?)\s*-->$/;
 const SEPARATOR = /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?$/;
 
@@ -96,13 +98,18 @@ export function renderMarkdown(text: string, options: MarkdownOptions = {}): Ren
       );
       continue;
     }
-    if (ITEM.test(line)) {
-      const [html, next] = list(lines, index, 0, inline, anchored);
+    const item = ITEM.exec(line);
+    // After a line of text, a number other than 1 is that text wrapped: a list starts there only after a blank line.
+    if (item !== null && (opensList(line) || (lines[index - 1] ?? '').trim() === '')) {
+      // The list takes the indent of its own first item, so it always reads that line (bug-037).
+      const [html, next] = list(lines, index, (item[1] as string).length, inline, anchored);
       out.push(html);
       index = next;
       continue;
     }
-    const paragraph: string[] = [];
+    // A paragraph holds at least this line, which no other block took: the reader always advances (bug-037).
+    const paragraph: string[] = [line.trim()];
+    index += 1;
     while (index < lines.length && isParagraphLine(lines[index] as string, lines[index + 1])) {
       paragraph.push((lines[index] as string).trim());
       index += 1;
@@ -113,17 +120,24 @@ export function renderMarkdown(text: string, options: MarkdownOptions = {}): Ren
   return { html: out.map((block) => `${block}\n`).join(''), anchors };
 }
 
+/** Whether `line` opens a list inside a text: a bullet, or the number 1, so that a wrapped `2026.` stays text. */
+function opensList(line: string): boolean {
+  const match = ITEM.exec(line);
+  return match !== null && (match[2] === undefined || Number(match[2]) === 1);
+}
+
 /** Whether `line` continues a paragraph: not blank, and starting no other block. */
 function isParagraphLine(line: string, next: string | undefined): boolean {
   if (line.trim() === '') return false;
-  if (HEADING.test(line) || ITEM.test(line) || line.startsWith('```') || COMMENT.test(line.trim()))
+  if (HEADING.test(line) || opensList(line) || line.startsWith('```') || COMMENT.test(line.trim()))
     return false;
   return !(line.trimStart().startsWith('|') && SEPARATOR.test((next ?? '').trim()));
 }
 
 /**
- * A list from `lines[start]` whose items are indented by `indent`: each item's continuation lines joined
- * to it, and a deeper list inside the item before it. Returns its HTML and the next line's index.
+ * A list from `lines[start]` whose items are indented by `indent` and share its first item's kind: each item's
+ * continuation lines joined to it, and the deeper lists inside the item after its text. Returns its HTML and the
+ * next line's index.
  */
 function list(
   lines: readonly string[],
@@ -132,35 +146,49 @@ function list(
   inline: (source: string) => string,
   anchored: (source: string) => [string, string],
 ): [string, number] {
+  const first = ITEM.exec(lines[start] as string);
+  const number = first?.[2];
   const items: string[] = [];
   let index = start;
   while (index < lines.length) {
     const match = ITEM.exec(lines[index] as string);
     if (match === null || (match[1] as string).length !== indent) break;
-    const text = [match[2] as string];
+    if ((match[2] === undefined) !== (number === undefined)) break;
+    const text = [match[3] as string];
     index += 1;
-    let nested = '';
+    const nested: string[] = [];
+    const after: string[] = [];
     while (index < lines.length) {
       const line = lines[index] as string;
       if (line.trim() === '') break;
       const deeper = ITEM.exec(line);
-      if (deeper !== null && (deeper[1] as string).length > indent) {
-        const [html, next] = list(lines, index, (deeper[1] as string).length, inline, anchored);
-        nested = `\n${html}\n`;
+      const depth = deeper === null ? -1 : (deeper[1] as string).length;
+      if (depth > indent && opensList(line)) {
+        const [html, next] = list(lines, index, depth, inline, anchored);
+        nested.push(html);
         index = next;
         continue;
       }
-      if (deeper !== null || !line.startsWith(' ')) break;
-      text.push(line.trim());
+      const sibling = depth === indent && (deeper?.[2] === undefined) === (match[2] === undefined);
+      if ((deeper !== null && (depth < indent || sibling || opensList(line))) || !line.startsWith(' ')) break;
+      (nested.length === 0 ? text : after).push(line.trim());
       index += 1;
     }
     const [content, id] = anchored(text.join(' '));
-    items.push(`<li${id}>${inline(content)}${nested}</li>`);
-    if (index < lines.length && (lines[index] as string).trim() === '' && !ITEM.test(lines[index + 1] ?? ''))
-      break;
-    if (index < lines.length && (lines[index] as string).trim() === '') index += 1;
+    const inner = nested.length === 0 ? '' : `\n${nested.join('\n')}\n`;
+    items.push(`<li${id}>${inline(content)}${inner}${inline(after.join(' '))}</li>`);
+    if (index < lines.length && (lines[index] as string).trim() === '') {
+      // A blank line stays inside the list only before this list's next item.
+      const next = ITEM.exec(lines[index + 1] ?? '');
+      if (next === null || (next[1] as string).length !== indent) break;
+      if ((next[2] === undefined) !== (number === undefined)) break;
+      index += 1;
+    }
   }
-  return [`<ul>\n${items.map((item) => `${item}\n`).join('')}</ul>`, index];
+  const body = items.map((item) => `${item}\n`).join('');
+  if (number === undefined) return [`<ul>\n${body}</ul>`, index];
+  const from = Number(number);
+  return [`<ol${from === 1 ? '' : ` start="${from}"`}>\n${body}</ol>`, index];
 }
 
 /** A table row's cells, without its outer pipes; a pipe inside a code span stays in its cell. */

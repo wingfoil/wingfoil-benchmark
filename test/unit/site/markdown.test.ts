@@ -1,6 +1,11 @@
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import { renderMarkdown } from '../../../src/site/markdown.js';
+import { repoPath } from '../../support/paths.js';
 
 const html = (text: string, blocks: Record<string, string> = {}) => renderMarkdown(text, { blocks }).html;
 
@@ -106,5 +111,126 @@ describe('the site Markdown subset (task-046)', () => {
     expect(html("| a | b |\n|---|---|\n| it's a ` tick | two |\n")).toContain(
       '<tr><td>it&#39;s a ` tick</td><td>two</td></tr>',
     );
+  });
+});
+
+/**
+ * Each input's HTML, rendered in a process of its own under a timeout: a shape that once hung the reader must fail
+ * its test and not take the whole test run down with it (task-156's review).
+ */
+function bounded(inputs: readonly string[]): string[] {
+  const module = pathToFileURL(repoPath('src/site/markdown.ts')).href;
+  const script =
+    `const { renderMarkdown } = await import(${JSON.stringify(module)});` +
+    `console.log(JSON.stringify(JSON.parse(process.argv[1]).map((input) => renderMarkdown(input).html)));`;
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--max-old-space-size=256',
+      '--import',
+      'tsx',
+      '--input-type=module',
+      '-e',
+      script,
+      JSON.stringify(inputs),
+    ],
+    { cwd: repoPath(''), encoding: 'utf8', timeout: 20_000 },
+  );
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(0);
+  return JSON.parse(result.stdout) as string[];
+}
+
+describe('ordered lists in the site Markdown subset (task-156, bug-037)', () => {
+  it('renders a numbered list as an ordered list, its items as a bullet item takes them', () => {
+    expect(html('1. a\n2. c\n')).toBe('<ol>\n<li>a</li>\n<li>c</li>\n</ol>\n');
+    expect(html('1. one\n   continued {#first}\n2. two\n')).toBe(
+      '<ol>\n<li id="first">one continued</li>\n<li>two</li>\n</ol>\n',
+    );
+    expect(html('1. a\n\n2. b\n')).toBe('<ol>\n<li>a</li>\n<li>b</li>\n</ol>\n');
+  });
+
+  it('keeps the number a list starts at', () => {
+    expect(html('3. a\n4. b\n')).toBe('<ol start="3">\n<li>a</li>\n<li>b</li>\n</ol>\n');
+  });
+
+  it('starts a new list when the marker changes', () => {
+    expect(html('- a\n1. b\n')).toBe('<ul>\n<li>a</li>\n</ul>\n<ol>\n<li>b</li>\n</ol>\n');
+    expect(html('1. a\n- b\n')).toBe('<ol>\n<li>a</li>\n</ol>\n<ul>\n<li>b</li>\n</ul>\n');
+  });
+
+  it('lets only a line starting 1. open a list inside a text', () => {
+    expect(html('Intro\n2026. was the year\n')).toBe('<p>Intro 2026. was the year</p>\n');
+    expect(html('Intro\n1. a\n')).toBe('<p>Intro</p>\n<ol>\n<li>a</li>\n</ol>\n');
+    expect(html('- a\n  2. b\n')).toBe('<ul>\n<li>a 2. b</li>\n</ul>\n');
+  });
+
+  it('nests a list of either kind inside an item of the other', () => {
+    expect(bounded(['1. a\n   - b\n2. c\n', '- a\n  1. b\n  2. c\n- d\n'])).toEqual([
+      '<ol>\n<li>a\n<ul>\n<li>b</li>\n</ul>\n</li>\n<li>c</li>\n</ol>\n',
+      '<ul>\n<li>a\n<ol>\n<li>b</li>\n<li>c</li>\n</ol>\n</li>\n<li>d</li>\n</ul>\n',
+    ]);
+  }, 30_000);
+
+  it('keeps every nested list of an item', () => {
+    expect(bounded(['1. a\n   - b\n   1. c\n'])).toEqual([
+      '<ol>\n<li>a\n<ul>\n<li>b</li>\n</ul>\n<ol>\n<li>c</li>\n</ol>\n</li>\n</ol>\n',
+    ]);
+  }, 30_000);
+
+  it('renders a bullet indented at the top level as a list', () => {
+    expect(bounded(['  - a\n  - b\n'])).toEqual(['<ul>\n<li>a</li>\n<li>b</li>\n</ul>\n']);
+  }, 30_000);
+
+  it('keeps a wrapped number in the item it wraps, in the order it was written (review)', () => {
+    expect(
+      bounded([
+        '- first\n  - nested\n  2026. was the year\n- next\n',
+        '- a\n  - b\n  3. c\n  more\n',
+        '1. a\n   - b\n   2. c\n3. d\n',
+        '1. a\n   1. b\n\n  3. c\n',
+        '- a\n  - b\n 3. c\n',
+      ]),
+    ).toEqual([
+      '<ul>\n<li>first\n<ul>\n<li>nested 2026. was the year</li>\n</ul>\n</li>\n<li>next</li>\n</ul>\n',
+      '<ul>\n<li>a\n<ul>\n<li>b 3. c more</li>\n</ul>\n</li>\n</ul>\n',
+      '<ol>\n<li>a\n<ul>\n<li>b 2. c</li>\n</ul>\n</li>\n<li>d</li>\n</ol>\n',
+      '<ol>\n<li>a\n<ol>\n<li>b</li>\n</ol>\n</li>\n</ol>\n<ol start="3">\n<li>c</li>\n</ol>\n',
+      '<ul>\n<li>a\n<ul>\n<li>b</li>\n</ul>\n3. c</li>\n</ul>\n',
+    ]);
+  }, 30_000);
+
+  it('opens a list at another number only at the head of a text or after a blank line (review)', () => {
+    expect(html('- item\n2026. was the year\n')).toBe(
+      '<ul>\n<li>item</li>\n</ul>\n<p>2026. was the year</p>\n',
+    );
+    expect(html('- a\n\n2. b\n')).toBe('<ul>\n<li>a</li>\n</ul>\n<ol start="2">\n<li>b</li>\n</ol>\n');
+    expect(html('2. a\n')).toBe('<ol start="2">\n<li>a</li>\n</ol>\n');
+  });
+
+  it('reads the number as a number: a start of 0, and 01 as 1 (review)', () => {
+    expect(html('0. a\n')).toBe('<ol start="0">\n<li>a</li>\n</ol>\n');
+    expect(html('Intro\n01. a\n')).toBe('<p>Intro</p>\n<ol>\n<li>a</li>\n</ol>\n');
+  });
+
+  it('finishes on every shape that used to hang, in a process a regression cannot block', () => {
+    const inputs = [
+      '1. a\n   - b\n2. c\n',
+      '  - a\n1. b\n',
+      '   - a\n',
+      ' * a\n  - b\n - c\n',
+      '- a\n   - b\n  - c\n- d\n',
+      '   1. a\n 2. b\n',
+      '| not a table\n  - a\n|---|\n',
+    ];
+    expect(bounded(inputs)).toHaveLength(inputs.length);
+  }, 30_000);
+
+  it('shows the eligibility page five criteria as an ordered list (characterization)', () => {
+    const page = html(readFileSync(repoPath('site-content/eligibility.md'), 'utf8'));
+    expect(page).toContain('<ol>\n<li><strong>agent-and-model</strong> — it runs with the campaign');
+    for (const id of ['pinnable', 'headless-container', 'workflow-harness', 'no-own-llm'])
+      expect(page).toContain(`<li><strong>${id}</strong> — `);
+    expect(page).not.toContain('<p>1. ');
   });
 });

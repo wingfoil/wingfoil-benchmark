@@ -2,7 +2,7 @@
 id: task-156-ordered-lists-in-the-site-s-markdown-renderer-and-a-reader-that-always-advances
 type: task
 title: "Ordered lists in the site's Markdown renderer, and a reader that always advances"
-status: backlog
+status: approved
 release: v0.3
 wave: publishing
 features: [F5.8, F7.4]
@@ -65,9 +65,23 @@ and no Markdown input can stop the renderer from finishing.
 - **The top-level call passes the line's own indent,** which removes the hang at its cause. The guard in criterion 7
   stays as the bound for any future block.
 - **Nested lists are appended** to the item, not assigned.
-- **The subset stays small:** no `1)` marker, no loose-list paragraphs and no third nesting level, because no rendered
-  source needs them. Such text still renders, as text, in bounded time.
+- **The subset stays small:** no `1)` marker, no loose-list paragraphs and no indent past three spaces, because no
+  rendered source needs them. Such text still renders, as text, in bounded time.
+- **A number other than 1 starts a list only at the head of a text or after a blank line.** Directly after a line of
+  text it is that text wrapped, and it stays in the item it wraps.
 - **The same bytes for the same text (REQ-NFR-05):** the rules are fixed and use no locale or clock.
 - **No spending:** no agent runs, and no campaign or dry run is touched.
 
 ## Execution notes
+
+- **Red first:** the new tests failed before the fix. Three of them hung in the test process and were stopped by a
+  timeout, which is the defect itself; the bounded test runs the renderer in a child process.
+- **The guard is structural:** a paragraph now starts from the line no other block took, and a list reads its own first
+  item, so the reader advances without a branch that no input could reach.
+- **The published sources (characterization):** all 32 rendered sources (the manuals, `site-content/`, the directives
+  and the notices) were rendered with main's build and with this branch's. Only `site-content/eligibility.md` differs.
+- **The independent review (2026-11-18) found no blocker.** Its findings are fixed: a wrapped number stays in its item
+  and in written order, a number after a bullet item stays text, a blank line stays in a list only before that list's
+  next item, and the shapes that once hung now render in a child process so a regression fails its own test.
+- **After the review's fixes:** 200 000 random list-shaped inputs finished with no word lost, none out of order and
+  every list tag balanced. `scripts/pre-review.sh main` is green. These last fixes were not reviewed again.
