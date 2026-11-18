@@ -1,0 +1,241 @@
+diff --git a/openspec/changes/archive/2026-11-18-harden-apply-patch-validation/.openspec.yaml b/openspec/changes/archive/2026-11-18-harden-apply-patch-validation/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..41484f318f772b2e02eb579a6b033d2d6d59d3ff
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-18-harden-apply-patch-validation/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-11-18
+diff --git a/openspec/changes/archive/2026-11-18-harden-apply-patch-validation/design.md b/openspec/changes/archive/2026-11-18-harden-apply-patch-validation/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..74c6610ebe8ee0a374033cc0f9bc7906df12b455
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-18-harden-apply-patch-validation/design.md
+@@ -0,0 +1,18 @@
++## Context
++
++`applyPatch` validates every operation up front in `parseOperation`, mapped over the patch with `Array.prototype.map`. `map` skips holes, `value` presence is checked with `hasOwn` only, and `op`/`path`/`from` are destructured, which also reads inherited properties. Remaining behaviour (add/remove/replace/move/copy/test semantics, index grammar, prefix rule, equality, atomicity, `__proto__`) was reviewed against RFC 6902 §4–§5 and conforms.
++
++## Goals / Non-Goals
++
++**Goals:** close the validation gaps listed in the proposal. **Non-Goals:** changing any operation semantics; root removal stays an error (RFC 6902 defines no result for it, see the existing spec).
++
++## Decisions
++
++- Iterate with `Array.from(patch, ...)`, which visits holes as `undefined`, so they fail the "must be an object" check (RFC 6902 §3).
++- Treat `value: undefined` as a missing value: `undefined` is not a JSON value (RFC 8259) and cannot be serialized, so accepting it would silently drop or corrupt a member.
++- Read `op`, `path` and `from` through `hasOwn`, consistent with how `value` is already read and with the library's own-members-only rule.
++- Valid, JSON-parsed patches are unaffected, so this is not breaking.
++
++## Risks / Trade-offs
++
++- Callers building patches in JS with `value: undefined` now get an error instead of silent acceptance; this is the intended correction.
+diff --git a/openspec/changes/archive/2026-11-18-harden-apply-patch-validation/proposal.md b/openspec/changes/archive/2026-11-18-harden-apply-patch-validation/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8fc677cf01dde173eeee8e7f40444de86e4dcd36
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-18-harden-apply-patch-validation/proposal.md
+@@ -0,0 +1,27 @@
++## Why
++
++Users of `applyPatch` report patches being accepted that they consider invalid. A review found that validation lets some non-conforming patches through: a sparse array patch (holes are skipped by `Array.prototype.map`), an operation whose `value` is present but `undefined` (not a JSON value), and operation members (`op`, `path`, `from`) that are read through the prototype chain rather than being own members of the operation object.
++
++## What Changes
++
++- Reject a patch array with holes (RFC 6902 §3: every element must be an operation object).
++- Reject `add`, `replace` and `test` operations whose `value` is `undefined` (RFC 8259: not a JSON value).
++- Read `op`, `path` and `from` only as own members of the operation object.
++- Not breaking for valid patches (JSON-parsed patches are unaffected); only previously accepted malformed input now throws `JsonPatchError`.
++
++Governing standard: RFC 6902 §3–§5, RFC 6901 §3–§4, RFC 8259 for JSON values.
++
++Out of scope: root removal (kept as an error, documented in the spec), JSON Merge Patch, in-place patching.
++
++## Capabilities
++
++### New Capabilities
++None.
++
++### Modified Capabilities
++- `json-patch`: stricter patch and operation validation.
++
++## Impact
++
++- `src/index.ts` (`applyPatch`, `parseOperation`); `test/json-patch.test.ts`.
++- No dependencies added.
+diff --git a/openspec/changes/archive/2026-11-18-harden-apply-patch-validation/specs/json-patch/spec.md b/openspec/changes/archive/2026-11-18-harden-apply-patch-validation/specs/json-patch/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..2ceffde93160a388f0d6caa8ae1f50b8341b3616
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-18-harden-apply-patch-validation/specs/json-patch/spec.md
+@@ -0,0 +1,52 @@
++## MODIFIED Requirements
++
++### Requirement: Patch shape and validation
++Per RFC 6902 §3, a patch SHALL be an array of operation objects. Every index of the array SHALL hold an operation object; a sparse array (with holes) SHALL be an error. Each operation SHALL have an own string `op` member that is one of `add`, `remove`, `replace`, `move`, `copy`, `test`, and an own string `path` that is a valid JSON Pointer (RFC 6901 §3). `add`, `replace` and `test` SHALL have an own `value` member that is a JSON value (RFC 8259), including `null` but not `undefined`; `move` and `copy` SHALL have an own string `from` that is a valid JSON Pointer. Members inherited through the prototype chain SHALL NOT count. Members not defined for the operation SHALL be ignored. Any violation SHALL cause an error to be thrown. An empty patch SHALL return a document equal to the input.
++
++#### Scenario: Patch is not an array
++- **WHEN** the patch is an object, `null`, a string or `undefined`
++- **THEN** an error is thrown
++
++#### Scenario: Patch has holes
++- **WHEN** the patch is a sparse array such as `[ <empty> ]` or `[{"op":"add","path":"/a","value":1}, <empty>]`
++- **THEN** an error is thrown
++
++#### Scenario: Operation is not an object
++- **WHEN** an element of the patch is `null`, an array or a primitive
++- **THEN** an error is thrown
++
++#### Scenario: Missing or unknown op
++- **WHEN** an operation has no `op`, a non-string `op`, or an `op` such as `"merge"` or `"ADD"`
++- **THEN** an error is thrown
++
++#### Scenario: Missing or invalid path
++- **WHEN** an operation has no `path`, a non-string `path`, or a path that is not a valid pointer such as `"a"` or `"/a~2"`
++- **THEN** an error is thrown
++
++#### Scenario: Missing value
++- **WHEN** an `add`, `replace` or `test` operation has no `value` member
++- **THEN** an error is thrown
++
++#### Scenario: Undefined value
++- **WHEN** an `add`, `replace` or `test` operation has a `value` member that is `undefined`
++- **THEN** an error is thrown
++
++#### Scenario: Null value is a value
++- **WHEN** `{"op":"add","path":"/a","value":null}` is applied to `{}`
++- **THEN** the result is `{"a":null}`
++
++#### Scenario: Missing or invalid from
++- **WHEN** a `move` or `copy` operation has no `from`, a non-string `from`, or an invalid pointer
++- **THEN** an error is thrown
++
++#### Scenario: Inherited members do not count
++- **WHEN** `op`, `path` or `from` is only inherited from the operation's prototype
++- **THEN** an error is thrown
++
++#### Scenario: Unknown extra members
++- **WHEN** an operation has an additional member such as `"comment"`
++- **THEN** it is ignored
++
++#### Scenario: Empty patch
++- **WHEN** the patch is `[]`
++- **THEN** a document equal to the input is returned
+diff --git a/openspec/changes/archive/2026-11-18-harden-apply-patch-validation/tasks.md b/openspec/changes/archive/2026-11-18-harden-apply-patch-validation/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f9e93044a62b317d0f29ba7b6b68828ef50d37a1
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-18-harden-apply-patch-validation/tasks.md
+@@ -0,0 +1,10 @@
++## 1. Implementation
++
++- [x] 1.1 Validate patch elements with `Array.from` so holes are rejected
++- [x] 1.2 Reject `undefined` `value` for `add`, `replace`, `test`
++- [x] 1.3 Read `op`, `path`, `from` only as own members
++
++## 2. Tests
++
++- [x] 2.1 Add tests in `test/json-patch.test.ts` for each new scenario: holes, undefined value, inherited members
++- [x] 2.2 Run `npm test` and confirm everything passes
+diff --git a/openspec/specs/json-patch/spec.md b/openspec/specs/json-patch/spec.md
+index d0b0b73ea5b0bb790fc4bb9f5e7c0affb3fd4650..12e8fbf74f91c9557c79d8ac119a135ea882b354 100644
+--- a/openspec/specs/json-patch/spec.md
++++ b/openspec/specs/json-patch/spec.md
+@@ -6,12 +6,16 @@ Lets callers change a JSON document with a standard JSON Patch (RFC 6902): the a
+ ## Requirements
+ 
+ ### Requirement: Patch shape and validation
+-Per RFC 6902 §3, a patch SHALL be an array of operation objects. Each operation SHALL have a string `op` member that is one of `add`, `remove`, `replace`, `move`, `copy`, `test`, and a string `path` that is a valid JSON Pointer (RFC 6901 §3). `add`, `replace` and `test` SHALL have a `value` member (any JSON value, including `null`); `move` and `copy` SHALL have a string `from` that is a valid JSON Pointer. Members not defined for the operation SHALL be ignored. Any violation SHALL cause an error to be thrown. An empty patch SHALL return a document equal to the input.
++Per RFC 6902 §3, a patch SHALL be an array of operation objects. Every index of the array SHALL hold an operation object; a sparse array (with holes) SHALL be an error. Each operation SHALL have an own string `op` member that is one of `add`, `remove`, `replace`, `move`, `copy`, `test`, and an own string `path` that is a valid JSON Pointer (RFC 6901 §3). `add`, `replace` and `test` SHALL have an own `value` member that is a JSON value (RFC 8259), including `null` but not `undefined`; `move` and `copy` SHALL have an own string `from` that is a valid JSON Pointer. Members inherited through the prototype chain SHALL NOT count. Members not defined for the operation SHALL be ignored. Any violation SHALL cause an error to be thrown. An empty patch SHALL return a document equal to the input.
+ 
+ #### Scenario: Patch is not an array
+ - **WHEN** the patch is an object, `null`, a string or `undefined`
+ - **THEN** an error is thrown
+ 
++#### Scenario: Patch has holes
++- **WHEN** the patch is a sparse array such as `[ <empty> ]` or `[{"op":"add","path":"/a","value":1}, <empty>]`
++- **THEN** an error is thrown
++
+ #### Scenario: Operation is not an object
+ - **WHEN** an element of the patch is `null`, an array or a primitive
+ - **THEN** an error is thrown
+@@ -28,6 +32,10 @@ Per RFC 6902 §3, a patch SHALL be an array of operation objects. Each operation
+ - **WHEN** an `add`, `replace` or `test` operation has no `value` member
+ - **THEN** an error is thrown
+ 
++#### Scenario: Undefined value
++- **WHEN** an `add`, `replace` or `test` operation has a `value` member that is `undefined`
++- **THEN** an error is thrown
++
+ #### Scenario: Null value is a value
+ - **WHEN** `{"op":"add","path":"/a","value":null}` is applied to `{}`
+ - **THEN** the result is `{"a":null}`
+@@ -36,6 +44,10 @@ Per RFC 6902 §3, a patch SHALL be an array of operation objects. Each operation
+ - **WHEN** a `move` or `copy` operation has no `from`, a non-string `from`, or an invalid pointer
+ - **THEN** an error is thrown
+ 
++#### Scenario: Inherited members do not count
++- **WHEN** `op`, `path` or `from` is only inherited from the operation's prototype
++- **THEN** an error is thrown
++
+ #### Scenario: Unknown extra members
+ - **WHEN** an operation has an additional member such as `"comment"`
+ - **THEN** it is ignored
+diff --git a/src/index.ts b/src/index.ts
+index 593ca43b4b62b413153ac561a4a1d443eadf65b6..0c3d53254eeabca65333c0b5569271540a5d59a9 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -123,14 +123,16 @@ interface Operation {
+ function parseOperation(raw: unknown, index: number): Operation {
+   const where = `operation ${index}`;
+   if (!isObject(raw)) throw new JsonPatchError(`${where}: must be an object`);
+-  const { op, path, from } = raw;
++  const op = hasOwn(raw, "op") ? raw.op : undefined;
++  const path = hasOwn(raw, "path") ? raw.path : undefined;
++  const from = hasOwn(raw, "from") ? raw.from : undefined;
+   if (typeof op !== "string" || !["add", "remove", "replace", "move", "copy", "test"].includes(op)) {
+     throw new JsonPatchError(`${where}: missing or unknown "op"`);
+   }
+   if (typeof path !== "string") throw new JsonPatchError(`${where}: "path" must be a string`);
+   const result: Operation = { op, path: tokensOf(path) };
+   if (op === "add" || op === "replace" || op === "test") {
+-    if (!hasOwn(raw, "value")) throw new JsonPatchError(`${where}: "${op}" requires "value"`);
++    if (!hasOwn(raw, "value") || raw.value === undefined) throw new JsonPatchError(`${where}: "${op}" requires "value"`);
+     result.value = raw.value;
+   }
+   if (op === "move" || op === "copy") {
+@@ -203,7 +205,7 @@ function removeAt(doc: unknown, tokens: string[]): unknown {
+  */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) throw new JsonPatchError("A JSON Patch must be an array");
+-  const ops = patch.map(parseOperation);
++  const ops = Array.from(patch, parseOperation); // Array.from visits holes, unlike map
+   let doc = cloneJson(document);
+   for (const o of ops) {
+     switch (o.op) {
+diff --git a/test/json-patch.test.ts b/test/json-patch.test.ts
+index f427917823ef4163c609342599b3d946dcedbf1b..afd42d32eb93ed8750fa061e03f77d14d7d10dac 100644
+--- a/test/json-patch.test.ts
++++ b/test/json-patch.test.ts
+@@ -138,3 +138,21 @@ test("sequential application and error type", () => {
+     assert.ok(e instanceof JsonPatchError && e instanceof Error);
+   }
+ });
++
++test("sparse patch is rejected", () => {
++  // eslint-disable-next-line no-sparse-arrays
++  bad({}, [,]);
++  // eslint-disable-next-line no-sparse-arrays
++  bad({}, [{ op: "add", path: "/a", value: 1 }, ,]);
++});
++
++test("undefined value is rejected", () => {
++  for (const op of ["add", "replace", "test"]) bad({ a: 1 }, [{ op, path: "/a", value: undefined }]);
++});
++
++test("inherited op, path, from and value do not count", () => {
++  bad({}, [Object.assign(Object.create({ op: "add" }), { path: "/a", value: 1 })]);
++  bad({}, [Object.assign(Object.create({ path: "/a" }), { op: "add", value: 1 })]);
++  bad({ a: 1 }, [Object.assign(Object.create({ from: "/a" }), { op: "copy", path: "/b" })]);
++  bad({}, [Object.assign(Object.create({ value: 1 }), { op: "add", path: "/a" })]);
++});

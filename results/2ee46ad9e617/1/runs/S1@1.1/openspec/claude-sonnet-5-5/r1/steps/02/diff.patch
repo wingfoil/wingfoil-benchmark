@@ -1,0 +1,763 @@
+diff --git a/README.md b/README.md
+index ff92be649ff3f610b38798b3310751534d032814..b5b01ac0ca61d5eb53d9ecf786ce2ddb31f6e9ae 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,9 @@
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+ other projects of the team, so its behaviour must follow the published standards it implements.
++
++## JSON Patch
++
++`applyPatch(document, patch)` applies an RFC 6902 JSON Patch (`add`, `remove`, `replace`, `move`, `copy`,
++`test`) and returns the result as a new value, without mutating its input. It throws when the patch is
++invalid or an operation fails.
+diff --git a/openspec/changes/archive/2026-11-18-add-json-patch/.openspec.yaml b/openspec/changes/archive/2026-11-18-add-json-patch/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..41484f318f772b2e02eb579a6b033d2d6d59d3ff
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-18-add-json-patch/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-11-18
+diff --git a/openspec/changes/archive/2026-11-18-add-json-patch/design.md b/openspec/changes/archive/2026-11-18-add-json-patch/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba49cd4f43b148bc0c25117fbeabeb88fe5bfabe
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-18-add-json-patch/design.md
+@@ -0,0 +1,27 @@
++# Design
++
++## Context
++
++`src/pointer.ts` parses and resolves RFC 6901 pointers but does not export its parser. Patch operations need the parent of a pointer plus its last token, so they need the parsed tokens. See proposal.md for motivation.
++
++## Goals / Non-Goals
++
++**Goals:**
++- Behavior as specified in `specs/json-patch/spec.md`, with no runtime dependency.
++
++**Non-Goals:**
++- Diff generation, JSON Merge Patch (RFC 7386), in-place application.
++
++## Decisions
++
++- **Reuse the pointer parser**: export `parsePointer` from `pointer.ts` for internal use (not re-exported from `index.ts`), so pointer syntax rules stay in one place. Alternative: duplicating the parsing, which risks divergence.
++- **Work on a deep copy**: `applyPatch` deep-clones the document once, applies operations to the clone mutating it, and returns it; values taken from the patch (`add`, `replace`) and `copy` sources are cloned as inserted. Failure throws before anything is returned, so atomicity follows from never touching the input. Alternative: persistent updates per operation, which is more code for no benefit.
++- **Own deep clone and equality**: a small recursive clone (not `structuredClone`) so that `__proto__` members are created with `Object.defineProperty` and stay own data properties; equality is a recursive comparison by JSON type, ignoring member order.
++- **Locate then act**: each operation resolves the parent container of `path` and the final token, then applies array or object rules. Array tokens must match the canonical index grammar; `-` is accepted only by `add`.
++- **move** is `remove(from)` then `add(path)`, after a check that `from` is not a proper prefix of `path` (compared by token arrays, so `/a` vs `/ab` is fine).
++- **Errors**: a new `InvalidPatchError` for malformed patches and `PatchFailedError` for failed operations (including failed `test`), exported alongside `applyPatch`; pointer syntax errors surface as `InvalidPointerError`.
++
++## Risks / Trade-offs
++
++- [Cloning large documents is O(size) per call] → acceptable; correctness and non-mutation matter more.
++- [Non-JSON input such as `undefined`, functions or cycles] → out of scope; inputs are assumed to be JSON values.
+diff --git a/openspec/changes/archive/2026-11-18-add-json-patch/proposal.md b/openspec/changes/archive/2026-11-18-add-json-patch/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..caa20fe418b4e4dfa33e5830a9f4ae844c95e4f3
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-18-add-json-patch/proposal.md
+@@ -0,0 +1,22 @@
++## Why
++
++Services need to change stored and exchanged JSON documents with standard patches rather than ad-hoc code. RFC 6902 (JSON Patch) is the published standard, and it builds on the JSON Pointer support the library already has.
++
++## What Changes
++
++- Add `applyPatch(document, patch)`, exported from `src/index.ts`, applying an RFC 6902 patch with the operations `add`, `remove`, `replace`, `move`, `copy` and `test`.
++- The result is a new value; the input document and patch are never mutated.
++- An invalid patch or a failing operation throws an error, and no partial result is returned.
++
++## Capabilities
++
++### New Capabilities
++- `json-patch`: applying an RFC 6902 JSON Patch to a JSON document.
++
++### Modified Capabilities
++
++## Impact
++
++- New module `src/patch.ts` with tests, and a new export in `src/index.ts`.
++- Reuses the pointer parsing of `src/pointer.ts`; no change to the `json-pointer` requirements.
++- No new dependencies.
+diff --git a/openspec/changes/archive/2026-11-18-add-json-patch/specs/json-patch/spec.md b/openspec/changes/archive/2026-11-18-add-json-patch/specs/json-patch/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7dce2128d0a7d78b16e0b15e3499d91460a7f234
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-18-add-json-patch/specs/json-patch/spec.md
+@@ -0,0 +1,149 @@
++## ADDED Requirements
++
++### Requirement: Patch is applied to a document without mutation
++Applying a patch SHALL return the resulting document as a new value. The input document and the patch SHALL NOT be modified, and the result SHALL NOT share any object or array with the input document or the patch. Operations SHALL be applied in order, each to the result of the previous one. An empty patch SHALL return a copy of the document.
++
++#### Scenario: Input untouched
++- **WHEN** the patch `[{"op":"add","path":"/a/b","value":1}]` is applied to `{"a":{}}`
++- **THEN** `{"a":{"b":1}}` is returned and the input document is still `{"a":{}}`
++
++#### Scenario: Value from the patch is not shared
++- **WHEN** an `add` operation inserts an object value and the returned document is then modified
++- **THEN** the object in the patch is unchanged
++
++#### Scenario: Sequential operations
++- **WHEN** the patch adds `/a` and then replaces `/a`
++- **THEN** the second operation sees the value added by the first
++
++### Requirement: Invalid patches and failing operations are errors
++The patch SHALL be an array of operation objects. An error SHALL be thrown when the patch is not an array, when an element is not an object, when `op` is missing or not one of the six operation names, when `path` is missing or not a valid JSON Pointer, when `value` is missing for `add`, `replace` or `test`, or when `from` is missing or not a valid JSON Pointer for `move` and `copy`. An error SHALL also be thrown when an operation fails as described below. When an error is thrown no result is returned, and the input is left unmodified.
++
++#### Scenario: Unknown operation
++- **WHEN** an operation has `op` set to `"merge"`
++- **THEN** an error is thrown
++
++#### Scenario: Missing value
++- **WHEN** an `add` operation has no `value` member
++- **THEN** an error is thrown
++
++#### Scenario: Null value is present
++- **WHEN** an `add` operation has `"value": null`
++- **THEN** `null` is added
++
++#### Scenario: Patch is not an array
++- **WHEN** the patch is an object
++- **THEN** an error is thrown
++
++#### Scenario: Later operation fails
++- **WHEN** the second of two operations fails
++- **THEN** an error is thrown and the input document is unmodified
++
++### Requirement: add
++`add` SHALL insert `value` at `path`. For an object parent, it SHALL add the member, or replace it if it already exists. For an array parent, it SHALL insert the value before the given index, shifting later elements, where the index is between 0 and the array length inclusive; the token `-` SHALL append. The parent of `path` MUST exist, otherwise an error is thrown, as it is for an index past the array length or an index that is not a canonical array index. With the empty path, the value SHALL replace the whole document.
++
++#### Scenario: Add member
++- **WHEN** `{"op":"add","path":"/baz","value":"qux"}` is applied to `{"foo":"bar"}`
++- **THEN** `{"foo":"bar","baz":"qux"}` is returned
++
++#### Scenario: Insert into array
++- **WHEN** `{"op":"add","path":"/foo/1","value":"qux"}` is applied to `{"foo":["bar","baz"]}`
++- **THEN** `{"foo":["bar","qux","baz"]}` is returned
++
++#### Scenario: Append to array
++- **WHEN** `{"op":"add","path":"/foo/-","value":"x"}` is applied to `{"foo":["bar"]}`
++- **THEN** `{"foo":["bar","x"]}` is returned
++
++#### Scenario: Add replaces existing member
++- **WHEN** `{"op":"add","path":"/a","value":2}` is applied to `{"a":1}`
++- **THEN** `{"a":2}` is returned
++
++#### Scenario: Missing parent
++- **WHEN** `{"op":"add","path":"/baz/bat","value":"qux"}` is applied to `{"foo":"bar"}`
++- **THEN** an error is thrown
++
++#### Scenario: Index past the end
++- **WHEN** `{"op":"add","path":"/foo/3","value":"x"}` is applied to `{"foo":["a","b"]}`
++- **THEN** an error is thrown
++
++#### Scenario: Replace whole document
++- **WHEN** `{"op":"add","path":"","value":[1]}` is applied to any document
++- **THEN** `[1]` is returned
++
++#### Scenario: Special member names
++- **WHEN** `{"op":"add","path":"/__proto__","value":1}` is applied to `{}`
++- **THEN** the result has an own member named `__proto__` with value `1`, and no prototype is altered
++
++### Requirement: remove
++`remove` SHALL delete the value at `path`. The target MUST exist, otherwise an error is thrown. Removing an array element SHALL shift later elements down. The token `-` SHALL NOT be a valid target. With the empty path, the result SHALL be `null`.
++
++#### Scenario: Remove member
++- **WHEN** `{"op":"remove","path":"/baz"}` is applied to `{"baz":"qux","foo":"bar"}`
++- **THEN** `{"foo":"bar"}` is returned
++
++#### Scenario: Remove array element
++- **WHEN** `{"op":"remove","path":"/foo/1"}` is applied to `{"foo":["bar","qux","baz"]}`
++- **THEN** `{"foo":["bar","baz"]}` is returned
++
++#### Scenario: Remove missing target
++- **WHEN** `{"op":"remove","path":"/b"}` is applied to `{"a":1}`
++- **THEN** an error is thrown
++
++### Requirement: replace
++`replace` SHALL replace the value at `path` with `value`. The target MUST exist, otherwise an error is thrown, and `-` SHALL NOT be a valid target. With the empty path, the value SHALL replace the whole document.
++
++#### Scenario: Replace member
++- **WHEN** `{"op":"replace","path":"/baz","value":"boo"}` is applied to `{"baz":"qux","foo":"bar"}`
++- **THEN** `{"baz":"boo","foo":"bar"}` is returned
++
++#### Scenario: Replace missing target
++- **WHEN** `{"op":"replace","path":"/b","value":1}` is applied to `{"a":1}`
++- **THEN** an error is thrown
++
++### Requirement: move
++`move` SHALL remove the value at `from` and add it at `path`, as `remove` followed by `add`. The `from` location MUST exist, otherwise an error is thrown. An error SHALL be thrown when `from` is a proper prefix of `path` (a location cannot be moved into one of its children). Moving a location to itself SHALL leave the document unchanged.
++
++#### Scenario: Move member
++- **WHEN** `{"op":"move","from":"/foo/waldo","path":"/qux/thud"}` is applied to `{"foo":{"bar":"baz","waldo":"fred"},"qux":{"corge":"grault"}}`
++- **THEN** `{"foo":{"bar":"baz"},"qux":{"corge":"grault","thud":"fred"}}` is returned
++
++#### Scenario: Move array element
++- **WHEN** `{"op":"move","from":"/foo/1","path":"/foo/3"}` is applied to `{"foo":["all","grass","cows","eat"]}`
++- **THEN** `{"foo":["all","cows","eat","grass"]}` is returned
++
++#### Scenario: Move into own child
++- **WHEN** `{"op":"move","from":"/a","path":"/a/b"}` is applied to `{"a":{}}`
++- **THEN** an error is thrown
++
++#### Scenario: Move from missing location
++- **WHEN** `from` does not exist
++- **THEN** an error is thrown
++
++### Requirement: copy
++`copy` SHALL add at `path` a copy of the value at `from`. The `from` location MUST exist, otherwise an error is thrown. The copy SHALL be independent of the original.
++
++#### Scenario: Copy member
++- **WHEN** `{"op":"copy","from":"/foo/waldo","path":"/qux/thud"}` is applied to `{"foo":{"bar":"baz","waldo":"fred"},"qux":{"corge":"grault"}}`
++- **THEN** `thud` is added to `qux` with value `"fred"` and `foo` is unchanged
++
++#### Scenario: Copy is independent
++- **WHEN** an object is copied and the copy is then changed by a later operation
++- **THEN** the original is unchanged
++
++### Requirement: test
++`test` SHALL succeed, leaving the document unchanged, when the value at `path` equals `value`, and SHALL otherwise throw an error. The target MUST exist. Equality is by JSON value: strings compare by code units, numbers by numeric value, objects when they have the same member names with equal values regardless of member order, arrays when they have the same length and equal elements in order, and values of different types are never equal. With the empty path, the whole document is compared.
++
++#### Scenario: Equal values
++- **WHEN** `{"op":"test","path":"/a","value":{"y":2,"x":1}}` is applied to `{"a":{"x":1,"y":2}}`
++- **THEN** the document is returned unchanged
++
++#### Scenario: Different values
++- **WHEN** `{"op":"test","path":"/a","value":"1"}` is applied to `{"a":1}`
++- **THEN** an error is thrown
++
++#### Scenario: Missing target
++- **WHEN** `{"op":"test","path":"/b","value":null}` is applied to `{"a":1}`
++- **THEN** an error is thrown
++
++#### Scenario: Array order matters
++- **WHEN** `{"op":"test","path":"/a","value":[2,1]}` is applied to `{"a":[1,2]}`
++- **THEN** an error is thrown
+diff --git a/openspec/changes/archive/2026-11-18-add-json-patch/tasks.md b/openspec/changes/archive/2026-11-18-add-json-patch/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8ddf1ee10f85529ff231af715be26f42958bc0f5
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-18-add-json-patch/tasks.md
+@@ -0,0 +1,11 @@
++# Tasks
++
++## 1. Patch implementation
++
++- [x] 1.1 Export `parsePointer` from `src/pointer.ts` for internal use; verify the existing pointer tests still pass with `npm test`
++- [x] 1.2 Add `src/patch.ts` with patch validation, clone and equality helpers, the six operations, and the error classes; export `applyPatch` and the errors from `src/index.ts`; verify with `npx tsc --noEmit` if available and `npm test`
++- [x] 1.3 Add `src/patch.test.ts` covering every scenario in `specs/json-patch/spec.md` (RFC 6902 appendix A examples, non-mutation, invalid patches, `-`, `__proto__`, move into child, test equality); verify `npm test` passes
++
++## 2. Documentation
++
++- [x] 2.1 Mention `applyPatch` in `README.md`; verify the text matches the exported API
+diff --git a/openspec/specs/json-patch/spec.md b/openspec/specs/json-patch/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..13b3fe3c078e8f54b17f11cd4e6c004c5c02587f
+--- /dev/null
++++ b/openspec/specs/json-patch/spec.md
+@@ -0,0 +1,154 @@
++# json-patch Specification
++
++## Purpose
++Lets services change a JSON document with a standard patch, as specified by RFC 6902 (add, remove, replace, move, copy and test), producing a new document without mutating the input.
++
++## Requirements
++
++### Requirement: Patch is applied to a document without mutation
++Applying a patch SHALL return the resulting document as a new value. The input document and the patch SHALL NOT be modified, and the result SHALL NOT share any object or array with the input document or the patch. Operations SHALL be applied in order, each to the result of the previous one. An empty patch SHALL return a copy of the document.
++
++#### Scenario: Input untouched
++- **WHEN** the patch `[{"op":"add","path":"/a/b","value":1}]` is applied to `{"a":{}}`
++- **THEN** `{"a":{"b":1}}` is returned and the input document is still `{"a":{}}`
++
++#### Scenario: Value from the patch is not shared
++- **WHEN** an `add` operation inserts an object value and the returned document is then modified
++- **THEN** the object in the patch is unchanged
++
++#### Scenario: Sequential operations
++- **WHEN** the patch adds `/a` and then replaces `/a`
++- **THEN** the second operation sees the value added by the first
++
++### Requirement: Invalid patches and failing operations are errors
++The patch SHALL be an array of operation objects. An error SHALL be thrown when the patch is not an array, when an element is not an object, when `op` is missing or not one of the six operation names, when `path` is missing or not a valid JSON Pointer, when `value` is missing for `add`, `replace` or `test`, or when `from` is missing or not a valid JSON Pointer for `move` and `copy`. An error SHALL also be thrown when an operation fails as described below. When an error is thrown no result is returned, and the input is left unmodified.
++
++#### Scenario: Unknown operation
++- **WHEN** an operation has `op` set to `"merge"`
++- **THEN** an error is thrown
++
++#### Scenario: Missing value
++- **WHEN** an `add` operation has no `value` member
++- **THEN** an error is thrown
++
++#### Scenario: Null value is present
++- **WHEN** an `add` operation has `"value": null`
++- **THEN** `null` is added
++
++#### Scenario: Patch is not an array
++- **WHEN** the patch is an object
++- **THEN** an error is thrown
++
++#### Scenario: Later operation fails
++- **WHEN** the second of two operations fails
++- **THEN** an error is thrown and the input document is unmodified
++
++### Requirement: add
++`add` SHALL insert `value` at `path`. For an object parent, it SHALL add the member, or replace it if it already exists. For an array parent, it SHALL insert the value before the given index, shifting later elements, where the index is between 0 and the array length inclusive; the token `-` SHALL append. The parent of `path` MUST exist, otherwise an error is thrown, as it is for an index past the array length or an index that is not a canonical array index. With the empty path, the value SHALL replace the whole document.
++
++#### Scenario: Add member
++- **WHEN** `{"op":"add","path":"/baz","value":"qux"}` is applied to `{"foo":"bar"}`
++- **THEN** `{"foo":"bar","baz":"qux"}` is returned
++
++#### Scenario: Insert into array
++- **WHEN** `{"op":"add","path":"/foo/1","value":"qux"}` is applied to `{"foo":["bar","baz"]}`
++- **THEN** `{"foo":["bar","qux","baz"]}` is returned
++
++#### Scenario: Append to array
++- **WHEN** `{"op":"add","path":"/foo/-","value":"x"}` is applied to `{"foo":["bar"]}`
++- **THEN** `{"foo":["bar","x"]}` is returned
++
++#### Scenario: Add replaces existing member
++- **WHEN** `{"op":"add","path":"/a","value":2}` is applied to `{"a":1}`
++- **THEN** `{"a":2}` is returned
++
++#### Scenario: Missing parent
++- **WHEN** `{"op":"add","path":"/baz/bat","value":"qux"}` is applied to `{"foo":"bar"}`
++- **THEN** an error is thrown
++
++#### Scenario: Index past the end
++- **WHEN** `{"op":"add","path":"/foo/3","value":"x"}` is applied to `{"foo":["a","b"]}`
++- **THEN** an error is thrown
++
++#### Scenario: Replace whole document
++- **WHEN** `{"op":"add","path":"","value":[1]}` is applied to any document
++- **THEN** `[1]` is returned
++
++#### Scenario: Special member names
++- **WHEN** `{"op":"add","path":"/__proto__","value":1}` is applied to `{}`
++- **THEN** the result has an own member named `__proto__` with value `1`, and no prototype is altered
++
++### Requirement: remove
++`remove` SHALL delete the value at `path`. The target MUST exist, otherwise an error is thrown. Removing an array element SHALL shift later elements down. The token `-` SHALL NOT be a valid target. With the empty path, the result SHALL be `null`.
++
++#### Scenario: Remove member
++- **WHEN** `{"op":"remove","path":"/baz"}` is applied to `{"baz":"qux","foo":"bar"}`
++- **THEN** `{"foo":"bar"}` is returned
++
++#### Scenario: Remove array element
++- **WHEN** `{"op":"remove","path":"/foo/1"}` is applied to `{"foo":["bar","qux","baz"]}`
++- **THEN** `{"foo":["bar","baz"]}` is returned
++
++#### Scenario: Remove missing target
++- **WHEN** `{"op":"remove","path":"/b"}` is applied to `{"a":1}`
++- **THEN** an error is thrown
++
++### Requirement: replace
++`replace` SHALL replace the value at `path` with `value`. The target MUST exist, otherwise an error is thrown, and `-` SHALL NOT be a valid target. With the empty path, the value SHALL replace the whole document.
++
++#### Scenario: Replace member
++- **WHEN** `{"op":"replace","path":"/baz","value":"boo"}` is applied to `{"baz":"qux","foo":"bar"}`
++- **THEN** `{"baz":"boo","foo":"bar"}` is returned
++
++#### Scenario: Replace missing target
++- **WHEN** `{"op":"replace","path":"/b","value":1}` is applied to `{"a":1}`
++- **THEN** an error is thrown
++
++### Requirement: move
++`move` SHALL remove the value at `from` and add it at `path`, as `remove` followed by `add`. The `from` location MUST exist, otherwise an error is thrown. An error SHALL be thrown when `from` is a proper prefix of `path` (a location cannot be moved into one of its children). Moving a location to itself SHALL leave the document unchanged.
++
++#### Scenario: Move member
++- **WHEN** `{"op":"move","from":"/foo/waldo","path":"/qux/thud"}` is applied to `{"foo":{"bar":"baz","waldo":"fred"},"qux":{"corge":"grault"}}`
++- **THEN** `{"foo":{"bar":"baz"},"qux":{"corge":"grault","thud":"fred"}}` is returned
++
++#### Scenario: Move array element
++- **WHEN** `{"op":"move","from":"/foo/1","path":"/foo/3"}` is applied to `{"foo":["all","grass","cows","eat"]}`
++- **THEN** `{"foo":["all","cows","eat","grass"]}` is returned
++
++#### Scenario: Move into own child
++- **WHEN** `{"op":"move","from":"/a","path":"/a/b"}` is applied to `{"a":{}}`
++- **THEN** an error is thrown
++
++#### Scenario: Move from missing location
++- **WHEN** `from` does not exist
++- **THEN** an error is thrown
++
++### Requirement: copy
++`copy` SHALL add at `path` a copy of the value at `from`. The `from` location MUST exist, otherwise an error is thrown. The copy SHALL be independent of the original.
++
++#### Scenario: Copy member
++- **WHEN** `{"op":"copy","from":"/foo/waldo","path":"/qux/thud"}` is applied to `{"foo":{"bar":"baz","waldo":"fred"},"qux":{"corge":"grault"}}`
++- **THEN** `thud` is added to `qux` with value `"fred"` and `foo` is unchanged
++
++#### Scenario: Copy is independent
++- **WHEN** an object is copied and the copy is then changed by a later operation
++- **THEN** the original is unchanged
++
++### Requirement: test
++`test` SHALL succeed, leaving the document unchanged, when the value at `path` equals `value`, and SHALL otherwise throw an error. The target MUST exist. Equality is by JSON value: strings compare by code units, numbers by numeric value, objects when they have the same member names with equal values regardless of member order, arrays when they have the same length and equal elements in order, and values of different types are never equal. With the empty path, the whole document is compared.
++
++#### Scenario: Equal values
++- **WHEN** `{"op":"test","path":"/a","value":{"y":2,"x":1}}` is applied to `{"a":{"x":1,"y":2}}`
++- **THEN** the document is returned unchanged
++
++#### Scenario: Different values
++- **WHEN** `{"op":"test","path":"/a","value":"1"}` is applied to `{"a":1}`
++- **THEN** an error is thrown
++
++#### Scenario: Missing target
++- **WHEN** `{"op":"test","path":"/b","value":null}` is applied to `{"a":1}`
++- **THEN** an error is thrown
++
++#### Scenario: Array order matters
++- **WHEN** `{"op":"test","path":"/a","value":[2,1]}` is applied to `{"a":[1,2]}`
++- **THEN** an error is thrown
+diff --git a/src/index.ts b/src/index.ts
+index b013b8535f7318716592c2b52b5fbab597342628..12e07a35f096eabe6db2b14a660472f0837f7504 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1 +1,2 @@
+ export { resolvePointer, InvalidPointerError, UnresolvedPointerError } from "./pointer.ts";
++export { applyPatch, InvalidPatchError, PatchFailedError } from "./patch.ts";
+diff --git a/src/patch.test.ts b/src/patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..42efe2f4c8167a3e90142dcf7251096922765d2f
+--- /dev/null
++++ b/src/patch.test.ts
+@@ -0,0 +1,135 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, InvalidPatchError, PatchFailedError, InvalidPointerError } from "./index.ts";
++
++const ok = (doc: unknown, patch: unknown, expected: unknown) => assert.deepEqual(applyPatch(doc, patch), expected);
++const bad = (doc: unknown, patch: unknown) => assert.throws(() => applyPatch(doc, patch));
++
++test("RFC 6902 appendix A examples", () => {
++  ok({ foo: "bar" }, [{ op: "add", path: "/baz", value: "qux" }], { foo: "bar", baz: "qux" });
++  ok({ foo: ["bar", "baz"] }, [{ op: "add", path: "/foo/1", value: "qux" }], { foo: ["bar", "qux", "baz"] });
++  ok({ baz: "qux", foo: "bar" }, [{ op: "remove", path: "/baz" }], { foo: "bar" });
++  ok({ foo: ["bar", "qux", "baz"] }, [{ op: "remove", path: "/foo/1" }], { foo: ["bar", "baz"] });
++  ok({ baz: "qux", foo: "bar" }, [{ op: "replace", path: "/baz", value: "boo" }], { baz: "boo", foo: "bar" });
++  ok(
++    { foo: { bar: "baz", waldo: "fred" }, qux: { corge: "grault" } },
++    [{ op: "move", from: "/foo/waldo", path: "/qux/thud" }],
++    { foo: { bar: "baz" }, qux: { corge: "grault", thud: "fred" } },
++  );
++  ok({ foo: ["all", "grass", "cows", "eat"] }, [{ op: "move", from: "/foo/1", path: "/foo/3" }], {
++    foo: ["all", "cows", "eat", "grass"],
++  });
++  ok(
++    { foo: { bar: "baz", waldo: "fred" }, qux: { corge: "grault" } },
++    [{ op: "copy", from: "/foo/waldo", path: "/qux/thud" }],
++    { foo: { bar: "baz", waldo: "fred" }, qux: { corge: "grault", thud: "fred" } },
++  );
++  ok({ baz: "qux", foo: ["a", 2, "c"] }, [{ op: "test", path: "/baz", value: "qux" }, { op: "test", path: "/foo/1", value: 2 }], {
++    baz: "qux",
++    foo: ["a", 2, "c"],
++  });
++  bad({ baz: "qux" }, [{ op: "test", path: "/baz", value: "bar" }]);
++  ok({ foo: "bar" }, [{ op: "add", path: "/child", value: { grandchild: {} } }], { foo: "bar", child: { grandchild: {} } });
++  bad({ foo: "bar" }, [{ op: "add", path: "/baz/bat", value: "qux" }]);
++});
++
++test("does not mutate input or share structure", () => {
++  const doc = { a: {}, list: [1] };
++  const value = { x: [1] };
++  const patch = [{ op: "add", path: "/a/b", value }, { op: "copy", from: "/a/b", path: "/c" }];
++  const snapshot = structuredClone({ doc, patch });
++  const result = applyPatch(doc, patch) as any;
++  assert.deepEqual({ doc, patch }, snapshot);
++  result.a.b.x.push(2);
++  assert.deepEqual(value, { x: [1] });
++  assert.deepEqual(result.c, { x: [1] });
++  assert.notEqual(applyPatch(doc, []), doc);
++  assert.deepEqual(applyPatch(doc, []), doc);
++});
++
++test("failure leaves input unmodified", () => {
++  const doc = { a: 1 };
++  bad(doc, [{ op: "add", path: "/b", value: 2 }, { op: "remove", path: "/zzz" }]);
++  assert.deepEqual(doc, { a: 1 });
++});
++
++test("invalid patches", () => {
++  assert.throws(() => applyPatch({}, {}), InvalidPatchError);
++  assert.throws(() => applyPatch({}, [1]), InvalidPatchError);
++  assert.throws(() => applyPatch({}, [null]), InvalidPatchError);
++  assert.throws(() => applyPatch({}, [{ path: "/a", value: 1 }]), InvalidPatchError);
++  assert.throws(() => applyPatch({}, [{ op: "merge", path: "/a" }]), InvalidPatchError);
++  assert.throws(() => applyPatch({}, [{ op: "add", value: 1 }]), InvalidPointerError);
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "a", value: 1 }]), InvalidPointerError);
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a" }]), InvalidPatchError);
++  assert.throws(() => applyPatch({}, [{ op: "replace", path: "/a" }]), InvalidPatchError);
++  assert.throws(() => applyPatch({}, [{ op: "test", path: "/a" }]), InvalidPatchError);
++  assert.throws(() => applyPatch({}, [{ op: "move", path: "/a" }]), InvalidPatchError);
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: "copy", path: "/b", from: "x" }]), InvalidPointerError);
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: "remove", path: "/b" }]), PatchFailedError);
++  // validation happens before applying anything
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: 1 }, { op: "bogus", path: "/a" }]), InvalidPatchError);
++});
++
++test("add details", () => {
++  ok({ a: null }, [{ op: "add", path: "/b", value: null }], { a: null, b: null });
++  ok({ foo: ["bar"] }, [{ op: "add", path: "/foo/-", value: "x" }], { foo: ["bar", "x"] });
++  ok({ foo: ["bar"] }, [{ op: "add", path: "/foo/1", value: "x" }], { foo: ["bar", "x"] });
++  ok({ a: 1 }, [{ op: "add", path: "/a", value: 2 }], { a: 2 });
++  ok({ a: 1 }, [{ op: "add", path: "", value: [1] }], [1]);
++  ok({ "": 1 }, [{ op: "add", path: "/", value: 2 }], { "": 2 });
++  bad({ foo: ["a", "b"] }, [{ op: "add", path: "/foo/3", value: "x" }]);
++  bad({ foo: ["a"] }, [{ op: "add", path: "/foo/01", value: "x" }]);
++  bad({ foo: ["a"] }, [{ op: "add", path: "/foo/x", value: "x" }]);
++  bad({ a: 1 }, [{ op: "add", path: "/a/b", value: 1 }]);
++});
++
++test("__proto__ members are plain data", () => {
++  const result = applyPatch({}, [{ op: "add", path: "/__proto__", value: { polluted: true } }]) as any;
++  assert.ok(Object.hasOwn(result, "__proto__"));
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal(({} as any).polluted, undefined);
++  const parsed = JSON.parse('[{"op":"add","path":"/a","value":{"__proto__":{"x":1}}}]');
++  const out = applyPatch({}, parsed) as any;
++  assert.equal(Object.getPrototypeOf(out.a), Object.prototype);
++  assert.ok(Object.hasOwn(out.a, "__proto__"));
++});
++
++test("remove and replace details", () => {
++  assert.equal(applyPatch({ a: 1 }, [{ op: "remove", path: "" }]), null);
++  assert.equal(applyPatch({ a: 1 }, [{ op: "replace", path: "", value: 5 }]), 5);
++  bad({ a: [1] }, [{ op: "remove", path: "/a/-" }]);
++  bad({ a: [1] }, [{ op: "replace", path: "/a/-", value: 1 }]);
++  bad({ a: [1] }, [{ op: "remove", path: "/a/1" }]);
++  bad({ a: 1 }, [{ op: "replace", path: "/b", value: 1 }]);
++  bad({}, [{ op: "remove", path: "/toString" }]);
++  bad({}, [{ op: "replace", path: "/toString", value: 1 }]);
++});
++
++test("move and copy details", () => {
++  bad({ a: {} }, [{ op: "move", from: "/a", path: "/a/b" }]);
++  bad({ a: 1 }, [{ op: "move", from: "/x", path: "/y" }]);
++  bad({ a: 1 }, [{ op: "copy", from: "/x", path: "/y" }]);
++  ok({ a: 1, ab: 2 }, [{ op: "move", from: "/a", path: "/ab" }], { ab: 1 });
++  ok({ a: 1 }, [{ op: "move", from: "/a", path: "/a" }], { a: 1 });
++  bad({ a: 1 }, [{ op: "move", from: "/x", path: "/x" }]);
++  ok({ a: { b: 1 } }, [{ op: "move", from: "/a/b", path: "" }], 1 === 1 ? 1 : 0);
++  ok({ a: 1 }, [{ op: "move", from: "", path: "" }], { a: 1 });
++  const out = applyPatch({ a: { x: 1 } }, [{ op: "copy", from: "/a", path: "/b" }, { op: "add", path: "/b/y", value: 2 }]);
++  assert.deepEqual(out, { a: { x: 1 }, b: { x: 1, y: 2 } });
++});
++
++test("test equality", () => {
++  const doc = { a: { x: 1, y: [1, { z: null }] } };
++  ok(doc, [{ op: "test", path: "/a", value: { y: [1, { z: null }], x: 1 } }], doc);
++  ok(doc, [{ op: "test", path: "", value: doc }], doc);
++  bad({ a: 1 }, [{ op: "test", path: "/a", value: "1" }]);
++  bad({ a: [1, 2] }, [{ op: "test", path: "/a", value: [2, 1] }]);
++  bad({ a: [1] }, [{ op: "test", path: "/a", value: [1, 2] }]);
++  bad({ a: { x: 1 } }, [{ op: "test", path: "/a", value: { x: 1, y: 1 } }]);
++  bad({ a: { x: 1, y: 1 } }, [{ op: "test", path: "/a", value: { x: 1 } }]);
++  bad({ a: {} }, [{ op: "test", path: "/a", value: [] }]);
++  bad({ a: null }, [{ op: "test", path: "/a", value: {} }]);
++  bad({ a: 1 }, [{ op: "test", path: "/b", value: null }]);
++  ok({ a: 1 }, [{ op: "test", path: "/a", value: 1.0 }], { a: 1 });
++});
+diff --git a/src/patch.ts b/src/patch.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..4908a76a65654ee6ac9085cf17c5ee9d6e493941
+--- /dev/null
++++ b/src/patch.ts
+@@ -0,0 +1,181 @@
++import { parsePointer } from "./pointer.ts";
++
++export class InvalidPatchError extends Error {
++  override name = "InvalidPatchError";
++}
++
++export class PatchFailedError extends Error {
++  override name = "PatchFailedError";
++}
++
++type Json = unknown;
++type Container = Json[] | Record<string, Json>;
++
++type Operation =
++  | { op: "add" | "replace" | "test"; path: string[]; value: Json }
++  | { op: "remove"; path: string[] }
++  | { op: "move" | "copy"; path: string[]; from: string[] };
++
++const ARRAY_INDEX = /^(0|[1-9][0-9]*)$/;
++
++function isObject(value: unknown): value is Record<string, Json> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++function setOwn(target: Record<string, Json>, key: string, value: Json): void {
++  Object.defineProperty(target, key, { value, writable: true, enumerable: true, configurable: true });
++}
++
++function clone(value: Json): Json {
++  if (Array.isArray(value)) return value.map(clone);
++  if (isObject(value)) {
++    const copy: Record<string, Json> = {};
++    for (const key of Object.keys(value)) setOwn(copy, key, clone(value[key]));
++    return copy;
++  }
++  return value;
++}
++
++function equal(a: Json, b: Json): boolean {
++  if (Array.isArray(a)) {
++    return Array.isArray(b) && a.length === b.length && a.every((item, i) => equal(item, b[i]));
++  }
++  if (isObject(a)) {
++    if (!isObject(b)) return false;
++    const keys = Object.keys(a);
++    return keys.length === Object.keys(b).length && keys.every((k) => Object.hasOwn(b, k) && equal(a[k], b[k]));
++  }
++  return a === b;
++}
++
++function parseOperation(raw: unknown, index: number): Operation {
++  if (!isObject(raw)) throw new InvalidPatchError(`Operation ${index} must be an object`);
++  const { op } = raw;
++  const path = parsePointer(raw.path);
++  switch (op) {
++    case "add":
++    case "replace":
++    case "test":
++      if (!Object.hasOwn(raw, "value")) throw new InvalidPatchError(`Operation ${index} (${op}) requires "value"`);
++      return { op, path, value: raw.value };
++    case "remove":
++      return { op, path };
++    case "move":
++    case "copy":
++      if (!Object.hasOwn(raw, "from")) throw new InvalidPatchError(`Operation ${index} (${op}) requires "from"`);
++      return { op, path, from: parsePointer(raw.from) };
++    default:
++      throw new InvalidPatchError(`Operation ${index} has an unknown "op": ${JSON.stringify(op)}`);
++  }
++}
++
++/** Index of an existing array element named by token; throws when there is none. */
++function elementIndex(array: Json[], token: string): number {
++  if (!ARRAY_INDEX.test(token) || Number(token) >= array.length) {
++    throw new PatchFailedError(`No array element ${JSON.stringify(token)}`);
++  }
++  return Number(token);
++}
++
++function child(container: Json, token: string): Json {
++  if (Array.isArray(container)) return container[elementIndex(container, token)];
++  if (isObject(container)) {
++    if (!Object.hasOwn(container, token)) throw new PatchFailedError(`No member ${JSON.stringify(token)}`);
++    return container[token];
++  }
++  throw new PatchFailedError(`Cannot apply ${JSON.stringify(token)} to a scalar`);
++}
++
++function get(doc: Json, tokens: string[]): Json {
++  return tokens.reduce(child, doc);
++}
++
++function parentOf(doc: Json, tokens: string[]): Container {
++  const parent = get(doc, tokens.slice(0, -1));
++  if (typeof parent !== "object" || parent === null) throw new PatchFailedError("Parent is not a container");
++  return parent as Container;
++}
++
++function add(doc: Json, tokens: string[], value: Json): Json {
++  if (tokens.length === 0) return value;
++  const parent = parentOf(doc, tokens);
++  const token = tokens[tokens.length - 1];
++  if (Array.isArray(parent)) {
++    if (token === "-") {
++      parent.push(value);
++    } else {
++      if (!ARRAY_INDEX.test(token) || Number(token) > parent.length) {
++        throw new PatchFailedError(`Invalid array index ${JSON.stringify(token)}`);
++      }
++      parent.splice(Number(token), 0, value);
++    }
++  } else {
++    setOwn(parent, token, value);
++  }
++  return doc;
++}
++
++function remove(doc: Json, tokens: string[]): Json {
++  if (tokens.length === 0) return null;
++  const parent = parentOf(doc, tokens);
++  const token = tokens[tokens.length - 1];
++  child(parent, token);
++  if (Array.isArray(parent)) parent.splice(Number(token), 1);
++  else delete parent[token];
++  return doc;
++}
++
++function replace(doc: Json, tokens: string[], value: Json): Json {
++  if (tokens.length === 0) return value;
++  const parent = parentOf(doc, tokens);
++  const token = tokens[tokens.length - 1];
++  child(parent, token);
++  if (Array.isArray(parent)) parent[Number(token)] = value;
++  else setOwn(parent, token, value);
++  return doc;
++}
++
++function isProperPrefix(prefix: string[], tokens: string[]): boolean {
++  return prefix.length < tokens.length && prefix.every((t, i) => t === tokens[i]);
++}
++
++/**
++ * Applies a JSON Patch (RFC 6902) to a JSON document and returns the result as a
++ * new value; neither the document nor the patch is mutated. Throws
++ * InvalidPatchError (or InvalidPointerError) for a malformed patch and
++ * PatchFailedError when an operation fails.
++ */
++export function applyPatch(document: unknown, patch: unknown): unknown {
++  if (!Array.isArray(patch)) throw new InvalidPatchError("A JSON Patch must be an array");
++  const operations = patch.map(parseOperation);
++  let doc = clone(document);
++  for (const operation of operations) {
++    switch (operation.op) {
++      case "add":
++        doc = add(doc, operation.path, clone(operation.value));
++        break;
++      case "replace":
++        doc = replace(doc, operation.path, clone(operation.value));
++        break;
++      case "remove":
++        doc = remove(doc, operation.path);
++        break;
++      case "copy":
++        doc = add(doc, operation.path, clone(get(doc, operation.from)));
++        break;
++      case "move": {
++        const value = get(doc, operation.from);
++        if (isProperPrefix(operation.from, operation.path)) {
++          throw new PatchFailedError("Cannot move a location into one of its children");
++        }
++        if (operation.from.length === operation.path.length && isProperPrefix(operation.from.slice(0, -1), operation.path) && operation.from.at(-1) === operation.path.at(-1)) break;
++        doc = add(remove(doc, operation.from), operation.path, value);
++        break;
++      }
++      case "test":
++        if (!equal(get(doc, operation.path), operation.value)) throw new PatchFailedError("Test failed");
++        break;
++    }
++  }
++  return doc;
++}
+diff --git a/src/pointer.ts b/src/pointer.ts
+index 2c5d5c195b63f3b8b10cfad590ce0afc8c6b1ca7..889e3a5d78a7729cbe662957a3d6d27ddaf6697c 100644
+--- a/src/pointer.ts
++++ b/src/pointer.ts
+@@ -8,7 +8,7 @@ export class UnresolvedPointerError extends Error {
+ 
+ const ARRAY_INDEX = /^(0|[1-9][0-9]*)$/;
+ 
+-function parsePointer(pointer: unknown): string[] {
++export function parsePointer(pointer: unknown): string[] {
+   if (typeof pointer !== "string") {
+     throw new InvalidPointerError("JSON Pointer must be a string");
+   }

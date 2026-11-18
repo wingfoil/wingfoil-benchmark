@@ -1,0 +1,114 @@
+diff --git a/src/index.ts b/src/index.ts
+index 174f8210f9fb19d5bad20a3ae844b0702de7ecba..97a45382edb2e91570d09efbf87870b5fb9df85b 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -228,3 +228,82 @@ export function applyMergePatch(target: unknown, patch: unknown): JsonValue {
+   }
+   return result;
+ }
++
++type PatchOp = { op: string; path: string; value?: JsonValue };
++
++function diffArrays(a: JsonValue[], b: JsonValue[], path: string, ops: PatchOp[]): void {
++  let start = 0;
++  while (start < a.length && start < b.length && deepEqual(a[start], b[start])) start++;
++  let endA = a.length;
++  let endB = b.length;
++  while (endA > start && endB > start && deepEqual(a[endA - 1], b[endB - 1])) {
++    endA--;
++    endB--;
++  }
++  const n = endA - start;
++  const m = endB - start;
++  // Longest common subsequence of the differing middle parts.
++  const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
++  for (let i = n - 1; i >= 0; i--) {
++    for (let j = m - 1; j >= 0; j--) {
++      lcs[i][j] = deepEqual(a[start + i], b[start + j])
++        ? lcs[i + 1][j + 1] + 1
++        : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
++    }
++  }
++  let index = start; // position in the array as patched so far
++  let i = 0;
++  let j = 0;
++  while (i < n || j < m) {
++    // Collect the run of items that differ before the next common item.
++    const removed: JsonValue[] = [];
++    const added: JsonValue[] = [];
++    while (i < n || j < m) {
++      if (i < n && j < m && deepEqual(a[start + i], b[start + j])) break;
++      if (i < n && (j >= m || lcs[i + 1][j] >= lcs[i][j + 1])) removed.push(a[start + i++]);
++      else added.push(b[start + j++]);
++    }
++    const paired = Math.min(removed.length, added.length);
++    for (let k = 0; k < paired; k++) diffValues(removed[k], added[k], `${path}/${index++}`, ops);
++    for (let k = paired; k < removed.length; k++) ops.push({ op: "remove", path: `${path}/${index}` });
++    for (let k = paired; k < added.length; k++) {
++      ops.push({ op: "add", path: `${path}/${index++}`, value: clone(added[k]) });
++    }
++    if (i < n && j < m) {
++      i++;
++      j++;
++      index++;
++    }
++  }
++}
++
++function diffValues(from: JsonValue, to: JsonValue, path: string, ops: PatchOp[]): void {
++  if (deepEqual(from, to)) return;
++  const nested: PatchOp[] = [];
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArrays(from, to, path, nested);
++  } else if (isObject(from) && isObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!hasOwn(to, key)) nested.push({ op: "remove", path: `${path}/${encodeToken(key)}` });
++    }
++    for (const key of Object.keys(to)) {
++      const child = `${path}/${encodeToken(key)}`;
++      if (!hasOwn(from, key)) nested.push({ op: "add", path: child, value: clone(to[key]) });
++      else diffValues(from[key], to[key], child, nested);
++    }
++  } else {
++    ops.push({ op: "replace", path, value: clone(to) });
++    return;
++  }
++  ops.push(...nested);
++}
++
++/**
++ * Creates a JSON Patch (RFC 6902) that turns `from` into `to` when applied.
++ * The inputs are not mutated. Only the parts that changed are described.
++ */
++export function createPatch(from: unknown, to: unknown): PatchOp[] {
++  const ops: PatchOp[] = [];
++  diffValues(clone(from), clone(to), "", ops);
++  return ops;
++}
+diff --git a/test/createpatch.test.ts b/test/createpatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a0d31b251139b1e5a0a30a60bb182d6ba6c2d65
+--- /dev/null
++++ b/test/createpatch.test.ts
+@@ -0,0 +1,21 @@
++import test from "node:test";
++import assert from "node:assert/strict";
++import { createPatch, applyPatch } from "../src/index.ts";
++
++test("createPatch round-trips and is minimal", () => {
++  const cases: [unknown, unknown, number][] = [
++    [{ a: 1, b: { c: [1, 2] } }, { a: 1, b: { c: [1, 2] } }, 0],
++    [{ a: 1, b: { c: 2 } }, { a: 1, b: { c: 3 } }, 1],
++    [[1, 2, 3, 4, 5], [1, 2, 9, 3, 4, 5], 1],
++    [[1, 2, 3, 4, 5], [1, 2, 4, 5], 1],
++    [[1, 2, 3, 4], [2, 3, 4, 1], 2],
++    [{ "a/b": 1, "~": 2 }, { "a/b": 2 }, 2],
++  ];
++  for (const [from, to, count] of cases) {
++    const before = JSON.stringify(from);
++    const patch = createPatch(from, to);
++    assert.equal(patch.length, count);
++    assert.deepEqual(applyPatch(from, patch), to);
++    assert.equal(JSON.stringify(from), before);
++  }
++});

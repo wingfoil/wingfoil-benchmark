@@ -1,0 +1,142 @@
+diff --git a/README.md b/README.md
+index 4ceeb1dc460d8f5edaa0ce1955ff07bf30491b87..2fb46592e77d8878b3bd0537e171b448d51e1136 100644
+--- a/README.md
++++ b/README.md
+@@ -43,3 +43,22 @@ applyPatch({ a: [1, 2] }, [
+ - `test` compares with JSON equality: numbers by value, object members regardless of order.
+ - Neither the document nor the patch is mutated, and the result shares no structure with them.
+   A `__proto__` key is treated as plain data and never reaches the prototype chain.
++
++## JSON Merge Patch (RFC 7396)
++
++`applyMergePatch(target, patch)` applies a merge patch and returns the merged document as a new value.
++RFC 7396 obsoletes RFC 7386 with the same semantics.
++
++```ts
++import { applyMergePatch } from "./src/index.js";
++
++applyMergePatch({ a: "b", c: { d: "e" } }, { a: "z", c: { d: null } }); // { a: "z", c: {} }
++```
++
++- A patch that is not an object replaces the whole target; otherwise its members are merged recursively
++  (section 2), and a target that is not an object is treated as an empty one.
++- A `null` member removes that member from the target. Consequently a merge patch cannot set a member
++  to `null`, and arrays are replaced whole, not merged (section 1).
++- It throws if `target` or `patch` is not a JSON value.
++- Neither argument is mutated, and the result shares no structure with them.
++  A `__proto__` key is treated as plain data and never reaches the prototype chain.
+diff --git a/src/index.ts b/src/index.ts
+index 5f98bd22a049d29172cd0bcdf2dcab80f557058b..91c91cf9716817cb600d48b6f75680dcb87e55bd 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -225,3 +225,38 @@ export function applyPatch(document: JsonValue, patch: PatchOperation[]): JsonVa
+   const operations = Array.from(patch, validateOperation);
+   return operations.reduce(applyOperation, copyOf(document));
+ }
++
++/**
++ * Applies a JSON Merge Patch (RFC 7396 section 2, which obsoletes RFC 7386) to `target`.
++ *
++ * A patch that is not an object replaces the target. Otherwise each member of the patch is merged
++ * into the target, treated as an empty object when it is not one: `null` removes the member, any
++ * other value is merged recursively. Arrays are replaced whole, never merged.
++ *
++ * Neither `target` nor `patch` is mutated, and the result shares no structure with either.
++ * A `__proto__` key is plain data and never reaches the prototype chain.
++ *
++ * @throws Error if `target` or `patch` is not a JSON value.
++ */
++export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  if (!isJsonValue(target) || !isJsonValue(patch)) {
++    throw new Error("Invalid JSON Merge Patch: target and patch must be JSON values");
++  }
++  return mergePatch(copyOf(target), patch);
++}
++
++/** RFC 7396 section 2 `MergePatch`; `target` is a private copy that may be modified. */
++function mergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  if (!isObject(patch) || Array.isArray(patch)) {
++    return copyOf(patch);
++  }
++  const result: { [key: string]: JsonValue } = isObject(target) ? (target as { [key: string]: JsonValue }) : {};
++  for (const [key, value] of Object.entries(patch as { [key: string]: JsonValue })) {
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, mergePatch(Object.hasOwn(result, key) ? result[key] : {}, value));
++    }
++  }
++  return result;
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..3e817924959a928967d0e264a0cd59e8574a08dd
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,66 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "../src/index.ts";
++
++const merge = (target: unknown, patch: unknown) => applyMergePatch(target as never, patch as never);
++
++// RFC 7396 Appendix A examples.
++const examples: [unknown, unknown, unknown][] = [
++  [{ a: "b" }, { a: "c" }, { a: "c" }],
++  [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++  [{ a: "b" }, { a: null }, {}],
++  [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++  [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++  [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++  [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++  [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++  [["a", "b"], ["c", "d"], ["c", "d"]],
++  [{ a: "b" }, ["c"], ["c"]],
++  [{ a: "foo" }, null, null],
++  [{ a: "foo" }, "bar", "bar"],
++  [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++  [[1, 2], { a: "b", c: null }, { a: "b" }],
++  [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++  // Section 2: a non-object target is treated as an empty object.
++  ["x", { a: 1 }, { a: 1 }],
++  [null, { a: null }, {}],
++  [{ a: 1 }, {}, { a: 1 }],
++];
++
++for (const [target, patch, expected] of examples) {
++  test(`RFC 7396 ${JSON.stringify(target)} + ${JSON.stringify(patch)}`, () => {
++    assert.deepEqual(merge(target, patch), expected);
++  });
++}
++
++test("does not mutate target or patch, and shares no structure", () => {
++  const target = { a: { b: 1 }, c: [1] };
++  const patch = { a: { d: { e: 2 } }, f: [3] };
++  const targetCopy = structuredClone(target);
++  const patchCopy = structuredClone(patch);
++  const result = merge(target, patch) as { a: { b: number; d: object }; c: unknown[]; f: unknown[] };
++  assert.deepEqual(target, targetCopy);
++  assert.deepEqual(patch, patchCopy);
++  assert.notEqual(result.a, target.a);
++  assert.notEqual(result.c, target.c);
++  assert.notEqual(result.a.d, patch.a.d);
++  assert.notEqual(result.f, patch.f);
++});
++
++test("a __proto__ member is plain data and never pollutes the prototype", () => {
++  const patch = JSON.parse('{"__proto__":{"polluted":true},"constructor":{"prototype":{"polluted":true}}}');
++  const result = merge({}, patch) as Record<string, unknown>;
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepEqual(Object.getOwnPropertyDescriptor(result, "__proto__")?.value, { polluted: true });
++});
++
++test("null for an inherited-looking key deletes nothing else", () => {
++  assert.deepEqual(merge({ a: 1 }, JSON.parse('{"__proto__":null,"toString":null}')), { a: 1 });
++});
++
++test("rejects values that are not JSON", () => {
++  assert.throws(() => merge({}, { a: undefined }));
++  assert.throws(() => merge({}, { a: NaN }));
++  assert.throws(() => merge({ a: () => 1 }, {}));
++});

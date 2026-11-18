@@ -1,0 +1,87 @@
+diff --git a/src/index.ts b/src/index.ts
+index f380fd42f5f515290a71e4b0102485979f64390b..860a73fcb5c2949cb857e906011f33d9b0d07721 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -180,43 +180,49 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) throw new Error("A JSON Patch must be an array of operations");
+   let root = clone(document);
+ 
+-  patch.forEach((operation: unknown, i: number) => {
++  for (let i = 0; i < patch.length; i++) {
+     try {
++      // RFC 6902 section 3: a patch is an array of operation objects; a hole is not one.
++      const operation: unknown = i in patch ? patch[i] : undefined;
+       if (typeof operation !== "object" || operation === null || Array.isArray(operation)) {
+         throw new Error("operation is not an object");
+       }
+       const op = operation as Record<string, unknown>;
+-      const name = op.op;
+-      const path = parsePointer(op.path);
++      // Only own members count (RFC 6902 section 4); inherited ones are not part of the document.
++      const member = (key: string): unknown => (hasOwn(op, key) ? op[key] : undefined);
++      const name = member("op");
++      const path = parsePointer(member("path"));
+       const needValue = name === "add" || name === "replace" || name === "test";
+       if (needValue && !hasOwn(op, "value")) throw new Error(`"${name}" requires a "value" member`);
++      // A "value" is a JSON value (section 4); reject anything else, also for "test".
++      const value = needValue ? clone(op.value) : undefined;
+ 
+       switch (name) {
+         case "add":
+-          root = addAt(root, path, clone(op.value));
++          root = addAt(root, path, clone(value));
+           break;
+         case "remove":
+           root = removeAt(root, path);
+           break;
+         case "replace":
+           getAt(root, path);
+-          root = path.length === 0 ? clone(op.value) : addAt(removeAt(root, path), path, clone(op.value));
++          root = path.length === 0 ? clone(value) : addAt(removeAt(root, path), path, clone(value));
+           break;
+         case "move":
+         case "copy": {
+-          const from = parsePointer(op.from);
+-          const value = getAt(root, from);
++          const from = parsePointer(member("from"));
++          const moved = getAt(root, from);
+           if (name === "copy") {
+-            root = addAt(root, path, clone(value));
++            root = addAt(root, path, clone(moved));
+           } else if (from.length < path.length && from.every((t, k) => t === path[k])) {
+             throw new Error('"from" must not be a proper prefix of "path"');
+           } else if (from.length !== path.length || !from.every((t, k) => t === path[k])) {
+-            root = addAt(removeAt(root, from), path, value);
++            root = addAt(removeAt(root, from), path, moved);
+           }
+           break;
+         }
+         case "test":
+-          if (!jsonEqual(getAt(root, path), op.value)) throw new Error("test failed: values differ");
++          if (!jsonEqual(getAt(root, path), value)) throw new Error("test failed: values differ");
+           break;
+         default:
+           throw new Error(`unknown operation ${JSON.stringify(name)}`);
+@@ -224,6 +230,6 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+     } catch (e) {
+       throw new Error(`Patch operation ${i} failed: ${(e as Error).message}`);
+     }
+-  });
++  }
+   return root;
+ }
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index a3937b386670f1f1034b7f01abbe0ffee034bf91..f276aaf3b9b8e29cf73d7994f18d3261c5f64bd6 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -112,3 +112,10 @@ test("failure in a later operation throws", () => {
+   assert.throws(() => ap(doc, [{ op: "add", path: "/b", value: 2 }, { op: "remove", path: "/zz" }]));
+   assert.deepEqual(doc, { a: 1 });
+ });
++test("RFC 6902 section 3/4: holes, inherited members and non-JSON values are invalid", () => {
++  assert.throws(() => ap({}, [,]));
++  const inherited = Object.create({ op: "add", path: "/a", value: 1 });
++  assert.throws(() => ap({}, [inherited]));
++  assert.throws(() => ap({ a: 1 }, [{ op: "test", path: "/a", value: undefined }]));
++  assert.throws(() => ap({ a: 1 }, [{ op: "test", path: "/a", value: Number.NaN }]));
++});

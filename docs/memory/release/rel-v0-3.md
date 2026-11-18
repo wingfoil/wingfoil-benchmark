@@ -46,6 +46,8 @@ and v0.2's follow-ups merged, filed or dropped.
 - **Calibration:** [task-154](../task/task-154-calibration-v0.3-plan-005-step-3-the-1.1-dry-runs-scored-the-reference-campaign-with-its-loop-and-haiku-slice-the-revised-budget-and-the-hypotheses.md): the dry runs `216`-`263`, the estimate, the budget the approver approved on
   2026-11-18 (warn 65 EUR, ceiling 80 EUR) and the hypotheses on 1.1, in
   [docs/calibration/v0.3.md](../../calibration/v0.3.md) §6.
+- **Validation:** [task-159](../task/task-159-validation-of-v0.3-the-suites-and-one-real-agent-run-per-arm-on-s1-the-scenario-with-the-largest-step.md): the suites on main and the execution `2ee46ad9e617/1`, S1@1.1 in the
+  thirteen arms on Sonnet 5.5, all `completed` with their review loops, 8.59 EUR API-equivalent.
 
 ## Retrospective
 

@@ -1,0 +1,450 @@
+diff --git a/README.md b/README.md
+index ab3888c01002514c0e1f37cbabd00d08787ae3d0..5b996d5dbd48a3a94a8631d3160e1eef8d6e1326 100644
+--- a/README.md
++++ b/README.md
+@@ -15,3 +15,10 @@ invalid or an operation fails.
+ `applyMergePatch(target, patch)` applies an RFC 7386 JSON Merge Patch and returns the merged document as a
+ new value, without mutating its input. A `null` member in the patch removes that member, arrays replace
+ whole values, and a non-object patch replaces the target. It never throws.
++
++## Creating a patch
++
++`createPatch(from, to)` returns an RFC 6902 JSON Patch that turns `from` into `to` when applied, without
++mutating either input. The patch describes only what changed: objects are compared member by member, and
++arrays at item level, so an inserted or removed item gives a single `add` or `remove`, and a moved item gives
++a `remove` and an `add` without rewriting the items in between.
+diff --git a/openspec/changes/archive/2026-11-18-add-create-patch/.openspec.yaml b/openspec/changes/archive/2026-11-18-add-create-patch/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..41484f318f772b2e02eb579a6b033d2d6d59d3ff
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-18-add-create-patch/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-11-18
+diff --git a/openspec/changes/archive/2026-11-18-add-create-patch/design.md b/openspec/changes/archive/2026-11-18-add-create-patch/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..82052dbbddd6a008742e5b8508dfcebe53489f14
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-18-add-create-patch/design.md
+@@ -0,0 +1,28 @@
++# Design
++
++## Context
++
++`applyPatch` lives in `src/patch.ts` and already exports `isObject`, `clone` and `setOwn` helpers; `src/pointer.ts` parses pointers but does not build them. See proposal.md for motivation.
++
++## Goals / Non-Goals
++
++**Goals:**
++- Correct round trip with `applyPatch` for every JSON input.
++- Patches proportional to the change, with array edits at item level.
++
++**Non-Goals:**
++- A provably shortest patch; `copy` and `test` operations are never emitted.
++- Detecting moves of items across different containers.
++
++## Decisions
++
++- **Objects**: iterate own keys (`Object.keys` / `Object.hasOwn`, so `__proto__` is an ordinary member); emit `remove`, then recurse on shared keys, then `add`.
++- **Arrays**: compute a longest common subsequence of items using deep equality. Items outside it are removals/insertions. Within a gap between matched items holding both removals and insertions, pair them by position and recurse (so an edited item becomes a nested change); surplus ones become `remove` / `add`. A move naturally becomes `remove` + `add`, which the spec allows; no `move` is emitted. Alternative considered: index-wise comparison - rejected because an insertion would rewrite every following item.
++- **Index bookkeeping**: operations are emitted in order against the progressively-edited array, tracking a running index so each path is valid when applied.
++- **Safety**: all values placed in the patch are cloned via `clone`; inputs are only read. Pointer tokens are escaped (`~` → `~0`, `/` → `~1`).
++- Reuse `equal`/`clone`/`isObject` by exporting `equal` from `patch.ts`.
++
++## Risks / Trade-offs
++
++- [LCS is O(n·m) for arrays] → Trim common prefix and suffix first so typical edits are cheap.
++- [Remove+add for moves is longer than `move` for large items] → Acceptable per requirements; correctness first.
+diff --git a/openspec/changes/archive/2026-11-18-add-create-patch/proposal.md b/openspec/changes/archive/2026-11-18-add-create-patch/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4821ba946debbd2ab67fcba763eb555f45883d0d
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-18-add-create-patch/proposal.md
+@@ -0,0 +1,25 @@
++# Proposal
++
++## Why
++
++Clients want to send only what changed between two versions of a JSON document rather than the whole new version. The library can apply an RFC 6902 patch but cannot produce one.
++
++## What Changes
++
++- Add `createPatch(from, to)`, exported from `src/index.ts`, returning an RFC 6902 JSON Patch that turns `from` into `to` when applied with `applyPatch`.
++- The patch is minimal in scope: it touches only the places that differ, recursing into objects and arrays instead of replacing whole containers.
++- Array insertions and removals yield a single `add` / `remove` for the item; moves yield `move` (or `remove` + `add`); neighbouring items are not rewritten.
++- Neither input is mutated, and the patch shares no object or array with the inputs.
++- Document the function in `README.md`.
++
++## Capabilities
++
++### New Capabilities
++- `json-patch-creation`: computing a minimal RFC 6902 patch between two JSON documents.
++
++### Modified Capabilities
++
++## Impact
++
++- New module `src/diff.ts` and tests; one new export in `src/index.ts`; README section.
++- No change to `applyPatch` or other existing behaviour; no new dependencies.
+diff --git a/openspec/changes/archive/2026-11-18-add-create-patch/specs/json-patch-creation/spec.md b/openspec/changes/archive/2026-11-18-add-create-patch/specs/json-patch-creation/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c8acaaa4b73cff8af60fc453d239d1851f111e47
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-18-add-create-patch/specs/json-patch-creation/spec.md
+@@ -0,0 +1,59 @@
++# Spec Delta
++
++## Purpose
++Lets clients describe the change between two versions of a JSON document as a small RFC 6902 JSON Patch instead of sending the whole new version.
++
++## ADDED Requirements
++
++### Requirement: Created patch turns the source into the target
++`createPatch(from, to)` SHALL return an RFC 6902 patch such that applying it to `from` yields a document deeply equal to `to`. This SHALL hold for any pair of JSON values, including scalars, `null`, empty containers, members named `__proto__`, and member names containing `/` or `~`. Identical documents SHALL produce an empty patch. Neither input SHALL be modified, and the patch SHALL NOT share any object or array with either input.
++
++#### Scenario: Round trip
++- **WHEN** a patch is created from `{"a":1,"b":[1,2]}` to `{"a":2,"b":[1,2,3],"c":null}` and applied to the first document
++- **THEN** the result equals the second document
++
++#### Scenario: Identical documents
++- **WHEN** `from` and `to` are deeply equal
++- **THEN** the patch is `[]`
++
++#### Scenario: Inputs untouched and not shared
++- **WHEN** a patch containing an added object is created and then that object is modified
++- **THEN** both inputs are unchanged
++
++#### Scenario: Escaped member names
++- **WHEN** the only difference is the value of member `a/b~c`
++- **THEN** the operation path is `/a~1b~0c`
++
++### Requirement: Patch describes only what changed
++The patch SHALL be limited to the differing parts of the documents. Where both values are objects, members present in only one SHALL give `add` or `remove` and members present in both SHALL be compared recursively. Where both values are arrays, differences SHALL be described at item level, recursing into items that were modified in place. A container SHALL NOT be replaced as a whole when only part of it differs. Values of differing types, or differing scalars, SHALL give a `replace` at their path (the empty path for the document root).
++
++#### Scenario: One small change in a large document
++- **WHEN** only `/user/address/city` differs
++- **THEN** the patch is a single `replace` of `/user/address/city`
++
++#### Scenario: Member added and removed
++- **WHEN** `to` has member `x` that `from` lacks, and lacks member `y` that `from` has
++- **THEN** the patch consists of an `add` of `/x` and a `remove` of `/y`
++
++#### Scenario: Type change
++- **WHEN** `/a` is an object in `from` and an array in `to`
++- **THEN** the patch replaces `/a`
++
++### Requirement: Array item insertion, removal and moves are not rewrites
++When an array gains an item, the patch SHALL contain an `add` for that item only; when it loses an item, a `remove` for that item only. Items before and after SHALL NOT be rewritten. When an item moves within an array, the patch SHALL use a `move`, or a `remove` and an `add` of the item, and SHALL NOT rewrite the items between its old and new positions.
++
++#### Scenario: Insert in the middle
++- **WHEN** `[1,2,4,5]` becomes `[1,2,3,4,5]`
++- **THEN** the patch is a single `add` of `3` at `/2`
++
++#### Scenario: Remove from the start
++- **WHEN** `[1,2,3]` becomes `[2,3]`
++- **THEN** the patch is a single `remove` of `/0`
++
++#### Scenario: Move
++- **WHEN** `["a","b","c","d"]` becomes `["b","c","d","a"]`
++- **THEN** the patch contains no `replace`, and is a `move` or a `remove` plus `add` of `"a"`
++
++#### Scenario: Modified item
++- **WHEN** one array item is an object with a single changed member
++- **THEN** the patch changes only that member
+diff --git a/openspec/changes/archive/2026-11-18-add-create-patch/tasks.md b/openspec/changes/archive/2026-11-18-add-create-patch/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e7f6d45e9cb5d87abb3c093fc91bf6a09332c0d2
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-18-add-create-patch/tasks.md
+@@ -0,0 +1,8 @@
++# Tasks
++
++## 1. createPatch
++
++- [x] 1.1 Export `equal` from `src/patch.ts` and add `src/diff.ts` with `createPatch` (objects, arrays via LCS with in-gap pairing, scalar/type replace, pointer escaping, cloned values). Verify: `npm test` passes.
++- [x] 1.2 Export `createPatch` from `src/index.ts`. Verify: it is importable from `src/index.ts` in a test.
++- [x] 1.3 Add `src/diff.test.ts` covering every spec scenario plus a randomized round-trip against `applyPatch` and a no-mutation check. Verify: `npm test` passes.
++- [x] 1.4 Add a "Creating a patch" section to `README.md`. Verify: README describes `createPatch`.
+diff --git a/openspec/specs/json-patch-creation/spec.md b/openspec/specs/json-patch-creation/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f14dfdb9f56761da1be16133b31369c2b51f23f7
+--- /dev/null
++++ b/openspec/specs/json-patch-creation/spec.md
+@@ -0,0 +1,59 @@
++# json-patch-creation Specification
++
++## Purpose
++Lets clients describe the change between two versions of a JSON document as a small RFC 6902 JSON Patch instead of sending the whole new version.
++
++## Requirements
++
++### Requirement: Created patch turns the source into the target
++`createPatch(from, to)` SHALL return an RFC 6902 patch such that applying it to `from` yields a document deeply equal to `to`. This SHALL hold for any pair of JSON values, including scalars, `null`, empty containers, members named `__proto__`, and member names containing `/` or `~`. Identical documents SHALL produce an empty patch. Neither input SHALL be modified, and the patch SHALL NOT share any object or array with either input.
++
++#### Scenario: Round trip
++- **WHEN** a patch is created from `{"a":1,"b":[1,2]}` to `{"a":2,"b":[1,2,3],"c":null}` and applied to the first document
++- **THEN** the result equals the second document
++
++#### Scenario: Identical documents
++- **WHEN** `from` and `to` are deeply equal
++- **THEN** the patch is `[]`
++
++#### Scenario: Inputs untouched and not shared
++- **WHEN** a patch containing an added object is created and then that object is modified
++- **THEN** both inputs are unchanged
++
++#### Scenario: Escaped member names
++- **WHEN** the only difference is the value of member `a/b~c`
++- **THEN** the operation path is `/a~1b~0c`
++
++### Requirement: Patch describes only what changed
++The patch SHALL be limited to the differing parts of the documents. Where both values are objects, members present in only one SHALL give `add` or `remove` and members present in both SHALL be compared recursively. Where both values are arrays, differences SHALL be described at item level, recursing into items that were modified in place. A container SHALL NOT be replaced as a whole when only part of it differs. Values of differing types, or differing scalars, SHALL give a `replace` at their path (the empty path for the document root).
++
++#### Scenario: One small change in a large document
++- **WHEN** only `/user/address/city` differs
++- **THEN** the patch is a single `replace` of `/user/address/city`
++
++#### Scenario: Member added and removed
++- **WHEN** `to` has member `x` that `from` lacks, and lacks member `y` that `from` has
++- **THEN** the patch consists of an `add` of `/x` and a `remove` of `/y`
++
++#### Scenario: Type change
++- **WHEN** `/a` is an object in `from` and an array in `to`
++- **THEN** the patch replaces `/a`
++
++### Requirement: Array item insertion, removal and moves are not rewrites
++When an array gains an item, the patch SHALL contain an `add` for that item only; when it loses an item, a `remove` for that item only. Items before and after SHALL NOT be rewritten. When an item moves within an array, the patch SHALL use a `move`, or a `remove` and an `add` of the item, and SHALL NOT rewrite the items between its old and new positions.
++
++#### Scenario: Insert in the middle
++- **WHEN** `[1,2,4,5]` becomes `[1,2,3,4,5]`
++- **THEN** the patch is a single `add` of `3` at `/2`
++
++#### Scenario: Remove from the start
++- **WHEN** `[1,2,3]` becomes `[2,3]`
++- **THEN** the patch is a single `remove` of `/0`
++
++#### Scenario: Move
++- **WHEN** `["a","b","c","d"]` becomes `["b","c","d","a"]`
++- **THEN** the patch contains no `replace`, and is a `move` or a `remove` plus `add` of `"a"`
++
++#### Scenario: Modified item
++- **WHEN** one array item is an object with a single changed member
++- **THEN** the patch changes only that member
+diff --git a/src/diff.test.ts b/src/diff.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..203c9701c9eb3f63e3cdc7690b1e5540651e373d
+--- /dev/null
++++ b/src/diff.test.ts
+@@ -0,0 +1,85 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "./index.ts";
++
++const roundTrip = (from: unknown, to: unknown) => {
++  const f = structuredClone(from);
++  const t = structuredClone(to);
++  const patch = createPatch(from, to);
++  assert.deepEqual(from, f);
++  assert.deepEqual(to, t);
++  assert.deepEqual(applyPatch(from, patch), to);
++  return patch;
++};
++
++test("round trip and identical documents", () => {
++  roundTrip({ a: 1, b: [1, 2] }, { a: 2, b: [1, 2, 3], c: null });
++  assert.deepEqual(roundTrip({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] }), []);
++  roundTrip(1, "x");
++  roundTrip(null, {});
++  roundTrip([], [{}]);
++});
++
++test("patch shares nothing with inputs", () => {
++  const to = { x: { y: [1] } };
++  const patch = createPatch({}, to) as { value: any }[];
++  patch[0].value.y.push(2);
++  assert.deepEqual(to, { x: { y: [1] } });
++});
++
++test("escaped names and __proto__", () => {
++  assert.deepEqual(createPatch({ "a/b~c": 1 }, { "a/b~c": 2 }), [{ op: "replace", path: "/a~1b~0c", value: 2 }]);
++  const to = JSON.parse('{"__proto__":{"x":1}}');
++  roundTrip({}, to);
++  roundTrip(to, {});
++});
++
++test("minimal object changes", () => {
++  assert.deepEqual(
++    createPatch({ user: { address: { city: "A", zip: 1 }, n: 1 } }, { user: { address: { city: "B", zip: 1 }, n: 1 } }),
++    [{ op: "replace", path: "/user/address/city", value: "B" }],
++  );
++  assert.deepEqual(createPatch({ y: 1 }, { x: 1 }), [
++    { op: "remove", path: "/y" },
++    { op: "add", path: "/x", value: 1 },
++  ]);
++  assert.deepEqual(createPatch({ a: {} }, { a: [] }), [{ op: "replace", path: "/a", value: [] }]);
++});
++
++test("array insert, remove, move", () => {
++  assert.deepEqual(createPatch([1, 2, 4, 5], [1, 2, 3, 4, 5]), [{ op: "add", path: "/2", value: 3 }]);
++  assert.deepEqual(createPatch([1, 2, 3], [2, 3]), [{ op: "remove", path: "/0" }]);
++  const moved = roundTrip(["a", "b", "c", "d"], ["b", "c", "d", "a"]);
++  assert.ok(moved.every((o) => o.op !== "replace"));
++  assert.equal(moved.length, 2);
++  assert.deepEqual(createPatch([{ a: 1, b: 1 }, 2], [{ a: 1, b: 2 }, 2]), [{ op: "replace", path: "/0/b", value: 2 }]);
++});
++
++test("randomized round trip", () => {
++  let seed = 7;
++  const rnd = (n: number) => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff), seed % n);
++  const gen = (d: number): unknown => {
++    const k = rnd(d > 2 ? 4 : 7);
++    if (k === 0) return rnd(3);
++    if (k === 1) return ["a", "b", null][rnd(3)];
++    if (k === 2) return rnd(2) === 0;
++    if (k === 3) return 1.5;
++    if (k <= 5) return Array.from({ length: rnd(6) }, () => gen(d + 1));
++    return Object.fromEntries(Array.from({ length: rnd(4) }, () => ["k" + rnd(4), gen(d + 1)]));
++  };
++  for (let i = 0; i < 2000; i++) {
++    const from = gen(0);
++    const to = rnd(2) ? gen(0) : mutate(from);
++    roundTrip(from, to);
++  }
++  function mutate(v: unknown): unknown {
++    if (Array.isArray(v)) {
++      const c = v.map(mutate);
++      if (rnd(2)) c.splice(rnd(c.length + 1), rnd(2), gen(2));
++      if (rnd(3) === 0 && c.length > 1) c.push(c.shift());
++      return c;
++    }
++    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, mutate(x)]));
++    return v;
++  }
++});
+diff --git a/src/diff.ts b/src/diff.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..db6a4d430556c261ef31cbbb94b1e15568b922a7
+--- /dev/null
++++ b/src/diff.ts
+@@ -0,0 +1,99 @@
++import { clone, equal, isObject } from "./patch.ts";
++
++type Json = unknown;
++type Operation =
++  | { op: "add" | "replace"; path: string; value: Json }
++  | { op: "remove"; path: string };
++
++const escape = (token: string) => token.replace(/~/g, "~0").replace(/\//g, "~1");
++
++/**
++ * Returns an RFC 6902 JSON Patch that turns `from` into `to`, describing only
++ * the parts that differ. Neither input is modified and the patch shares no
++ * object or array with them.
++ */
++export function createPatch(from: unknown, to: unknown): Operation[] {
++  const ops: Operation[] = [];
++  diff(from, to, "", ops);
++  return ops;
++}
++
++function diff(a: Json, b: Json, path: string, ops: Operation[]): void {
++  if (Array.isArray(a) && Array.isArray(b)) {
++    diffArrays(a, b, path, ops);
++  } else if (isObject(a) && isObject(b)) {
++    diffObjects(a, b, path, ops);
++  } else if (!equal(a, b)) {
++    ops.push({ op: "replace", path, value: clone(b) });
++  }
++}
++
++function diffObjects(a: Record<string, Json>, b: Record<string, Json>, path: string, ops: Operation[]): void {
++  for (const key of Object.keys(a)) {
++    if (!Object.hasOwn(b, key)) ops.push({ op: "remove", path: `${path}/${escape(key)}` });
++  }
++  for (const key of Object.keys(b)) {
++    if (Object.hasOwn(a, key)) diff(a[key], b[key], `${path}/${escape(key)}`, ops);
++  }
++  for (const key of Object.keys(b)) {
++    if (!Object.hasOwn(a, key)) ops.push({ op: "add", path: `${path}/${escape(key)}`, value: clone(b[key]) });
++  }
++}
++
++function diffArrays(a: Json[], b: Json[], path: string, ops: Operation[]): void {
++  let start = 0;
++  while (start < a.length && start < b.length && equal(a[start], b[start])) start++;
++  let endA = a.length;
++  let endB = b.length;
++  while (endA > start && endB > start && equal(a[endA - 1], b[endB - 1])) {
++    endA--;
++    endB--;
++  }
++  const n = endA - start;
++  const m = endB - start;
++
++  // lcs[i][j]: length of the longest common subsequence of a[start+i..endA) and b[start+j..endB)
++  const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
++  for (let i = n - 1; i >= 0; i--) {
++    for (let j = m - 1; j >= 0; j--) {
++      lcs[i][j] = equal(a[start + i], b[start + j]) ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
++    }
++  }
++
++  // idx is the position in the array as edited so far; operations are emitted in application order.
++  let idx = start;
++  let i = 0;
++  let j = 0;
++  const flushGap = (removed: number, inserted: number) => {
++    const paired = Math.min(removed, inserted);
++    for (let k = 0; k < paired; k++) {
++      diff(a[start + i - removed + k], b[start + j - inserted + k], `${path}/${idx + k}`, ops);
++    }
++    for (let k = paired; k < removed; k++) ops.push({ op: "remove", path: `${path}/${idx + paired}` });
++    for (let k = paired; k < inserted; k++) {
++      ops.push({ op: "add", path: `${path}/${idx + k}`, value: clone(b[start + j - inserted + k]) });
++    }
++    idx += inserted;
++  };
++
++  while (i < n || j < m) {
++    let removed = 0;
++    let inserted = 0;
++    while (i < n || j < m) {
++      if (i < n && j < m && equal(a[start + i], b[start + j]) && lcs[i][j] === lcs[i + 1][j + 1] + 1) break;
++      if (i < n && (j >= m || lcs[i + 1][j] >= lcs[i][j + 1])) {
++        i++;
++        removed++;
++      } else {
++        j++;
++        inserted++;
++      }
++    }
++    flushGap(removed, inserted);
++    if (i < n && j < m) {
++      i++;
++      j++;
++      idx++;
++    }
++  }
++}
+diff --git a/src/index.ts b/src/index.ts
+index 76d1b6129aea75f63af95000d0813af66720f4c7..20c01383087777e6978d625adf7cb4c5486ca879 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,3 +1,4 @@
+ export { resolvePointer, InvalidPointerError, UnresolvedPointerError } from "./pointer.ts";
+ export { applyPatch, InvalidPatchError, PatchFailedError } from "./patch.ts";
+ export { applyMergePatch } from "./merge-patch.ts";
++export { createPatch } from "./diff.ts";
+diff --git a/src/patch.ts b/src/patch.ts
+index e67006fce8c6bdc5677ee9e5fc3faf7dfd6c7e2a..b5c92ed64b5d215aff3f495dbc7fc892a99ae886 100644
+--- a/src/patch.ts
++++ b/src/patch.ts
+@@ -36,7 +36,7 @@ export function clone(value: Json): Json {
+   return value;
+ }
+ 
+-function equal(a: Json, b: Json): boolean {
++export function equal(a: Json, b: Json): boolean {
+   if (Array.isArray(a)) {
+     return Array.isArray(b) && a.length === b.length && a.every((item, i) => equal(item, b[i]));
+   }

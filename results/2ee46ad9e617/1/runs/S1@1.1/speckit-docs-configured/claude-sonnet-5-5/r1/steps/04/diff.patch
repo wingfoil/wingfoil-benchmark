@@ -1,0 +1,124 @@
+diff --git a/README.md b/README.md
+index 92d593cec53f32e0c559be13cc7f8717335e37bd..525b429b8537a1ea3b418f5df48b8618ce4914c1 100644
+--- a/README.md
++++ b/README.md
+@@ -16,3 +16,7 @@ other projects of the team, so its behaviour must follow the published standards
+   (missing target, out-of-range index, failed `test`, `move` from a proper prefix of its path, removing the
+   whole document). `test` uses JSON equality (object member order is ignored). `__proto__` is handled as an
+   ordinary member name.
++- `applyMergePatch(target, patch)` — JSON Merge Patch (RFC 7396, which obsoletes RFC 7386). An object
++  `patch` is merged into `target` member by member (a non-object target counts as `{}`); a `null` member
++  removes that member; any non-object patch (including arrays and `null`) replaces the target. Returns a
++  new value; neither argument is modified. `__proto__` is handled as an ordinary member name.
+diff --git a/src/index.ts b/src/index.ts
+index fe63aadc5b145de00c06c321ca134e4dd612d5f4..cdc53fc127459f58204cf663a1da28269ef8caf0 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -261,3 +261,39 @@ export function applyPatch(document: unknown, patch: readonly PatchOperation[]):
+   }
+   return result;
+ }
++
++function isPlainObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++/**
++ * Applies a JSON Merge Patch to a JSON document.
++ *
++ * Implements JSON Merge Patch, RFC 7396 (which obsoletes RFC 7386; the algorithm is the one in
++ * section 2): an object patch is merged member by member into the target (a non-object target is
++ * treated as `{}`), a `null` member removes that member, and any non-object patch (including an
++ * array or `null`) replaces the target. Consequently arrays are replaced whole and `null` cannot be
++ * set as a member value. `__proto__` is handled as an ordinary member name. The result is a new
++ * value sharing no structure with the arguments, which are not modified.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isPlainObject(patch)) return structuredClone(patch);
++  const result: Record<string, unknown> = {};
++  if (isPlainObject(target)) {
++    for (const name of Object.keys(target)) define(result, name, structuredClone(target[name]));
++  }
++  for (const name of Object.keys(patch)) {
++    const value = patch[name];
++    if (value === null) {
++      delete result[name];
++    } else {
++      define(result, name, applyMergePatch(Object.hasOwn(result, name) ? result[name] : undefined, value));
++    }
++  }
++  return result;
++}
++
++// defineProperty so that "__proto__" becomes an ordinary member, never the prototype
++function define(object: Record<string, unknown>, name: string, value: unknown): void {
++  Object.defineProperty(object, name, { value, writable: true, enumerable: true, configurable: true });
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..4b47e47ed763d17aca2cc232e78b779a2ff3dc1d
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,62 @@
++import { test } from "node:test";
++import assert from "node:assert";
++import { applyMergePatch } from "../src/index.ts";
++
++const ok = (doc: unknown, patch: unknown, expected: unknown) =>
++  assert.deepStrictEqual(applyMergePatch(doc, patch), expected);
++
++test("RFC 7396 section 3 example", () => {
++  ok(
++    { title: "Goodbye!", author: { givenName: "John", familyName: "Doe" }, tags: ["example", "sample"], content: "This will be unchanged" },
++    { title: "Hello!", phoneNumber: "+01-123-456-7890", author: { familyName: null }, tags: ["example"] },
++    { title: "Hello!", author: { givenName: "John" }, tags: ["example"], content: "This will be unchanged", phoneNumber: "+01-123-456-7890" },
++  );
++});
++
++test("RFC 7396 appendix A test cases", () => {
++  ok({ a: "b" }, { a: "c" }, { a: "c" });
++  ok({ a: "b" }, { b: "c" }, { a: "b", b: "c" });
++  ok({ a: "b" }, { a: null }, {});
++  ok({ a: "b", b: "c" }, { a: null }, { b: "c" });
++  ok({ a: ["b"] }, { a: "c" }, { a: "c" });
++  ok({ a: "c" }, { a: ["b"] }, { a: ["b"] });
++  ok({ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } });
++  ok({ a: [{ b: "c" }] }, { a: [1] }, { a: [1] });
++  ok(["a", "b"], ["c", "d"], ["c", "d"]);
++  ok({ a: "b" }, ["c"], ["c"]);
++  ok({ a: "foo" }, null, null);
++  ok({ a: "foo" }, "bar", "bar");
++  ok({ e: null }, { a: 1 }, { e: null, a: 1 });
++  ok([1, 2], { a: "b", c: null }, { a: "b" });
++  ok({}, { a: { bb: { ccc: null } } }, { a: { bb: {} } });
++});
++
++test("non-object target is replaced by an object patch; nulls are dropped", () => {
++  ok(undefined, { a: 1, b: null }, { a: 1 });
++  ok("x", {}, {});
++  ok({ a: 1 }, {}, { a: 1 });
++});
++
++test("does not modify target or patch, and result shares no structure", () => {
++  const target = { a: { b: 1 }, c: [1] };
++  const patch = { a: { d: { e: 2 } }, c: [2], f: null };
++  const t0 = structuredClone(target);
++  const p0 = structuredClone(patch);
++  const result = applyMergePatch(target, patch) as typeof target & { a: { d: object } };
++  assert.deepStrictEqual(target, t0);
++  assert.deepStrictEqual(patch, p0);
++  assert.notStrictEqual(result.a.d, patch.a.d);
++  assert.notStrictEqual(result.c, patch.c);
++});
++
++test("__proto__ is an ordinary member; no prototype pollution", () => {
++  const patch = JSON.parse('{"__proto__":{"polluted":true},"constructor":{"prototype":{"p":1}}}');
++  const result = applyMergePatch({}, patch) as Record<string, unknown>;
++  assert.strictEqual(({} as Record<string, unknown>).polluted, undefined);
++  assert.strictEqual(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepStrictEqual(Object.keys(result), ["__proto__", "constructor"]);
++  assert.deepStrictEqual(Object.getOwnPropertyDescriptor(result, "__proto__")?.value, { polluted: true });
++  // inherited members of the target are not treated as existing
++  const r2 = applyMergePatch({}, JSON.parse('{"__proto__":null,"toString":{"a":1}}')) as Record<string, unknown>;
++  assert.deepStrictEqual(r2, { toString: { a: 1 } });
++});

@@ -1,0 +1,148 @@
+diff --git a/specs/001-json-pointer/spec.md b/specs/001-json-pointer/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..75befd62940b28897a8cd3ab28e27f082bd73af1
+--- /dev/null
++++ b/specs/001-json-pointer/spec.md
+@@ -0,0 +1,36 @@
++# Feature Specification: JSON Pointer (RFC 6901)
++
++**Status**: Implemented
++
++## User Scenarios & Testing
++
++### User Story 1 - Resolve a pointer against a document (P1)
++A service developer passes a JSON document and a JSON Pointer string and gets back the referenced value.
++
++**Acceptance scenarios**:
++1. Given any document, when the pointer is `""`, then the whole document is returned.
++2. Given `{"foo":["bar","baz"]}`, `/foo/0` returns `"bar"`.
++3. Given the RFC 6901 §5 example document, every example pointer yields the value listed in the RFC (including `/a~1b`, `/m~0n`, `/ `, `/k"l`, `/c%d`, `/` → key `""`).
++
++### User Story 2 - Failures are reported as errors (P1)
++**Acceptance scenarios**:
++1. A pointer not starting with `/` (other than `""`), or containing `~` not followed by `0` or `1`, throws.
++2. A pointer naming a missing member, an out-of-range index, or traversing into a scalar/null throws.
++3. A non-string pointer throws.
++
++## Requirements
++- **FR-001**: `resolvePointer(document, pointer)` is exported from `src/index.ts`.
++- **FR-002**: Pointer syntax follows RFC 6901 §3: empty string or sequence of `/`-prefixed reference tokens.
++- **FR-003**: Tokens are unescaped per §4: `~1` → `/` first, then `~0` → `~`.
++- **FR-004**: On objects, a token selects an own member by exact name (inherited properties such as `__proto__`, `constructor` never resolve).
++- **FR-005**: On arrays, a token must be `0` or digits with no leading zeros and no sign; it must be less than the array length. `-` (past-the-end) never resolves to a value and throws.
++- **FR-006**: A resolved value of `null` is a valid result and is returned, not treated as missing.
++- **FR-007**: Invalid or unresolvable pointers throw an `Error` with a descriptive message.
++- **FR-008**: The document is not modified.
++
++## Assumptions
++- Only the JSON string form of pointers is supported (not the URI fragment form, §6).
++- Later features (mutation, patch) will reuse the parsing logic, so parsing is exposed as an internal module.
++
++## Success Criteria
++- All RFC 6901 §5 examples resolve correctly; all invalid cases above throw.
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..5e1cd8bad693845d4763e8cf4ab5d1f987a9703e
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,44 @@
++/** Splits a JSON Pointer (RFC 6901 §3) into unescaped reference tokens (§4). */
++export function parsePointer(pointer: string): string[] {
++  if (typeof pointer !== "string") {
++    throw new TypeError("JSON Pointer must be a string");
++  }
++  if (pointer === "") return [];
++  if (pointer[0] !== "/") {
++    throw new Error(`Invalid JSON Pointer "${pointer}": must be empty or start with "/"`);
++  }
++  return pointer
++    .slice(1)
++    .split("/")
++    .map((token) => {
++      if (/~(?![01])/.test(token)) {
++        throw new Error(`Invalid JSON Pointer "${pointer}": "~" must be followed by "0" or "1"`);
++      }
++      return token.replace(/~1/g, "/").replace(/~0/g, "~");
++    });
++}
++
++/** Returns the value of `document` that `pointer` (RFC 6901) refers to; throws if invalid or unresolvable. */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  let current = document;
++  for (const token of parsePointer(pointer)) {
++    if (Array.isArray(current)) {
++      if (!/^(0|[1-9][0-9]*)$/.test(token)) {
++        throw new Error(`Pointer "${pointer}": "${token}" is not a valid array index`);
++      }
++      const index = Number(token);
++      if (index >= current.length) {
++        throw new Error(`Pointer "${pointer}": index ${token} is out of range`);
++      }
++      current = current[index];
++    } else if (typeof current === "object" && current !== null) {
++      if (!Object.prototype.hasOwnProperty.call(current, token)) {
++        throw new Error(`Pointer "${pointer}": member "${token}" not found`);
++      }
++      current = (current as Record<string, unknown>)[token];
++    } else {
++      throw new Error(`Pointer "${pointer}": cannot resolve "${token}" in a non-container value`);
++    }
++  }
++  return current;
++}
+diff --git a/test/pointer.test.ts b/test/pointer.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d5b45bbf086c69774aeea62bd95a1f5a6774af57
+--- /dev/null
++++ b/test/pointer.test.ts
+@@ -0,0 +1,50 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { resolvePointer } from "../src/index.ts";
++
++const doc = {
++  foo: ["bar", "baz"],
++  "": 0,
++  "a/b": 1,
++  "c%d": 2,
++  "e^f": 3,
++  "g|h": 4,
++  "i\\j": 5,
++  'k"l': 6,
++  " ": 7,
++  "m~n": 8,
++  nul: null,
++};
++
++test("RFC 6901 examples", () => {
++  assert.equal(resolvePointer(doc, ""), doc);
++  assert.deepEqual(resolvePointer(doc, "/foo"), ["bar", "baz"]);
++  assert.equal(resolvePointer(doc, "/foo/0"), "bar");
++  assert.equal(resolvePointer(doc, "/"), 0);
++  assert.equal(resolvePointer(doc, "/a~1b"), 1);
++  assert.equal(resolvePointer(doc, "/c%d"), 2);
++  assert.equal(resolvePointer(doc, "/e^f"), 3);
++  assert.equal(resolvePointer(doc, "/g|h"), 4);
++  assert.equal(resolvePointer(doc, "/i\\j"), 5);
++  assert.equal(resolvePointer(doc, '/k"l'), 6);
++  assert.equal(resolvePointer(doc, "/ "), 7);
++  assert.equal(resolvePointer(doc, "/m~0n"), 8);
++});
++
++test("null values and escape order", () => {
++  assert.equal(resolvePointer(doc, "/nul"), null);
++  assert.equal(resolvePointer({ "~1": 1 }, "/~01"), 1);
++});
++
++test("invalid pointers throw", () => {
++  for (const p of ["foo", "/a~", "/a~2", "/a~b"]) assert.throws(() => resolvePointer(doc, p));
++  assert.throws(() => resolvePointer(doc, undefined as unknown as string));
++});
++
++test("unresolvable pointers throw", () => {
++  for (const p of ["/nope", "/foo/2", "/foo/-", "/foo/01", "/foo/+1", "/foo/1.0", "/foo/x", "/nul/a", "/foo/0/a", "/foo/"])
++    assert.throws(() => resolvePointer(doc, p), p);
++  assert.throws(() => resolvePointer({}, "/__proto__"));
++  assert.throws(() => resolvePointer({}, "/constructor"));
++  assert.throws(() => resolvePointer([], "/length"));
++});

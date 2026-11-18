@@ -1,0 +1,109 @@
+diff --git a/src/index.ts b/src/index.ts
+index 860a73fcb5c2949cb857e906011f33d9b0d07721..1d2329b19a8b5b094b4d3bf6cf7f5b119f0456ef 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -233,3 +233,37 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   }
+   return root;
+ }
++
++/**
++ * JSON Merge Patch, RFC 7396 (obsoletes RFC 7386; the algorithm is identical), section 2.
++ */
++
++const isPlainObject = (v: unknown): v is { [key: string]: unknown } =>
++  typeof v === "object" && v !== null && !Array.isArray(v);
++
++function mergePatch(target: unknown, patch: unknown): JsonValue {
++  // Section 2: a patch that is not an object replaces the target as a whole (arrays included).
++  if (!isPlainObject(patch)) return clone(patch);
++  // A target that is not an object is treated as an empty object.
++  const result: { [key: string]: JsonValue } = isPlainObject(target) ? (clone(target) as typeof result) : {};
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, mergePatch(hasOwn(result, key) ? result[key] : undefined, value));
++    }
++  }
++  return result;
++}
++
++/**
++ * Applies the JSON Merge Patch `patch` (RFC 7396 section 2) to `target` and returns the result.
++ * `null` members of the patch delete members, arrays are replaced rather than merged, and a
++ * non-object patch replaces the target. The inputs are never modified and the result shares no
++ * structure with them. Throws if either input is not a JSON value.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  clone(target);
++  return mergePatch(target, patch);
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ef812e2d444ac785404daa691efae3ade63a8747
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,61 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch as mp } from "../src/index.ts";
++
++test("RFC 7396 section 3 example", () => {
++  const target = { title: "Goodbye!", author: { givenName: "John", familyName: "Doe" }, tags: ["example", "sample"], content: "This will be unchanged" };
++  const patch = { title: "Hello!", phoneNumber: "+01-123-456-7890", author: { familyName: null }, tags: ["example"] };
++  assert.deepEqual(mp(target, patch), {
++    title: "Hello!", author: { givenName: "John" }, tags: ["example"], content: "This will be unchanged", phoneNumber: "+01-123-456-7890",
++  });
++});
++test("Appendix A test cases", () => {
++  const cases: [unknown, unknown, unknown][] = [
++    [{ a: "b" }, { a: "c" }, { a: "c" }],
++    [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++    [{ a: "b" }, { a: null }, {}],
++    [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++    [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++    [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++    [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++    [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++    [["a", "b"], ["c", "d"], ["c", "d"]],
++    [{ a: "b" }, ["c"], ["c"]],
++    [{ a: "foo" }, null, null],
++    [{ a: "foo" }, "bar", "bar"],
++    [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++    [[1, 2], { a: "b", c: null }, { a: "b" }],
++    [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++  ];
++  for (const [t, p, r] of cases) assert.deepEqual(mp(t, p), r);
++});
++test("missing key delete is a no-op; empty patch keeps target", () => {
++  assert.deepEqual(mp({ a: 1 }, { z: null }), { a: 1 });
++  assert.deepEqual(mp({ a: 1 }, {}), { a: 1 });
++});
++test("inputs are not mutated and result shares no structure", () => {
++  const target = { a: { b: 1 }, l: [1] };
++  const patch = { a: { c: { d: 2 } }, l: [2], x: null };
++  const t = structuredClone(target), p = structuredClone(patch);
++  const out = mp(target, patch) as any;
++  assert.deepEqual(target, t);
++  assert.deepEqual(patch, p);
++  out.a.c.d = 9; out.l.push(3);
++  assert.deepEqual(patch, p);
++  assert.deepEqual(mp(target, {}) !== target, true);
++});
++test("hostile __proto__ keys are ordinary members", () => {
++  const patch = JSON.parse('{"__proto__":{"polluted":true},"a":{"__proto__":1}}');
++  const out = mp({}, patch) as any;
++  assert.equal(({} as any).polluted, undefined);
++  assert.equal(Object.getPrototypeOf(out), Object.prototype);
++  assert.deepEqual(Object.keys(out), ["__proto__", "a"]);
++  assert.deepEqual(JSON.parse(JSON.stringify(out)), patch);
++  const del = mp(JSON.parse('{"__proto__":1,"b":2}'), JSON.parse('{"__proto__":null}'));
++  assert.deepEqual(del, { b: 2 });
++});
++test("invalid (non-JSON) input throws", () => {
++  assert.throws(() => mp({ a: undefined }, {}));
++  assert.throws(() => mp({}, { a: () => 1 }));
++  assert.throws(() => mp({}, { a: NaN }));
++});
