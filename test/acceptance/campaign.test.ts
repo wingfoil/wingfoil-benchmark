@@ -952,7 +952,7 @@ describe("campaign.feature, the review loop's entry (task-148, F4.9)", () => {
     const files = readdirSync(repoPath('campaigns')).filter((file) => file.endsWith('.yaml'));
     for (const name of files.filter((file) => !file.endsWith('.dry-run.yaml'))) {
       const loaded = loadCampaign(repoPath('campaigns', name));
-      if (name === 'v0-3-reference.yaml')
+      if ((name === 'v0-3-reference.yaml', 'v0-3-validation.yaml'))
         expect(loaded.ok && loaded.value.spec.review_loop, name).toBeTruthy();
       else expect(loaded.ok ? loaded.value.spec.review_loop : loaded.issues, name).toBeUndefined();
     }
