@@ -42,6 +42,12 @@ const FIXER = 'fixer.jsonl';
 /** Where the configuring sessions' transcripts are kept and, in the asset, packed (REQ-CLI-11 as amended in 1.50). */
 const CONFIGURING = 'configuring';
 
+/** More sessions than any configuration records: a count past this is a damaged record, not a list to walk. */
+const MAX_CONFIGURING_SESSIONS = 1000;
+
+/** What the pack says of a link, wherever it stands on a transcript's way (REQ-RES-06). */
+const NEVER_A_LINK = 'is not a regular file: a transcript is never a link';
+
 /** The shape of an Anthropic key or token: never in a transcript (REQ-NFR-01). */
 const ANTHROPIC_SECRET = /sk-ant-[A-Za-z0-9_-]+/;
 
@@ -110,6 +116,20 @@ export async function packTranscripts(
   execution: string,
   options: { readonly process: ProcessPort; readonly secrets: readonly KnownSecret[] },
 ): Promise<Result<TranscriptPack>> {
+  try {
+    return await packExecution(root, execution, options);
+  } catch (error) {
+    // A file the system will not let the pack read, for one: refused by name, like every other record.
+    return fail([{ path: `results/${execution}`, message: `cannot be packed: ${(error as Error).message}` }]);
+  }
+}
+
+/** The pack itself: what it collects, then `packCopies` on copies of it. */
+async function packExecution(
+  root: string,
+  execution: string,
+  options: { readonly process: ProcessPort; readonly secrets: readonly KnownSecret[] },
+): Promise<Result<TranscriptPack>> {
   const executionDir = join(root, 'results', execution);
   const where = `results/${execution}`;
   const aggregateFile = join(executionDir, AGGREGATE_FILE);
@@ -135,6 +155,12 @@ export async function packTranscripts(
   const runsWithout: string[] = [];
   const runsWithoutSteps: string[] = [];
   for (const run of runs) {
+    // Before anything is listed: a link that leads nowhere would otherwise read as a transcript that is gone.
+    const layout = runLayoutIssues(executionDir, relativeRun(run));
+    if (layout.length > 0) {
+      unreadable.push(...layout);
+      continue;
+    }
     // The run's earlier attempts first (REQ-CLI-11 as amended in 1.26, task-080), in their order, then its own.
     const attemptsDir = join(executionDir, relativeRun(run), 'attempts');
     const attempts = (existsSync(attemptsDir) ? readdirSync(attemptsDir) : [])
@@ -170,7 +196,9 @@ export async function packTranscripts(
       for (let n = 1; n <= records; n += 1) {
         const session = `${CONFIGURING}/${scenario}/${of}/${n}/${TRANSCRIPT}`;
         const source = join(root, 'results', session);
-        if (present(source)) {
+        const link = firstLink(join(root, 'results'), session);
+        if (link !== undefined) unreadable.push({ path: link, message: NEVER_A_LINK });
+        else if (present(source)) {
           sources.set(session, source);
           held = true;
         } else missing.add(`results/${session}`);
@@ -178,7 +206,8 @@ export async function packTranscripts(
     }
     if (held) withTranscripts.push(run);
     else runsWithout.push(run);
-    if (held && own.length === 0) runsWithoutSteps.push(`${where}/${relativeRun(run)}`);
+    const ownSteps = own.filter((path) => path.startsWith(`${relativeRun(run)}/steps/`));
+    if (held && ownSteps.length === 0) runsWithoutSteps.push(`${where}/${relativeRun(run)}`);
   }
   if (unreadable.length > 0) return fail(unreadable);
   const paths = [...sources.keys()];
@@ -368,7 +397,7 @@ function reviewTranscripts(
       const { rounds } = JSON.parse(readFileSync(loopFile, 'utf8')) as { rounds?: unknown };
       if (!Array.isArray(rounds)) throw new Error('its rounds are not a list');
       for (const round of rounds as { n?: unknown; fixed?: unknown }[]) {
-        if (!Number.isInteger(round.n) || (round.n as number) < 1) throw new Error('a round has no number');
+        if (!Number.isSafeInteger(round.n) || (round.n as number) < 1) throw new Error('a round has no number');
         expected.add(`${dir}/review/${String(round.n)}/${REVIEWER}`);
         if (round.fixed === true) expected.add(`${dir}/review/${String(round.n)}/${FIXER}`);
       }
@@ -404,7 +433,7 @@ function configurationRead(
   }
   if (configured === undefined) return ok(undefined);
   const { of, records } = configured ?? {};
-  if (typeof of !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(of) || !Number.isInteger(records) || (records as number) < 1) {
+  if (typeof of !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(of) || !Number.isInteger(records) || (records as number) < 1 || (records as number) > MAX_CONFIGURING_SESSIONS) {
     return fail([{ path: `${run}/run.json`, message: 'its configured record names no harness and sessions' }]);
   }
   return ok({ of, records: records as number });
@@ -517,7 +546,48 @@ function sha256Of(file: string): string {
   return createHash('sha256').update(readFileSync(file)).digest('hex');
 }
 
-/** Whether `path` under `base` is a regular file reached through no link, in any folder of the path (REQ-RES-06). */
+/** The first link on the way from `base` to `path`, as a path under `base`; undefined when none stands on it. */
+function firstLink(base: string, path: string): string | undefined {
+  const parts = path.split('/');
+  for (let index = 1; index <= parts.length; index += 1) {
+    const at = parts.slice(0, index).join('/');
+    if (!present(join(base, at))) return undefined;
+    if (lstatSync(join(base, at)).isSymbolicLink()) return at;
+  }
+  return undefined;
+}
+
+/** Every link under `dir` of `base`, its own folders walked without following any. */
+function linksUnder(base: string, dir: string): string[] {
+  return readdirSync(join(base, dir), { withFileTypes: true }).flatMap((entry) => {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isSymbolicLink()) return [path];
+    return entry.isDirectory() ? linksUnder(base, path) : [];
+  });
+}
+
+/**
+ * What stands in the way of reading a run or an earlier attempt: a link on its way or under its `steps`, `attempts` and
+ * `review`, a link that leads nowhere included, and any of the three that is not a folder.
+ */
+function runLayoutIssues(executionDir: string, run: string): Issue[] {
+  const linked = firstLink(executionDir, run);
+  if (linked !== undefined) return [{ path: linked, message: NEVER_A_LINK }];
+  return ['steps', 'attempts', 'review'].flatMap((name): Issue[] => {
+    const path = `${run}/${name}`;
+    if (!present(join(executionDir, path))) return [];
+    const entry = lstatSync(join(executionDir, path));
+    if (entry.isSymbolicLink()) return [{ path, message: NEVER_A_LINK }];
+    if (!entry.isDirectory()) return [{ path, message: 'is not a directory' }];
+    const links = linksUnder(executionDir, path).map((link) => ({ path: link, message: NEVER_A_LINK }));
+    if (links.length > 0 || name !== 'attempts') return links;
+    return readdirSync(join(executionDir, path))
+      .filter((attempt) => /^[1-9]\d*$/.test(attempt))
+      .flatMap((attempt) => runLayoutIssues(executionDir, `${path}/${attempt}`));
+  });
+}
+
+/** Whether `path` under `base` is a regular file reached through no link, from `base` down (REQ-RES-06). */
 function regularFile(base: string, path: string): boolean {
   const parts = path.split('/');
   let at = base;

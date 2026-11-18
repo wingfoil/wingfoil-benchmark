@@ -511,14 +511,14 @@ describe("bench transcripts pack and the review loops' transcripts (REQ-CLI-11 a
     symlinkSync(outside(round.root), join(round.executionDir, RUN('TC', 'baseline'), 'review', '1'));
     const roundLinked = await benchSite(round.root, 'transcripts', 'pack', EXECUTION);
     expect(roundLinked.code).toBe(1);
-    expect(roundLinked.stderr).toContain('review/1/reviewer.jsonl: is not a regular file');
+    expect(roundLinked.stderr).toContain('r1/review/1: is not a regular file');
     expect(existsSync(join(round.root, ARCHIVE))).toBe(false);
 
     const review = await withTranscripts();
     symlinkSync(outside(review.root), join(review.executionDir, RUN('TC', 'baseline'), 'review'));
     const reviewLinked = await benchSite(review.root, 'transcripts', 'pack', EXECUTION);
     expect(reviewLinked.code).toBe(1);
-    expect(reviewLinked.stderr).toContain('r1/review: is not a directory');
+    expect(reviewLinked.stderr).toContain('r1/review: is not a regular file');
 
     const step = await withTranscripts();
     const steps = join(step.executionDir, RUN('TC', 'baseline'), 'steps');
@@ -526,7 +526,62 @@ describe("bench transcripts pack and the review loops' transcripts (REQ-CLI-11 a
     symlinkSync(outside(step.root), join(steps, '01'));
     const stepLinked = await benchSite(step.root, 'transcripts', 'pack', EXECUTION);
     expect(stepLinked.code).toBe(1);
-    expect(stepLinked.stderr).toContain('steps/01/transcript.jsonl: is not a regular file');
+    expect(stepLinked.stderr).toContain('r1/steps/01: is not a regular file');
+  }, 120_000);
+
+  it.each(['steps', 'steps/01', 'attempts', 'attempts/1', 'review/1', 'review/loop.json'])(
+    'refuses a broken link at %s, keeping the record of the earlier pack',
+    async (place) => {
+      const { root, executionDir } = await withTranscripts();
+      const run = join(executionDir, RUN('TC', 'baseline'));
+      expect((await benchSite(root, 'transcripts', 'pack', EXECUTION)).code).toBe(0);
+      const before = readFileSync(join(run, 'run.json'), 'utf8');
+      rmSync(join(run, place), { recursive: true, force: true });
+      mkdirSync(join(run, place, '..'), { recursive: true });
+      symlinkSync(join(root, 'nowhere'), join(run, place));
+
+      const refused = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+      expect(refused.code).toBe(1);
+      expect(refused.stderr).toContain(`r1/${place}: is not a regular file`);
+      expect(readFileSync(join(run, 'run.json'), 'utf8')).toBe(before);
+    },
+    120_000,
+  );
+
+  it.each(['steps', 'attempts', 'attempts/1/steps'])('refuses %s when it is a file, by name', async (place) => {
+    const { root, executionDir } = await withTranscripts();
+    const run = join(executionDir, RUN('TC', 'wingfoil'));
+    rmSync(join(run, place), { recursive: true, force: true });
+    mkdirSync(join(run, place, '..'), { recursive: true });
+    writeFileSync(join(run, place), 'not a folder\n');
+    const refused = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain(`r1/${place}: is not a directory`);
+  }, 120_000);
+
+  it("says a run's steps are gone when only an earlier attempt's remain, and not for a run holding nothing", async () => {
+    const { root, executionDir } = await withTranscripts();
+    const earlier = join(executionDir, RUN('TC', 'wingfoil'), 'attempts', '1', 'steps', '01');
+    mkdirSync(earlier, { recursive: true });
+    writeFileSync(join(earlier, 'transcript.jsonl'), '{"type":"result","result":"earlier"}\n');
+    const packed = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(packed.code, packed.stderr).toBe(0);
+    expect(packed.stdout).toContain(
+      'no step transcript on this machine: results/abcdef012345/1/runs/TC@1.0/wingfoil/fake-model/r1\n',
+    );
+    expect(packed.stdout).not.toContain('no step transcript on this machine: results/abcdef012345/1/runs/TD@1.0/baseline');
+  }, 120_000);
+
+  it.each([0, -1, 1e21])('refuses a loop record whose round is numbered %s', async (n) => {
+    const { root, executionDir } = await withTranscripts();
+    reviewLoop(executionDir, RUN('TC', 'baseline'), [{ n: 1, fixed: false }]);
+    writeFileSync(
+      join(executionDir, RUN('TC', 'baseline'), 'review', 'loop.json'),
+      JSON.stringify({ rounds: [{ n, fixed: false }] }),
+    );
+    const refused = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain('review/loop.json: cannot be read');
   }, 120_000);
 });
 
@@ -670,7 +725,30 @@ describe("bench transcripts pack and the configuring sessions' transcripts (REQ-
     symlinkSync(join(root, 'elsewhere'), join(root, 'results', 'configuring', 'TC@1.0', 'wingfoil'));
     const refused = await benchSite(root, 'transcripts', 'pack', EXECUTION);
     expect(refused.code).toBe(1);
-    expect(refused.stderr).toContain(`${ASSET(1)}: is not a regular file`);
+    expect(refused.stderr).toContain('configuring/TC@1.0/wingfoil: is not a regular file');
     expect(existsSync(join(root, ARCHIVE))).toBe(false);
   }, 120_000);
+
+  it.each(['configuring', 'configuring/TC@1.0', 'configuring/TC@1.0/wingfoil/1'])(
+    'refuses a broken link at results/%s instead of calling the session missing',
+    async (place) => {
+      const { root, executionDir } = await withTranscripts();
+      readsConfiguration(executionDir, RUN('TC', 'baseline'), 1);
+      mkdirSync(join(root, 'results', place, '..'), { recursive: true });
+      symlinkSync(join(root, 'nowhere'), join(root, 'results', place));
+      const refused = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+      expect(refused.code).toBe(1);
+      expect(refused.stderr).toContain(`${place}: is not a regular file`);
+      expect(existsSync(join(root, ARCHIVE))).toBe(false);
+    },
+    120_000,
+  );
+
+  it('refuses a session count no configuration could have, without walking it', async () => {
+    const { root, executionDir } = await withTranscripts();
+    readsConfiguration(executionDir, RUN('TC', 'baseline'), 1e15);
+    const refused = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain('run.json: its configured record');
+  }, 30_000);
 });
