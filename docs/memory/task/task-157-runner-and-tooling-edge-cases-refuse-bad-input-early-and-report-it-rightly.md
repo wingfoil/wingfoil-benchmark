@@ -73,3 +73,12 @@ profile and scenario stays valid.
   fixtures.
 
 ## Execution notes
+
+- **Item 2 is left out:** it did not reproduce (§ Context), and the approver approved the task that says so.
+- **Red first:** every new test failed before its fix. Items 3 and 4 share one check, `src/runner/harness-pins.ts`, so
+  they are one commit and not two.
+- **`readRecord` in `src/runner/run.ts`:** it refuses a list too, but a resume reads `executionSpendingEur` first, so the
+  CLI test catches a regression only when both checks are removed.
+- **Nothing stored breaks (criterion 8):** main's checks and this branch's gave the same answer on all 1310 stored
+  cases: 9 scenario versions with their hashes, 14 campaign files, and 1287 pairs of a dry-run profile, a scenario
+  version and an arm.
