@@ -80,7 +80,7 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
       'npx prettier --check --ignore-unknown docs/n.md src/cli/a.ts test/unit/x.test.ts',
       'npx eslint src/cli/a.ts test/unit/x.test.ts',
       'npx tsc --noEmit -p .',
-      'npx vitest run --maxWorkers=2 test/unit/x.test.ts test/acceptance/traceability.test.ts',
+      'npx vitest run --maxWorkers=2 test/unit/x.test.ts test/acceptance/traceability.test.ts test/unit/docs/evaluate-page.test.ts',
       'npm run test:bin -- --maxWorkers=2',
     ]);
   });

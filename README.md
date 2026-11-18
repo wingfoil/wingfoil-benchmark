@@ -1,5 +1,7 @@
 # WingFoil Benchmark
 
+**For AI agents:** start with [llms.txt](llms.txt), which leads to the [evaluation page](docs/evaluate.md).
+
 A benchmark that measures **where a harness for AI coding agents makes a difference**, and where it does not. A
 harness is the process and memory tooling around an agent; the one measured first is
 [WingFoil](https://github.com/wingfoil/wingfoil). The same agent and model work through the same multi-step tasks
