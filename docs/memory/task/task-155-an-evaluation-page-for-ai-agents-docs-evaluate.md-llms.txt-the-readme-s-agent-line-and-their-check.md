@@ -92,3 +92,10 @@ The page states v0.3's results only once the reference campaign is published (pl
 states v0.2's published results and v0.3's calibration, each with its version and date.
 
 ## Execution notes
+
+- **Red first:** with `llms.txt`, `docs/evaluate.md` and the README's line removed, every test of the page's check fails.
+- **The commands of §5 were run end to end** in a fresh clone of this branch: `npm ci`, the build, `run compare` and
+  `campaign estimate`. They start no agent, and the clone stays clean.
+- **External links:** `scripts/check-external-links.mjs` checked the 7 external links on 2026-11-18, and all answered.
+- **v0.3's results are not stated:** the reference campaign has not run. The page gives v0.2's results and v0.3's
+  calibration, and must be updated when the campaign is published (plan-005 step 5).
