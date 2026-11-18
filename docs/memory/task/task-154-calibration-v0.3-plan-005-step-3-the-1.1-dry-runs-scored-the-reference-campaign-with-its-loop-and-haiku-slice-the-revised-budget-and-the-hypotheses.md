@@ -127,3 +127,7 @@ What is settled before it:
 - **Before merging into main:** main's checkout holds dry runs `216`-`263` untracked, with their git-ignored
   transcripts, the only copy. Git refuses the merge until the paths the branch tracks are gone. Remove only those
   (`git ls-tree -r --name-only <branch> results/dry-runs/<n>`), never the whole directories and never `git clean`.
+- **A second independent review (2026-11-18) found no blocker.** Its findings are fixed: H1 and H2 now fall from the
+  v0.2.2 bridge on Sonnet 5.5 and not from v0.1's values on another model, a verdict lacking its data says "not read",
+  `budget-reading.mjs` merges a preset as the campaign loader does, and `260` is left out of the longest step. These
+  last fixes were not reviewed again.
