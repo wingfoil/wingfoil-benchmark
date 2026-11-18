@@ -146,7 +146,11 @@ export async function dryRunCommand(
   // What it expects to spend, before anything is built (REQ-NFR-06).
   const rate = profile.currency.usd_to_eur;
   const what = `${scenario.id}@${scenario.version} in ${arm.name} on ${model}`;
-  const { record: latest, skipped } = findDryRun(join(root, 'results'), {
+  const {
+    record: latest,
+    skipped,
+    newerSkipped,
+  } = findDryRun(join(root, 'results'), {
     id: scenario.id,
     version: scenario.version,
     hash: scenario.hash,
@@ -162,18 +166,17 @@ export async function dryRunCommand(
     pinnedBy: 'the profile',
   });
   // Why the latest dry run did not count, when one did not (bug-033): the estimate says it, and so does the dry run.
-  const none =
-    skipped === undefined
-      ? 'no dry run yet'
-      : `no dry run counts (${skipped}; a dry run always keys on the arm's digest, which an unpinned campaign's ` +
-        `estimate does not)`;
+  const none = skipped === undefined ? 'no dry run yet' : `no dry run counts (${skipped})`;
+  const counted = newerSkipped === undefined ? 'the latest dry run' : 'the latest dry run that counts';
+  const newer = newerSkipped === undefined ? '' : `, a newer one does not (${newerSkipped})`;
   io.stdout(
     latest === undefined
       ? `dry run ${what}: ${none}; this one may spend up to its cap, ${profile.caps.run_cost_eur} EUR` +
           `${loopBoundText}\n`
-      : `dry run ${what}: the latest dry run cost ${money(latest.costUsd, rate)} (${relative(root, latest.dir)})` +
+      : `dry run ${what}: ${counted} cost ${money(latest.costUsd, rate)} (${relative(root, latest.dir)})${newer}` +
           `${loopBound === undefined ? '' : `, its steps only${loopBoundText}`}\n`,
   );
+  for (const note of checked.value.notes) io.stdout(`dry run ${what}: note: ${note}\n`);
 
   let summary;
   try {

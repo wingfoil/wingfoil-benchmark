@@ -363,7 +363,7 @@ describe('bench scenario dry-run: the run (F3.3, REQ-RES-01, REQ-NFR-06)', () =>
     writeFileSync(join(root, 'arms', 'baseline', 'manual.md'), 'another manual\n');
     const changed = await dryRun(root, ['T3@1.0', '--arm', 'baseline'], p());
     expect(changed.stdout.split('\n')[0]).toMatch(
-      /^dry run T3@1\.0 in baseline on fake-model: no dry run counts \(dry run 1 ran arm baseline at digest [0-9a-f]{12}, the profile pins [0-9a-f]+; a dry run always keys on the arm's digest, which an unpinned campaign's estimate does not\); this one may spend up to its cap, 1 EUR$/,
+      /^dry run T3@1\.0 in baseline on fake-model: no dry run counts \(dry run 1 ran arm baseline at digest [0-9a-f]{12}, the arm that runs is at [0-9a-f]{12}; a dry run always keys on the arm's digest, which an unpinned campaign's estimate does not\); this one may spend up to its cap, 1 EUR$/,
     );
 
     // Another WingFoil pin: the docs control's rules are generated from that harness (its source arm's).
@@ -383,7 +383,7 @@ describe('bench scenario dry-run: the run (F3.3, REQ-RES-01, REQ-NFR-06)', () =>
     });
     const newAgent = await dryRun(root, ['T3@1.0', '--arm', 'baseline'], p());
     expect(newAgent.stdout.split('\n')[0]).toContain(
-      'no dry run counts (dry run 3 ran agent fake 1.0.0, the profile pins fake 1.0.1; ',
+      'no dry run counts (dry run 3 ran agent fake 1.0.0, the profile pins fake 1.0.1);',
     );
   });
 
@@ -398,7 +398,29 @@ describe('bench scenario dry-run: the run (F3.3, REQ-RES-01, REQ-NFR-06)', () =>
     expect(result.stdout).toMatch(/dry run T3@1\.0 in baseline: failed, .* — results\/dry-runs\/1\n$/);
     expect(runJson(root, 1, 'baseline')).toMatchObject({ dry_run: true, outcome: 'failed' });
     const next = await dryRun(root, ['T3@1.0', '--arm', 'baseline']);
-    expect(next.stdout).toContain('no dry run yet');
+    expect(next.stdout).toContain('no dry run counts (dry run 1 ended failed); this one may spend');
+  });
+
+  it('says a newer dry run does not count when an older one still does (bug-033)', async () => {
+    const root = repository();
+    await dryRun(root, ['T3@1.0', '--arm', 'baseline']);
+    await dryRun(root, ['T3@1.0', '--arm', 'baseline'], ports({ errorOf: () => 'the session broke' }));
+    const next = await dryRun(root, ['T3@1.0', '--arm', 'baseline']);
+    expect(next.stdout.split('\n')[0]).toMatch(
+      /: the latest dry run that counts cost .* \(results\/dry-runs\/1\), a newer one does not \(dry run 2 ended failed\)$/,
+    );
+  });
+
+  it('runs a version the register has not assessed, and notes that a campaign could not pin it (bug-033)', async () => {
+    vi.stubEnv('BENCH_WINGFOIL_REPO', '/clones/wingfoil');
+    const root = repository();
+    writeRegister(root, []);
+    const result = await dryRun(root, ['T3@1.0', '--arm', 'baseline-docs']);
+    expect(result.code).toBe(0);
+    expect(result.stdout.split('\n')[1]).toBe(
+      'dry run T3@1.0 in baseline-docs on fake-model: note: wingfoil 3df305e is not assessed in ' +
+        'eligibility/register.yaml: assess it before a campaign pins it',
+    );
   });
 
   it('reports a dry run that cannot start at all', async () => {

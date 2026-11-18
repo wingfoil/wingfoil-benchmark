@@ -38,7 +38,10 @@ export interface DryRunKey {
    * recorded no version still does, as one stored without an arm digest.
    */
   readonly agent?: { readonly name: string; readonly version: string };
-  /** Who pins this key, as a skip reason names it: `the campaign` unless a dry run's profile does (bug-033). */
+  /**
+   * Set by a dry run quoting its own key (bug-033): its skip reasons say what the profile pins, and name every kind of
+   * dry run that does not count. An estimate's stay as they are.
+   */
   readonly pinnedBy?: string;
 }
 
@@ -77,6 +80,8 @@ export interface DryRunLookup {
   readonly record?: DryRunRecord;
   /** For the latest completed dry run of the version that was skipped: `dry run <n> …`, why. */
   readonly skipped?: string;
+  /** Why a dry run newer than `record` does not count (bug-033). */
+  readonly newerSkipped?: string;
 }
 
 /**
@@ -94,9 +99,9 @@ export function latestDryRun(resultsRoot: string, key: DryRunKey): DryRunRecord 
  * an unpriced cost is not one (task-069).
  */
 export function findDryRun(resultsRoot: string, key: DryRunKey): DryRunLookup {
-  const { records, skipped } = findDryRuns(resultsRoot, key);
+  const { records, skipped, newerSkipped } = findDryRuns(resultsRoot, key);
   const [record] = records;
-  if (record !== undefined) return { record };
+  if (record !== undefined) return { record, ...(newerSkipped === undefined ? {} : { newerSkipped }) };
   return skipped === undefined ? {} : { skipped };
 }
 
@@ -105,6 +110,8 @@ export interface DryRunsLookup {
   readonly records: readonly DryRunRecord[];
   /** For the newest completed dry run of the version that was skipped: `dry run <n> …`, why. */
   readonly skipped?: string;
+  /** Why a dry run newer than the first that counts does not count (bug-033). */
+  readonly newerSkipped?: string;
 }
 
 /**
@@ -122,20 +129,37 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
   const records: DryRunRecord[] = [];
   let skipped: string | undefined;
   const pinnedBy = key.pinnedBy ?? 'the campaign';
+  const explains = key.pinnedBy !== undefined;
   for (const execution of executions) {
     const dir = join(root, String(execution));
     const file = join(dir, 'runs', `${key.id}@${key.version}`, key.arm, key.model, 'r1', 'run.json');
     const run = readRun(file);
     if (run === undefined) continue;
-    if (run.dry_run !== true || run.outcome !== 'completed' || run.scenario_hash !== key.hash) continue;
+    if (run.dry_run !== true || run.outcome !== 'completed' || run.scenario_hash !== key.hash) {
+      if (explains && records.length === 0) {
+        skipped ??=
+          run.dry_run !== true
+            ? `dry run ${execution} is not marked a dry run`
+            : run.outcome !== 'completed'
+              ? `dry run ${execution} ended ${String(run.outcome)}`
+              : `dry run ${execution} ran other content of this scenario version`;
+      }
+      continue;
+    }
     const ran = typeof run.effort === 'string' ? run.effort : 'none';
     if (ran !== (key.effort ?? 'none')) {
-      if (records.length === 0) skipped ??= `dry run ${execution} ran at effort ${ran}`;
+      if (records.length === 0) {
+        skipped ??= `dry run ${execution} ran at effort ${ran}${explains ? `, ${pinnedBy} pins ${key.effort ?? 'none'}` : ''}`;
+      }
       continue;
     }
     if (key.armDigest !== undefined && typeof run.arm_digest === 'string' && !run.arm_digest.startsWith(key.armDigest)) {
       if (records.length === 0) {
-        skipped ??= `dry run ${execution} ran arm ${key.arm} at digest ${run.arm_digest.slice(0, 12)}, ${pinnedBy} pins ${key.armDigest}`;
+        const ranAt = `dry run ${execution} ran arm ${key.arm} at digest ${run.arm_digest.slice(0, 12)}`;
+        skipped ??= explains
+          ? `${ranAt}, the arm that runs is at ${key.armDigest.slice(0, 12)}; a dry run always keys on the arm's digest, ` +
+            `which an unpinned campaign's estimate does not`
+          : `${ranAt}, ${pinnedBy} pins ${key.armDigest}`;
       }
       continue;
     }
@@ -179,7 +203,8 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
       ...(typeof commit === 'string' ? { harnessCommit: commit } : {}),
     });
   }
-  return { records, ...(records.length === 0 && skipped !== undefined ? { skipped } : {}) };
+  if (skipped === undefined) return { records };
+  return records.length === 0 ? { records, skipped } : { records, newerSkipped: skipped };
 }
 
 /**

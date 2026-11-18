@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { registryPinIssues } from '../../../src/core/index.js';
 import { checkCampaign, checkDryRun } from '../../../src/runner/index.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
 import { dryRunProfileYaml, writeDryRunProfile } from '../../support/dry-run-fixture.js';
@@ -78,35 +79,50 @@ describe('a registry harness pin (bug-033, item 4)', () => {
   });
 });
 
-describe("the dry run's eligibility check (bug-033, item 3)", () => {
+describe("the dry run and the eligibility register (bug-033, item 3; the approver's choice A)", () => {
   const PIN = { tool: 'wingfoil', version: '3df305e' };
+  const notes = (root: string, arm: string) => {
+    const checked = checkDryRun({ id: 'S1', version: '1.0', arm }, root);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    return checked.value.notes;
+  };
 
-  it('refuses a version the register has not assessed, in the campaign check’s words', () => {
+  it('lets a version the register has not assessed run, because dry runs are how it is studied, and notes it', () => {
     const repo = repository('wingfoil', PIN);
     writeRegister(repo.root, [registerEntry('speckit', 'v1.1.0')]);
-    expect(dryRunIssues(repo.root, 'wingfoil')).toEqual(campaignIssues(repo.file));
-    expect(dryRunIssues(repo.root, 'wingfoil')).toEqual([
-      {
-        path: 'harnesses.wingfoil.version',
-        message:
-          'wingfoil 3df305e is not assessed in eligibility/register.yaml: assess it before a campaign pins it',
-      },
+    expect(campaignIssues(repo.file).map((issue) => issue.message)).toEqual(notes(repo.root, 'wingfoil'));
+    expect(notes(repo.root, 'wingfoil')).toEqual([
+      'wingfoil 3df305e is not assessed in eligibility/register.yaml: assess it before a campaign pins it',
     ]);
   });
 
-  it('refuses a version the register excludes', () => {
+  it('notes a version the register excludes, and still lets it run', () => {
     const repo = repository('wingfoil', PIN);
     writeRegister(repo.root, [registerEntry('wingfoil', '3df305e', ['pinnable'])]);
-    expect(dryRunIssues(repo.root, 'wingfoil').map((issue) => issue.message)).toEqual([
+    expect(notes(repo.root, 'wingfoil')).toEqual([
       expect.stringContaining('wingfoil 3df305e is excluded by the eligibility register: it fails pinnable'),
     ]);
   });
 
-  it('passes an admitted version, and asks nothing of an arm with no harness', () => {
+  it('notes nothing for an admitted version, or for an arm with no harness', () => {
     const repo = repository('wingfoil', PIN);
     writeRegister(repo.root, TEST_REGISTER);
-    expect(dryRunIssues(repo.root, 'wingfoil')).toEqual([]);
+    expect(notes(repo.root, 'wingfoil')).toEqual([]);
     writeRegister(repo.root, []);
-    expect(dryRunIssues(repo.root, 'baseline')).toEqual([]);
+    expect(notes(repo.root, 'baseline')).toEqual([]);
+  });
+
+  it('refuses a campaign on the same pin all the same', () => {
+    const repo = repository('wingfoil', PIN);
+    writeRegister(repo.root, []);
+    expect(campaignIssues(repo.file).map((issue) => issue.path)).toEqual(['harnesses.wingfoil.version']);
+  });
+});
+
+describe('registryPinIssues (bug-033, item 4)', () => {
+  it("reads a configured arm's pin from its base arm's entry", () => {
+    const harnesses = { openspec: { tool: 'openspec', version: '1.14.0', commit: COMMIT } };
+    const arms = [{ name: 'openspec-configured', requires: 'openspec', configuredOf: 'openspec' }];
+    expect(registryPinIssues(harnesses, arms)).toEqual([BY_COMMIT]);
   });
 });
