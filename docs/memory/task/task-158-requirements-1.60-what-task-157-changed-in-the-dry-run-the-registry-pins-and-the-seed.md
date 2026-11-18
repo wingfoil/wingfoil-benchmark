@@ -46,3 +46,7 @@ this, and the approver asked for this task on 2026-11-18.
 - **No spending:** no agent runs, and no campaign or dry run is launched.
 
 ## Execution notes
+
+- **Read against the code (2026-11-18):** each amendment was compared with `src/runner/dry-run.ts`,
+  `src/runner/harness-pins.ts`, `src/core/campaign.ts`, `src/cli/dry-run.ts`, `src/results/dry-runs.ts`,
+  `src/scenario/load.ts` and `src/scenario/workspace.ts`.
