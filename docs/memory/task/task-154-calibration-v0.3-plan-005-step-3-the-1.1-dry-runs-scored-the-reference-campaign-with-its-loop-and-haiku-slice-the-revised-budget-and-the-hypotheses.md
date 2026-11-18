@@ -124,6 +124,6 @@ What is settled before it:
   profile test is restored beside the new one, the budget table, the verdicts and the loops' count are generated
   (`scripts/budget-reading.mjs`, `scripts/hypotheses-reading.mjs`), H6 names the run below the baseline, a mean over
   different totals is refused, and the ledger names a not-clean loop's round once.
-- **Before merging into main:** main's checkout holds dry runs `216`-`263` untracked, with their git-ignored transcripts,
-  the only copy. Git refuses the merge until the paths the branch tracks are gone. Remove only those
+- **Before merging into main:** main's checkout holds dry runs `216`-`263` untracked, with their git-ignored
+  transcripts, the only copy. Git refuses the merge until the paths the branch tracks are gone. Remove only those
   (`git ls-tree -r --name-only <branch> results/dry-runs/<n>`), never the whole directories and never `git clean`.
