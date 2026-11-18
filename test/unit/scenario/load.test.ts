@@ -261,6 +261,12 @@ describe('loadScenario', () => {
     ]);
   });
 
+  it("counts no file under a seed's .git, which a commit never records (bug-033)", () => {
+    const empty = COMPLETE_FILES.filter((file) => !file.startsWith('seed/'));
+    const root = writeScenario(completeScenarioYaml(), [...empty, 'seed/.git/config', 'seed/sub/.git/x']);
+    expect(issuesOf(root).map((issue) => issue.path)).toEqual(['seed']);
+  });
+
   it('names every file or directory that does not exist, in declaration order', () => {
     const root = writeScenario(completeScenarioYaml(), ['prompts/01.md']);
     expect(issuesOf(root)).toEqual([

@@ -28,7 +28,16 @@ export async function prepareWorkspace(directory: string, scenario: Scenario, gi
     filter: keepInsideSeed,
   });
   await git.init(directory);
-  await git.commitAll(directory, SEED_COMMIT);
+  try {
+    await git.commitAll(directory, SEED_COMMIT);
+  } catch (error) {
+    // A seed whose every file git ignores loads, and only git can tell (bug-033).
+    if (!/nothing (added )?to commit/.test((error as Error).message)) throw error;
+    throw new Error(
+      `the seed of ${scenario.id}@${scenario.version} gives its first commit nothing: git ignores every file it holds`,
+      { cause: error },
+    );
+  }
 }
 
 /** Symbolic links are not copied at all: nothing in a workspace may point outside it. */

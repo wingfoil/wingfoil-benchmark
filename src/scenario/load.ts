@@ -492,11 +492,12 @@ function markdownUnder(directory: string, relative: string): string[] {
     });
 }
 
-/** Whether `dir` holds a file at any depth: git records no directory by itself. */
+/** Whether `dir` holds a file a commit could record, at any depth: not a directory by itself, nor anything in `.git`. */
 function holdsFile(dir: string): boolean {
-  return readdirSync(dir, { withFileTypes: true }).some((entry) =>
-    entry.isDirectory() ? holdsFile(join(dir, entry.name)) : entry.isFile(),
-  );
+  return readdirSync(dir, { withFileTypes: true }).some((entry) => {
+    if (entry.name === '.git') return false;
+    return entry.isDirectory() ? holdsFile(join(dir, entry.name)) : entry.isFile();
+  });
 }
 
 function fileIssues(declared: readonly Declared[], dir: string): Issue[] {
