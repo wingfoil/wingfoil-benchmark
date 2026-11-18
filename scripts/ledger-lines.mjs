@@ -46,6 +46,10 @@ const count = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const money = (usd, eur) => `${usd.toFixed(4)} USD (${eur.toFixed(4)} €)`;
 const costCell = (usd, eur) => `${money(usd, eur)} API-equivalent; nothing billed per token`;
 
+/** A loop's outcome and round; `not clean at 5` already names its round. */
+const loopOutcome = (loop) =>
+  loop.outcome.startsWith('not clean at') ? loop.outcome : `${loop.outcome} at round ${loop.rounds}`;
+
 /**
  * A dry run's review loop (task-154, REQ-FMT-06 as amended in 1.58): its outcome, its last round, its cost in EUR as
  * `loop.json` records it (bounds included) and in USD as its sessions reported it; undefined without a loop.
@@ -147,7 +151,7 @@ if (kind === 'configuring') {
               options.element,
               `dry run of ${scenario}, ${arm} arm (\`dry-runs/${n}\`, ${count(run.steps.length, 'step')}, ` +
                 `${count(interventions, 'intervention')}; ${run.outcome}` +
-                (loop === undefined ? '' : `; review loop ${loop.outcome} at round ${loop.rounds}`),
+                (loop === undefined ? '' : `; review loop ${loopOutcome(loop)}`),
               options.consent,
               modelCell(run.model, run.effort, run.agent),
               options.ceiling,

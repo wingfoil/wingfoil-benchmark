@@ -66,10 +66,12 @@ for (const n of directories(base)
 const fraction = (values) => {
   const defined = values.filter((value) => value !== undefined && value.total > 0);
   if (defined.length === 0) return '—';
+  if (new Set(defined.map((value) => value.total)).size > 1) return 'mixed totals';
   const field = 'passed' in defined[0] ? 'passed' : 'consistent';
   const top = defined.map((value) => value[field]);
   const total = defined[0].total;
-  return defined.length === 1 ? `${top[0]}/${total}` : `${round(mean(top), 1)}/${total}`;
+  const text = defined.length === 1 ? `${top[0]}/${total}` : `${round(mean(top), 1)}/${total}`;
+  return defined.length < values.length ? `${text} (n ${defined.length})` : text;
 };
 const round = (value, digits) => Number(value.toFixed(digits));
 const figures = (key) => {
@@ -131,6 +133,19 @@ const ratios = (field, model, arm, other) => {
 };
 const value = (scenario, arm, model, field) => figures(`${scenario} ${arm} ${model}`)?.[field] ?? '—';
 
+/** Per scenario, how many arms' checks stay below their maximum on a model, of the arms that have checks. */
+const unsaturatedOf = (model) =>
+  scenarios.flatMap((scenario) => {
+    const entries = arms
+      .map((arm) => keys.get(`${scenario} ${arm} ${model}`))
+      .filter((entry) => entry !== undefined && entry.runs.some((run) => run.checks.total > 0));
+    if (entries.length === 0) return [];
+    const below = entries.filter(
+      (entry) => mean(entry.runs.map((run) => run.checks.passed)) < entry.runs[0].checks.total,
+    );
+    return [`${scenario.split('@')[0]} ${below.length} of ${entries.length}`];
+  });
+
 console.log('');
 const at = (id) => scenarios.find((scenario) => scenario.startsWith(`${id}@`)) ?? `${id}@${version}`;
 for (const model of models) {
@@ -164,16 +179,7 @@ for (const model of models) {
     `| H8 | cost ÷ its docs control ${pair((arm) => ratios('eur', model, arm, arm === 'wingfoil' ? 'baseline-docs' : 'baseline-docs-configured'))}`,
   );
   console.log('');
-  const unsaturated = scenarios.flatMap((scenario) => {
-    const entries = arms
-      .map((arm) => keys.get(`${scenario} ${arm} ${model}`))
-      .filter((entry) => entry !== undefined && entry.runs.some((run) => run.checks.total > 0));
-    if (entries.length === 0) return [];
-    const below = entries.filter(
-      (entry) => mean(entry.runs.map((run) => run.checks.passed)) < entry.runs[0].checks.total,
-    );
-    return [`${scenario.split('@')[0]} ${below.length} of ${entries.length}`];
-  });
+  const unsaturated = unsaturatedOf(model);
   console.log(`H10 on ${model}, arms whose checks are not saturated: ${unsaturated.join(', ') || '—'}`);
   console.log('');
 }
@@ -187,12 +193,15 @@ const meanOf = (scenario, arm, model, pick) => {
       .filter((item) => item !== undefined) ?? [];
   return picked.length === 0 ? undefined : mean(picked);
 };
-/** The wingfoil arm's gain over the baseline on one figure, signed; `—` when a side is missing. */
-const gain = (scenario, model, pick) => {
+/** The wingfoil arm's gain over the baseline on one figure; undefined when a side is missing. */
+const gainOf = (scenario, model, pick) => {
   const wingfoil = meanOf(scenario, 'wingfoil', model, pick);
   const baseline = meanOf(scenario, 'baseline', model, pick);
-  if (wingfoil === undefined || baseline === undefined) return '—';
-  const difference = round(wingfoil - baseline, 1);
+  return wingfoil === undefined || baseline === undefined ? undefined : round(wingfoil - baseline, 1);
+};
+const gain = (scenario, model, pick) => {
+  const difference = gainOf(scenario, model, pick);
+  if (difference === undefined) return '—';
   return `${difference > 0 ? '+' : ''}${difference}`;
 };
 console.log('**H11** (the wingfoil arm minus the baseline, per model)');
@@ -204,3 +213,174 @@ for (const model of models)
     `| ${model} | ${gain(at('S1'), model, (run) => run.q1.passed)} | ${gain(at('S3'), model, (run) => run.q1.passed)} | ` +
       `${gain(at('S3'), model, (run) => run.f1?.consistent)} |`,
   );
+
+// The verdicts, each against v0.1.md §11's "Holds when", on Sonnet 5.5, the model every arm ran.
+const READ_MODEL = models.includes('claude-sonnet-5-5') ? 'claude-sonnet-5-5' : models.at(-1);
+/** v0.1.md §11's "Today" (v0.2.2): the ratios H1 and H2 must fall from. */
+const TODAY = { S1: 2.31, S2: 1.51, S3: 2.73, S8: 2.1 };
+const TODAY_TURNS_S1 = 2.5;
+const IDS = ['S1', 'S2', 'S3', 'S8'];
+const runsOf = (id, arm) => keys.get(`${at(id)} ${arm} ${READ_MODEL}`)?.runs ?? [];
+const keyRatio = (id, arm, other, field) => {
+  const top = figures(`${at(id)} ${arm} ${READ_MODEL}`);
+  const bottom = figures(`${at(id)} ${other} ${READ_MODEL}`);
+  return top === undefined || bottom === undefined ? undefined : top[field] / bottom[field];
+};
+const verdict = (met, detail) => `${met ? 'met' : 'not met'}: ${detail}`;
+const allChecks = (run) => run.checks.total > 0 && run.checks.passed === run.checks.total;
+const f1Holds = (run) => run.f1 !== undefined && run.f1.consistent >= 4;
+const meanTests = (runs, pick) => mean(runs.map(pick).filter((item) => item !== undefined));
+const control = (arm) => (arm === 'wingfoil' ? 'baseline-docs' : 'baseline-docs-configured');
+
+/** The runs more than one test below the baseline's mean, public and hold-out, every scenario. */
+const belowBaseline = (arm) =>
+  IDS.flatMap((id) => {
+    const baseline = runsOf(id, 'baseline');
+    if (baseline.length === 0) return [];
+    const side = (label, pick) => {
+      const level = meanTests(baseline, (run) => pick(run)?.passed);
+      return runsOf(id, arm)
+        .filter((run) => pick(run) !== undefined && pick(run).passed < level - 1)
+        .map(
+          (run) =>
+            `${id}${label} \`${run.n}\` (${pick(run).passed}/${pick(run).total} against ${round(level, 1)})`,
+        );
+    };
+    return [...side('', (run) => run.q1), ...side(' hold-out', (run) => run.holdout)];
+  });
+
+const engineDeclared = () => {
+  const file = join(root, 'arms', 'wingfoil', 'arm.yaml');
+  return existsSync(file) && /^\s*workflow-engine:\s*true\s*$/m.test(readFileSync(file, 'utf8'));
+};
+
+const H11_PICKS = [
+  ['S1', (run) => run.q1.passed],
+  ['S3', (run) => run.q1.passed],
+  ['S3', (run) => run.f1?.consistent],
+];
+
+const rows = [
+  [
+    'H1',
+    'the ratio falls on at least three of the four scenarios, and below 1.5× on S1',
+    (arm) => {
+      const read = IDS.map((id) => [id, keyRatio(id, arm, 'baseline', 'eur')]).filter(
+        ([, r]) => r !== undefined,
+      );
+      const s1 = read.find(([id]) => id === 'S1')?.[1];
+      if (s1 === undefined) return 'not read';
+      const falls = read.filter(([id, r]) => r < TODAY[id]).length;
+      return verdict(falls >= 3 && s1 < 1.5, `S1 ${round(s1, 2)}×, falls on ${falls} of ${read.length}`);
+    },
+  ],
+  [
+    'H2',
+    `the ratio falls on S1, from ${TODAY_TURNS_S1}×`,
+    (arm) => {
+      const ratioS1 = keyRatio('S1', arm, 'baseline', 'turns');
+      if (ratioS1 === undefined) return 'not read';
+      return verdict(ratioS1 < TODAY_TURNS_S1, `${round(ratioS1, 2)}×`);
+    },
+  ],
+  [
+    'H3',
+    'M-F1 ≥ 4/5 and D3 recorded, in every wingfoil run',
+    (arm) => {
+      const runs = runsOf('S3', arm);
+      if (runs.length === 0) return 'not read';
+      const held = runs.filter((run) => f1Holds(run) && allChecks(run)).length;
+      return verdict(held === runs.length, `${held} of ${runs.length} runs`);
+    },
+  ],
+  [
+    'H4',
+    '3/3 in every wingfoil run',
+    (arm) => {
+      const runs = runsOf('S2', arm);
+      if (runs.length === 0) return 'not read';
+      const held = runs.filter(allChecks).length;
+      return verdict(held === runs.length, `${held} of ${runs.length} runs`);
+    },
+  ],
+  [
+    'H5',
+    "16/16 kept, and hidden tests at the docs control's level or above",
+    (arm) => {
+      const runs = runsOf('S8', arm);
+      const other = runsOf('S8', control(arm));
+      if (runs.length === 0 || other.length === 0) return 'not read';
+      const kept = runs.filter(allChecks).length;
+      const [publicA, publicB] = [runs, other].map((side) => meanTests(side, (run) => run.q1.passed));
+      const [holdA, holdB] = [runs, other].map((side) => meanTests(side, (run) => run.holdout?.passed));
+      return verdict(
+        kept === runs.length && publicA >= publicB && holdA >= holdB,
+        `${kept} of ${runs.length} runs keep every rule check; public ${round(publicA, 1)} against ` +
+          `${round(publicB, 1)}, hold-out ${round(holdA, 1)} against ${round(holdB, 1)}`,
+      );
+    },
+  ],
+  [
+    'H6',
+    'no scenario falls below its v0.1 wingfoil value by more than one test',
+    (arm) => {
+      const below = belowBaseline(arm);
+      return (
+        'not read against v0.1 (other scenario versions); more than one test below the baseline: ' +
+        (below.length === 0 ? 'none' : below.join(', '))
+      );
+    },
+  ],
+  [
+    'H7',
+    '`workflow-engine: true`',
+    (arm) => (arm === 'wingfoil' ? verdict(engineDeclared(), '`arms/wingfoil/arm.yaml`') : '—'),
+  ],
+  [
+    'H8',
+    "the mean at most 1.1× the docs control, with M-F1 ≥ 4/5 and S2's checks 3/3",
+    (arm) => {
+      const read = IDS.map((id) => keyRatio(id, arm, control(arm), 'eur')).filter((r) => r !== undefined);
+      if (read.length === 0) return 'not read';
+      const m = mean(read);
+      const held = m <= 1.1 && runsOf('S3', arm).every(f1Holds) && runsOf('S2', arm).every(allChecks);
+      return verdict(held, `mean ${round(m, 2)}×`);
+    },
+  ],
+  ['H9', 'the advantage grows from L1 to L3', () => 'not read: these scenarios are L1'],
+  [
+    'H10',
+    "every arm at the maximum on S2's, S3's and S8's checks",
+    (arm) => {
+      if (arm !== 'wingfoil') return '—';
+      const unsaturated = unsaturatedOf(READ_MODEL);
+      const held = unsaturated.every((item) => item.split(' ')[1] === '0');
+      return verdict(held, `arms below it: ${unsaturated.join(', ') || 'none read'}`);
+    },
+  ],
+  [
+    'H11',
+    "the wingfoil arm's gain over the baseline is larger on Haiku 5.5 than on Sonnet 5.5",
+    (arm) => {
+      if (arm !== 'wingfoil') return '—';
+      if (!models.includes('claude-haiku-5-5') || !models.includes('claude-sonnet-5-5')) return 'not read';
+      const pairs = H11_PICKS.map(([id, pick]) => [
+        gainOf(at(id), 'claude-haiku-5-5', pick),
+        gainOf(at(id), 'claude-sonnet-5-5', pick),
+      ]).filter(([weak, strong]) => weak !== undefined && strong !== undefined);
+      const larger = pairs.filter(([weak, strong]) => weak > strong).length;
+      const smaller = pairs.filter(([weak, strong]) => weak < strong).length;
+      return verdict(
+        larger > 0 && smaller === 0,
+        `larger on ${larger} of ${pairs.length} readings, smaller on ${smaller}`,
+      );
+    },
+  ],
+];
+console.log('');
+console.log(`**The verdicts on ${READ_MODEL}** (v0.1.md §11's "Holds when")`);
+console.log('');
+console.log('| # | Holds when | wingfoil | wingfoil-configured |');
+console.log('|---|---|---|---|');
+for (const [id, holds, read] of rows)
+  console.log(`| ${id} | ${holds} | ${read('wingfoil')} | ${read('wingfoil-configured')} |`);

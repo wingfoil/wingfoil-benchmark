@@ -141,6 +141,31 @@ describe('scripts/ledger-lines.mjs (task-144)', () => {
     );
   });
 
+  it('names the round of a loop that ended not clean only once (review of task-154)', () => {
+    const root = tempDir('bench-ledger-lines-');
+    const dir = join(
+      root,
+      'results',
+      'dry-runs',
+      '5',
+      'runs',
+      'S8@1.1',
+      'wingfoil',
+      'claude-sonnet-5-5',
+      'r1',
+    );
+    mkdirSync(join(dir, 'review'), { recursive: true });
+    const body = { agent: AGENT, model: 'claude-sonnet-5-5', effort: 'medium', outcome: 'completed' };
+    writeFileSync(join(dir, 'run.json'), JSON.stringify({ ...body, steps: [], interventions: [] }));
+    writeFileSync(
+      join(dir, 'review', 'loop.json'),
+      JSON.stringify({ outcome: 'not clean at 5', cost_eur: 0, rounds: [] }),
+    );
+    const result = run(['dry-runs', root, ...COMMON]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('completed; review loop not clean at 5) |');
+  });
+
   it('says "unknown date" for a dry run whose transcript is not there, as in a clone', () => {
     const root = tempDir('bench-ledger-lines-');
     const dir = join(

@@ -82,6 +82,59 @@ describe('scripts/hypotheses-reading.mjs (task-154)', () => {
     expect(result.stdout).toContain('| claude-haiku-5-5 | — | +4 | +3 |');
   });
 
+  it("states each hypothesis's verdict from the runs, naming a run below the baseline (review of task-154)", () => {
+    const root = tempDir('bench-hypotheses-');
+    const scored = (n: number, scenario: string, arm: string, passed: number, eur: number, turns: number) => {
+      const dir = join(root, 'results', 'dry-runs', String(n), 'runs', `${scenario}@1.1`, arm, MODEL, 'r1');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'run.json'), JSON.stringify({ outcome: 'completed' }));
+      writeFileSync(
+        join(dir, 'score.json'),
+        JSON.stringify({
+          final: { m_q1: { passed, total: 24 } },
+          holdout: { scored: true, final: { m_q1: { passed: 17, total: 17 } } },
+          checks: [{ steps: [{ passed: true }, { passed: arm === 'baseline' }, { passed: true }] }],
+          cost: { run: { cost_eur: eur, turns } },
+        }),
+      );
+    };
+    scored(1, 'S1', 'baseline', 24, 1, 10);
+    scored(2, 'S1', 'wingfoil', 24, 2, 30);
+    scored(3, 'S2', 'baseline', 24, 1, 10);
+    scored(4, 'S2', 'wingfoil', 21, 1, 10);
+    scored(5, 'S2', 'wingfoil', 24, 1, 10);
+    const result = spawnSync('node', [SCRIPT, root], { encoding: 'utf8' });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      '| H1 | the ratio falls on at least three of the four scenarios, and below 1.5× on S1 | not met: S1 2×',
+    );
+    expect(result.stdout).toContain('| H2 | the ratio falls on S1, from 2.5× | not met: 3× |');
+    expect(result.stdout).toContain('| H4 | 3/3 in every wingfoil run | not met: 0 of 2 runs |');
+    expect(result.stdout).toContain('more than one test below the baseline: S2 `4` (21/24 against 24)');
+  });
+
+  it('refuses to average scores of different totals and states how many runs a mean holds', () => {
+    const root = tempDir('bench-hypotheses-');
+    const scored = (n: number, passed: number, total: number, holdout: boolean) => {
+      const dir = join(root, 'results', 'dry-runs', String(n), 'runs', 'S1@1.1', 'baseline', MODEL, 'r1');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'run.json'), JSON.stringify({ outcome: 'completed' }));
+      writeFileSync(
+        join(dir, 'score.json'),
+        JSON.stringify({
+          final: { m_q1: { passed, total } },
+          holdout: holdout ? { scored: true, final: { m_q1: { passed: 4, total: 5 } } } : { scored: false },
+          checks: [],
+          cost: { run: { cost_eur: 1, turns: 1 } },
+        }),
+      );
+    };
+    scored(1, 10, 10, true);
+    scored(2, 20, 40, false);
+    const result = spawnSync('node', [SCRIPT, root], { encoding: 'utf8' });
+    expect(result.stdout).toContain('| 2 | 1.0000 | 1 | mixed totals | 4/5 (n 1) |');
+  });
+
   it('reads only the dry runs between --after and --through', () => {
     const root = tempDir('bench-hypotheses-');
     dryRun(root, 1, 'baseline', 0.2, 20);
