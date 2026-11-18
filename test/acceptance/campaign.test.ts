@@ -948,11 +948,11 @@ describe("campaign.feature, the review loop's entry (task-148, F4.9)", () => {
     // Given a campaign file with no "review_loop" entry: it is valid as before
     expect(checkCampaign(writeRepo().file).ok).toBe(true);
     // And every campaign file of the repository still loads, none holding one but v0.3's reference campaign, whose
-    // loop the approver chose (task-154, 2026-11-17)
+    // loop the approver chose (task-154, 2026-11-17), and its validation, which pins the same loop (task-159)
     const files = readdirSync(repoPath('campaigns')).filter((file) => file.endsWith('.yaml'));
     for (const name of files.filter((file) => !file.endsWith('.dry-run.yaml'))) {
       const loaded = loadCampaign(repoPath('campaigns', name));
-      if ((name === 'v0-3-reference.yaml', 'v0-3-validation.yaml'))
+      if (name === 'v0-3-reference.yaml' || name === 'v0-3-validation.yaml')
         expect(loaded.ok && loaded.value.spec.review_loop, name).toBeTruthy();
       else expect(loaded.ok ? loaded.value.spec.review_loop : loaded.issues, name).toBeUndefined();
     }
