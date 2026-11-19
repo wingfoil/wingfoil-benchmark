@@ -2,7 +2,7 @@
 id: task-160-pack-the-review-loops-and-the-configuring-sessions-transcripts-with-the-runs
 type: task
 title: "Pack the review loops' and the configuring sessions' transcripts with the runs'"
-status: backlog
+status: approved
 release: v0.3
 wave: validation
 features: [F5.6, F7.5, F4.9]
@@ -70,3 +70,36 @@ says how many of each kind it packed and which it could not find.
 - **No spending:** no agent runs, and no campaign or dry run is started.
 
 ## Execution notes
+
+**Tests.** Ten new tests in `test/unit/results/transcripts.test.ts`. Nine were red before the fix; the tenth, that a
+configuration no run read stays out of the asset, describes behaviour the fix must keep.
+
+**Rehearsal on the real records (before the merge).** The fixed command ran on a scratch copy of execution
+`2ee46ad9e617/1`, its S1@1.1 configuring sessions and the harness cache: 83 transcripts (65 of the steps, 15 of the
+review loops, 3 of the configuring sessions), nothing missing, and the thirteen `run.json` files differ from the
+committed ones by the asset's digest alone. Criterion 8 repeats this on main after the merge.
+
+**The independent review (dl-020).** No blocker. Its three should-fix findings and its nit are applied, each with a test
+that was red first:
+
+- A run the asset holds other transcripts of, whose step transcripts are gone, is now named in the output. It keeps its
+  record of the asset, as criterion 4 requires.
+- A link in any folder of a transcript's path is refused, not only a link at the file itself.
+- The tests now pin which review transcripts are expected, a run holding only its review transcripts, the numeric round
+  folders, and the refusal of malformed `loop.json` and `configured` records. Those records are refused by name instead
+  of throwing.
+
+The rehearsal on the scratch copy gives the same 83 transcripts after these changes.
+
+**The second independent review.** It read the fixes above and found no blocker. Its findings are applied with 17 new
+tests. Against the previous commit 14 of them were red, 2 passed because rounds 0 and -1 were already refused, and the
+session count of 1e15 was left out because it hangs that commit. Two earlier link tests changed the path they expect.
+
+- A link that leads nowhere, under a run's `steps`, `attempts` or `review` or on the way to a configuring session, made
+  its transcripts look absent: the pack exited 0 and dropped the run's record of the asset. It is now refused by name.
+- Those folders are refused by name when they are files, and so is a file the system will not let the pack read.
+- A run whose own steps are gone is named even when an earlier attempt's remain.
+- Impossible round numbers and session counts (above 1000) are refused.
+
+No link exists under the real `results/`, so no stored execution is refused. The rehearsal on the scratch copy still
+gives 83 transcripts with the same digest. **This last commit had no third independent review.**
