@@ -3,7 +3,7 @@ id: bug-054-bench-transcripts-pack-leaves-out-the-review-loop-s-and-the-configur
 type: bug
 title: "bench transcripts pack leaves out the review loop's and the configuring sessions' transcripts that REQ-CLI-11 requires"
 status: approved
-# fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
+fixed_by: task-160-pack-the-review-loops-and-the-configuring-sessions-transcripts-with-the-runs
 tags: ["v0.3","transcripts","release-assets"]
 ---
 
@@ -43,3 +43,12 @@ A task with no spending, before the reference campaign's transcripts are attache
   transcripts at the paths REQ-CLI-11 names, each covered by the secret scan.
 - `packTranscripts` collects them, and its output counts each kind.
 - Check how the archive's digest is recorded in the runs, since packing an execution again changes it.
+
+## Resolution
+
+Fixed by [task-160](../task/task-160-pack-the-review-loops-and-the-configuring-sessions-transcripts-with-the-runs.md)
+(merged in `d1aec4f6`). `bench transcripts pack` now packs each run's review-loop transcripts (one reviewer per round,
+one fixer per fixed round, as `review/loop.json` records them) and its configuring sessions' transcripts, names any it
+expects and cannot find, and refuses a link or a malformed record by name. Re-packed on main, `2ee46ad9e617/1` holds 83
+transcripts (65 of the steps, 15 of the review loops, 3 of the configuring sessions); only the asset digest changed in
+the thirteen `run.json` (`23f59568`).
