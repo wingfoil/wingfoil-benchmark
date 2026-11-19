@@ -2,7 +2,7 @@
 id: bug-054-bench-transcripts-pack-leaves-out-the-review-loop-s-and-the-configuring-sessions-transcripts-that-req-cli-11-requires
 type: bug
 title: "bench transcripts pack leaves out the review loop's and the configuring sessions' transcripts that REQ-CLI-11 requires"
-status: approved
+status: fixed
 fixed_by: task-160-pack-the-review-loops-and-the-configuring-sessions-transcripts-with-the-runs
 tags: ["v0.3","transcripts","release-assets"]
 ---
