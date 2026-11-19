@@ -103,3 +103,9 @@ session count of 1e15 was left out because it hangs that commit. Two earlier lin
 
 No link exists under the real `results/`, so no stored execution is refused. The rehearsal on the scratch copy still
 gives 83 transcripts with the same digest. **This last commit had no third independent review.**
+
+**Criterion 8, on main after the merge.** The full suites were green on `ece473f0` (2550 unit tests passed and 10
+skipped, 22 bin tests, Docker 22 passed and 2 skipped). After the merge and a rebuild of `dist`,
+`bench transcripts pack 2ee46ad9e617/1` packed 83 transcripts (65 of the steps, 15 of the review loops, 3 of the
+configuring sessions) with nothing missing, digest `sha256:2bf43498ef5b3158cb089528792e03209bbeb80ebc2931951a27789bf348ad79`,
+the same as the rehearsal. Only the asset digest changed, in the thirteen `run.json`. No release was created.
