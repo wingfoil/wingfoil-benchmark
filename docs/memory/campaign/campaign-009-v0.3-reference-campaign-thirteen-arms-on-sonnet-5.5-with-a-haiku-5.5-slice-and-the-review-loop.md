@@ -269,12 +269,16 @@ above stated on the site.
 
 ## Findings
 
-Candidates for `bench finding` (REQ-CLI-07, REQ-RES-05), none exported yet; which to export, and as what, is the
-approver's at the review; filing them in WingFoil is the approver's (dl-009):
+The approver accepted the results (scored → reviewed, `c5ae2d5a`) and asked, in chat on 2026-11-20, for the three
+candidates to be exported. Written only in this repository; filing the first two in WingFoil is the approver's (dl-009).
 
-1. **M-K1 on S1@1.1, baseline against wingfoil** (H1; dl-207's re-measure with the engine started): 1.80× at n = 3,
-   above dl-147's 1.5× target, now with step A driving the engine.
-2. **M-F1 on S3@1.1, baseline against wingfoil, per model** (H11): the weak model's gain (+2 on Haiku 5.5) against
-   the strong model's loss (−1 on Sonnet 5.5), n = 1 each.
-3. **Not a finding but a benchmark bug candidate:** the review loop's findings parser rejects a reviewer's final
-   message that ends with an unfenced findings object after prose (S1 openspec-docs-configured r3).
+1. **[M-K1 on S1@1.1, baseline against wingfoil](../../../findings/1f70fcaf2ec2-1-s1-1.1-m-k1-baseline+wingfoil.md)**,
+   as a **decision-log** (`bench finding 1f70fcaf2ec2/1 --scenario S1@1.1 --metric M-K1 --arms baseline,wingfoil --as
+   decision-log`): the wingfoil arm costs 0.6499–0.6665 € a run against the baseline's 0.3438–0.3810 € (n = 3 each),
+   1.80× the mean, above dl-147's 1.5× target; the re-measure dl-207 asked for, now with step A driving the engine.
+2. **[M-F1 on S3@1.1, baseline against wingfoil](../../../findings/1f70fcaf2ec2-1-s3-1.1-m-f1-baseline+wingfoil.md)**,
+   as a **bug**, preliminary (n = 1): on Sonnet 5.5 wingfoil 3/5 against the baseline's 4/5, D3 failed in both and D5
+   in wingfoil only. `bench finding` reads the campaign's default model only, so H11's other side (on Haiku 5.5
+   wingfoil 5/5 against 3/5) is not in the export; it is in the results review above.
+3. **[bug-055](../bug/bug-055-a-reviewer-s-findings-after-prose-unfenced-end-the-review-loop-as-failed-and-its-should-fix-never-reaches-a-fixer.md)**, the benchmark's own: a reviewer's findings after prose, unfenced, end the loop as `failed`
+   (S1 openspec-docs-configured r3). Pending the approver's choice of fix.
