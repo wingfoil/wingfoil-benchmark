@@ -281,4 +281,21 @@ candidates to be exported. Written only in this repository; filing the first two
    in wingfoil only. `bench finding` reads the campaign's default model only, so H11's other side (on Haiku 5.5
    wingfoil 5/5 against 3/5) is not in the export; it is in the results review above.
 3. **[bug-055](../bug/bug-055-a-reviewer-s-findings-after-prose-unfenced-end-the-review-loop-as-failed-and-its-should-fix-never-reaches-a-fixer.md)**, the benchmark's own: a reviewer's findings after prose, unfenced, end the loop as `failed`
-   (S1 openspec-docs-configured r3). Pending the approver's choice of fix.
+   (S1 openspec-docs-configured r3). Approved (`0402db49`); its fix option is chosen with its task.
+
+## Publication
+
+- **The catalogue** (`site-content/catalog.yaml`, 2026-11-20): kind `reference`, release v0.3, six notes
+  (preliminary; step A; the configured variants; the review loop and its failed loop, bug-055; scenarios 1.1, checks
+  v2 and policy v5, with the chain to v0.2 left to the release notes; the S1 openspec anomaly and the Haiku rerun). No
+  `compared_with`: campaign-002 differs in manual, scenario version and policy, campaign-008 in scenario version.
+- **The site built** (`bench site build`, 2026-11-20): the eight executions under `site/` rebuilt, `1f70fcaf2ec2/1`
+  last (137 pages), so the root page leads to it. Its headline: against the baseline, wingfoil and wingfoil-configured
+  each better in 0, worse in 1, the same in 3 and preliminary in 2 of 6 comparisons across categories C–F.
+- **The release notes:** [docs/releases/v0.3.md](../../releases/v0.3.md).
+- **The transcripts' release, prepared** (`bench transcripts pack 1f70fcaf2ec2/1`, the credential's file passed by
+  path): `releases/1f70fcaf2ec2-1/transcripts.tar.gz`, 540 transcripts, sha256
+  `8d7479f1c444f410caf73b0df77ec8c4f12fb2ec06591d782186e5693b934d99`; `harnesses.tar.gz`, sha256
+  `d195fc2de39caf78ac055a98316673a3cb8f1f52ea7f5277801cd5460476492c`; the asset recorded in the runs. A pattern scan
+  of both archives, unpacked (Anthropic and OpenAI key shapes, JWTs, OAuth token values, the credential's value, home
+  paths, e-mail addresses, the anonymity candidates): clean.
