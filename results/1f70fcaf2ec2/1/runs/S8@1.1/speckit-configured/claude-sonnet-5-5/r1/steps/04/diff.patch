@@ -1,0 +1,134 @@
+diff --git a/specs/004-bulk-import/spec.md b/specs/004-bulk-import/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f9bc13d6f6e7d2c98ebe188323d99b30d3873f36
+--- /dev/null
++++ b/specs/004-bulk-import/spec.md
+@@ -0,0 +1,27 @@
++# Feature Specification: Bulk import
++
++**Input**: Public helper `importTasks(list, text)` to import tasks from spreadsheet-like text.
++
++## Requirements
++
++- **FR-001**: `text` holds one task per line, as `title;priority;tags`. Blank (whitespace-only) lines are skipped.
++- **FR-002**: An empty priority means `normal`; tags are separated by spaces (any run of whitespace).
++- **FR-003**: Every valid line is added to the list with `list.add`; an invalid line is not.
++- **FR-004**: Returns `{ imported, rejected }`: `imported` is the number of tasks added; `rejected` lists
++  `{ line, reason }` for every line not added, in order, `line` counting from 1 over all lines (blank ones included).
++- **FR-005**: `reason` is the message of the failure (empty title, unknown priority, duplicate title, ...), or
++  says the line has too many `;`-separated fields.
++- **FR-006**: A rejected line changes nothing; the other lines are still imported. Never throws.
++- **FR-007**: Lines end with `\n` or `\r\n`.
++
++## Assumptions
++
++- Priority and tags may be omitted entirely (`Buy milk`, `Buy milk;high`).
++- A line with more than three fields is rejected rather than guessed at.
++- A title already in the list, or earlier in the text, is rejected as a duplicate.
++
++## Plan / Tasks
++
++- [x] `src/domain/import.ts`: `importTasks`, exported with TSDoc; `ImportResult` / `RejectedLine` types.
++- [x] Export from `src/index.ts`.
++- [x] Tests in `test/import.test.ts`.
+diff --git a/src/domain/import.ts b/src/domain/import.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..9b43cf87fdd3dc1f031ff498e67ee21823a64dc6
+--- /dev/null
++++ b/src/domain/import.ts
+@@ -0,0 +1,44 @@
++import type { TaskList } from './list.ts';
++
++/** A line of imported text that could not be added, with its number (from 1) and why. */
++export interface RejectedLine {
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** What an import did: how many tasks were added, and the lines that were not. */
++export interface ImportResult {
++  readonly imported: number;
++  readonly rejected: readonly RejectedLine[];
++}
++
++/**
++ * Adds tasks to a list from text with one `title;priority;tags` task per line. The priority may be
++ * empty for a normal one, tags are separated by spaces, and blank lines are skipped.
++ *
++ * @param list - the list to add the tasks to
++ * @param text - the lines to import
++ */
++export function importTasks(list: TaskList, text: string): ImportResult {
++  let imported = 0;
++  const rejected: RejectedLine[] = [];
++  text.split(/\r?\n/).forEach((raw, index) => {
++    if (raw.trim() === '') return;
++    const line = index + 1;
++    const fields = raw.split(';');
++    if (fields.length > 3) {
++      rejected.push({ line, reason: `expected "title;priority;tags" but found ${fields.length} fields` });
++      return;
++    }
++    const [title, priority = '', tags = ''] = fields;
++    const wanted = priority.trim();
++    const added = list.add({
++      title,
++      ...(wanted === '' ? {} : { priority: wanted as 'low' }),
++      tags: tags.split(/\s+/).filter((tag) => tag !== ''),
++    });
++    if (added.ok) imported += 1;
++    else rejected.push({ line, reason: added.error.message });
++  });
++  return { imported, rejected };
++}
+diff --git a/src/index.ts b/src/index.ts
+index 0818954b5b76d08a0aebbba2f16e1d34b8ae4875..0058ba241b7cbdb219a8bd2d0d67c38b6406bcf3 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,6 +1,8 @@
+ import { createTaskList } from './domain/list.ts';
+ import type { TaskList } from './domain/list.ts';
+ 
++export { importTasks } from './domain/import.ts';
++export type { ImportResult, RejectedLine } from './domain/import.ts';
+ export type { TaskFilter, TaskList } from './domain/list.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
+ export { summarize } from './domain/summary.ts';
+diff --git a/test/import.test.ts b/test/import.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..2b43441a288a922f132934df8c61a758981678dc
+--- /dev/null
++++ b/test/import.test.ts
+@@ -0,0 +1,32 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++
++import { createTodoList, importTasks } from '../src/index.ts';
++
++describe('importTasks', () => {
++  it('imports valid lines, skipping blank ones', () => {
++    const list = createTodoList();
++    const result = importTasks(list, 'Renew the insurance;high;admin money\n\n  \nBuy milk;;\r\nCall mum');
++    assert.deepEqual(result, { imported: 3, rejected: [] });
++    const insurance = list.find('Renew the insurance');
++    assert.ok(insurance.ok);
++    assert.equal(insurance.value.priority, 'high');
++    assert.deepEqual(insurance.value.tags, ['admin', 'money']);
++    const milk = list.find('Buy milk');
++    assert.ok(milk.ok);
++    assert.equal(milk.value.priority, 'normal');
++  });
++
++  it('rejects bad lines with their number and keeps importing', () => {
++    const list = createTodoList();
++    list.add({ title: 'Existing' });
++    const result = importTasks(list, 'Good\n\n;high;x\nBad prio;urgent;\nExisting;;\nGood;;\na;b;c;d');
++    assert.equal(result.imported, 1);
++    assert.deepEqual(
++      result.rejected.map((r) => r.line),
++      [3, 4, 5, 6, 7],
++    );
++    assert.ok(result.rejected.every((r) => r.reason.length > 0));
++    assert.equal(list.list().length, 2);
++  });
++});

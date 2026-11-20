@@ -1,0 +1,333 @@
+diff --git a/src/index.ts b/src/index.ts
+index fad9ba37d8c86c2ad2abb70fd1d6ff70644fd360..3f82d51086bfa79beb32bf993dd68eb2f08bd70c 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -55,3 +55,182 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+   }
+   return current;
+ }
++
++/**
++ * JSON Patch, RFC 6902.
++ */
++
++type Json = unknown;
++
++function parseTokens(pointer: string, what: string): string[] {
++  if (typeof pointer !== "string") {
++    throw new TypeError(`Invalid patch operation: "${what}" must be a string`);
++  }
++  if (pointer === "") return [];
++  if (pointer[0] !== "/") {
++    throw new SyntaxError("Invalid JSON Pointer: must be empty or start with '/'");
++  }
++  return pointer.slice(1).split("/").map(unescapeToken);
++}
++
++// Defines an own data property, so a member named "__proto__" never touches the prototype.
++function setMember(obj: object, key: string, value: Json): void {
++  Object.defineProperty(obj, key, { value, enumerable: true, writable: true, configurable: true });
++}
++
++function clone(value: Json): Json {
++  if (Array.isArray(value)) return value.map(clone);
++  if (typeof value === "object" && value !== null) {
++    const out = {};
++    for (const key of Object.keys(value)) setMember(out, key, clone((value as Record<string, Json>)[key]));
++    return out;
++  }
++  return value;
++}
++
++function hasOwn(obj: object, key: string): boolean {
++  return Object.prototype.hasOwnProperty.call(obj, key);
++}
++
++// RFC 6902 section 4.6: equality for "test".
++function equal(a: Json, b: Json): boolean {
++  if (Array.isArray(a)) {
++    return Array.isArray(b) && a.length === b.length && a.every((v, i) => equal(v, b[i]));
++  }
++  if (typeof a === "object" && a !== null) {
++    if (typeof b !== "object" || b === null || Array.isArray(b)) return false;
++    const ka = Object.keys(a);
++    if (ka.length !== Object.keys(b).length) return false;
++    return ka.every(
++      (k) => hasOwn(b, k) && equal((a as Record<string, Json>)[k], (b as Record<string, Json>)[k]),
++    );
++  }
++  return a === b;
++}
++
++function arrayIndex(token: string, length: number, allowEnd: boolean): number {
++  if (allowEnd && token === "-") return length;
++  // RFC 6901 section 4: no leading zeros, digits only.
++  if (!/^(0|[1-9][0-9]*)$/.test(token)) throw new Error(`Invalid array index "${token}"`);
++  const index = Number(token);
++  if (index > length || (!allowEnd && index === length)) {
++    throw new Error(`Array index ${token} out of range`);
++  }
++  return index;
++}
++
++// Walks to the parent of the last token; all earlier tokens must exist (RFC 6902 sections 4.1, 4.3).
++function parentOf(root: Json, tokens: string[]): Json {
++  let current = root;
++  for (const token of tokens.slice(0, -1)) {
++    if (Array.isArray(current)) {
++      current = current[arrayIndex(token, current.length, false)];
++    } else if (typeof current === "object" && current !== null && hasOwn(current, token)) {
++      current = (current as Record<string, Json>)[token];
++    } else {
++      throw new Error(`Path does not exist at "${token}"`);
++    }
++  }
++  return current;
++}
++
++function getAt(root: Json, tokens: string[]): Json {
++  const parent = parentOf(root, tokens);
++  if (tokens.length === 0) return root;
++  const last = tokens[tokens.length - 1];
++  if (Array.isArray(parent)) return parent[arrayIndex(last, parent.length, false)];
++  if (typeof parent === "object" && parent !== null && hasOwn(parent, last)) {
++    return (parent as Record<string, Json>)[last];
++  }
++  throw new Error(`Path does not exist at "${last}"`);
++}
++
++function addAt(root: Json, tokens: string[], value: Json): Json {
++  if (tokens.length === 0) return value;
++  const parent = parentOf(root, tokens);
++  const last = tokens[tokens.length - 1];
++  if (Array.isArray(parent)) {
++    parent.splice(arrayIndex(last, parent.length, true), 0, value);
++  } else if (typeof parent === "object" && parent !== null) {
++    setMember(parent, last, value);
++  } else {
++    throw new Error("Cannot add into a scalar");
++  }
++  return root;
++}
++
++function removeAt(root: Json, tokens: string[]): Json {
++  if (tokens.length === 0) throw new Error("Cannot remove the whole document");
++  const parent = parentOf(root, tokens);
++  const last = tokens[tokens.length - 1];
++  if (Array.isArray(parent)) {
++    parent.splice(arrayIndex(last, parent.length, false), 1);
++  } else if (typeof parent === "object" && parent !== null && hasOwn(parent, last)) {
++    delete (parent as Record<string, Json>)[last];
++  } else {
++    throw new Error(`Path does not exist at "${last}"`);
++  }
++  return root;
++}
++
++/**
++ * Applies a JSON Patch (RFC 6902) to `document` and returns the result as a new value; neither
++ * argument is modified. Operations are applied in order (section 4); if the patch is invalid or any
++ * operation fails (including a failed "test", section 4.6) an Error is thrown and no result is
++ * returned. Removing the whole document ("remove" with path "") is rejected.
++ */
++export function applyPatch(document: unknown, patch: unknown): unknown {
++  if (!Array.isArray(patch)) throw new TypeError("JSON Patch must be an array of operations");
++  let result = clone(document);
++
++  for (const op of patch as unknown[]) {
++    if (typeof op !== "object" || op === null || Array.isArray(op)) {
++      throw new TypeError("Invalid patch operation: must be an object");
++    }
++    const o = op as Record<string, Json>;
++    const name = o.op;
++    if (typeof name !== "string" || !["add", "remove", "replace", "move", "copy", "test"].includes(name)) {
++      throw new Error(`Invalid patch operation: unknown op ${JSON.stringify(name)}`);
++    }
++    const path = parseTokens(o.path as string, "path");
++    if (name === "add" || name === "replace" || name === "test") {
++      if (!hasOwn(o, "value")) throw new Error(`Invalid patch operation: "${name}" requires "value"`);
++    }
++    const from = name === "move" || name === "copy" ? parseTokens(o.from as string, "from") : [];
++
++    switch (name) {
++      case "add":
++        result = addAt(result, path, clone(o.value));
++        break;
++      case "remove":
++        result = removeAt(result, path);
++        break;
++      case "replace":
++        getAt(result, path); // target must exist (section 4.3)
++        if (path.length === 0) result = clone(o.value);
++        else {
++          result = removeAt(result, path);
++          result = addAt(result, path, clone(o.value));
++        }
++        break;
++      case "move": {
++        const value = getAt(result, from);
++        // section 4.4: "from" must not be a proper prefix of "path".
++        if (from.length < path.length && from.every((t, i) => t === path[i])) {
++          throw new Error('Invalid "move": "from" is a proper prefix of "path"');
++        }
++        if (from.length === path.length && from.every((t, i) => t === path[i])) break;
++        result = removeAt(result, from);
++        result = addAt(result, path, value);
++        break;
++      }
++      case "copy":
++        result = addAt(result, path, clone(getAt(result, from)));
++        break;
++      case "test":
++        if (!equal(getAt(result, path), o.value)) throw new Error("Test operation failed: values differ");
++        break;
++    }
++  }
++  return result;
++}
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..a84848edfab613dfedd0f21ccae0c77aebcbe013
+--- /dev/null
++++ b/test/patch.test.ts
+@@ -0,0 +1,140 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch } from "../src/index.ts";
++
++const ap = (d: unknown, p: unknown) => applyPatch(d, p);
++
++test("add: member, replace existing, array insert, '-' append (RFC 6902 4.1, A.1-A.4)", () => {
++  assert.deepEqual(ap({ foo: "bar" }, [{ op: "add", path: "/baz", value: "qux" }]), { foo: "bar", baz: "qux" });
++  assert.deepEqual(ap({ foo: "bar" }, [{ op: "add", path: "/foo", value: 1 }]), { foo: 1 });
++  assert.deepEqual(ap({ foo: ["bar", "baz"] }, [{ op: "add", path: "/foo/1", value: "qux" }]), { foo: ["bar", "qux", "baz"] });
++  assert.deepEqual(ap({ foo: ["a"] }, [{ op: "add", path: "/foo/-", value: "b" }]), { foo: ["a", "b"] });
++  assert.deepEqual(ap({ foo: ["a"] }, [{ op: "add", path: "/foo/1", value: "b" }]), { foo: ["a", "b"] });
++});
++
++test("add: whole document, null value, errors (A.12, A.14)", () => {
++  assert.deepEqual(ap({ a: 1 }, [{ op: "add", path: "", value: [1] }]), [1]);
++  assert.deepEqual(ap({}, [{ op: "add", path: "/a", value: null }]), { a: null });
++  assert.throws(() => ap({ foo: "bar" }, [{ op: "add", path: "/baz/bat", value: "qux" }]));
++  assert.throws(() => ap({ foo: ["a"] }, [{ op: "add", path: "/foo/3", value: 1 }]));
++  assert.throws(() => ap({ foo: ["a"] }, [{ op: "add", path: "/foo/01", value: 1 }]));
++  assert.throws(() => ap({ foo: ["a"] }, [{ op: "add", path: "/foo/x", value: 1 }]));
++  assert.throws(() => ap({ foo: 1 }, [{ op: "add", path: "/foo/a", value: 1 }]));
++});
++
++test("remove (4.2, A.3, A.5)", () => {
++  assert.deepEqual(ap({ baz: "qux", foo: "bar" }, [{ op: "remove", path: "/baz" }]), { foo: "bar" });
++  assert.deepEqual(ap({ foo: ["bar", "qux", "baz"] }, [{ op: "remove", path: "/foo/1" }]), { foo: ["bar", "baz"] });
++  assert.throws(() => ap({}, [{ op: "remove", path: "/a" }]));
++  assert.throws(() => ap([1], [{ op: "remove", path: "/1" }]));
++  assert.throws(() => ap([1], [{ op: "remove", path: "/-" }]));
++  assert.throws(() => ap({}, [{ op: "remove", path: "" }]));
++});
++
++test("replace (4.3, A.5)", () => {
++  assert.deepEqual(ap({ baz: "qux" }, [{ op: "replace", path: "/baz", value: "boo" }]), { baz: "boo" });
++  assert.deepEqual(ap([1, 2], [{ op: "replace", path: "/0", value: 9 }]), [9, 2]);
++  assert.deepEqual(ap({ a: 1 }, [{ op: "replace", path: "", value: 2 }]), 2);
++  assert.throws(() => ap({}, [{ op: "replace", path: "/a", value: 1 }]));
++  assert.throws(() => ap([1], [{ op: "replace", path: "/1", value: 1 }]));
++});
++
++test("move (4.4, A.6, A.7)", () => {
++  assert.deepEqual(
++    ap({ foo: { bar: "baz", waldo: "fred" }, qux: { corge: "grault" } }, [{ op: "move", from: "/foo/waldo", path: "/qux/thud" }]),
++    { foo: { bar: "baz" }, qux: { corge: "grault", thud: "fred" } },
++  );
++  assert.deepEqual(ap({ foo: ["all", "grass", "cows", "eat"] }, [{ op: "move", from: "/foo/1", path: "/foo/3" }]), {
++    foo: ["all", "cows", "eat", "grass"],
++  });
++  assert.deepEqual(ap({ a: 1 }, [{ op: "move", from: "/a", path: "/a" }]), { a: 1 });
++  assert.throws(() => ap({ a: { b: 1 } }, [{ op: "move", from: "/a", path: "/a/b" }]));
++  assert.throws(() => ap({}, [{ op: "move", from: "/a", path: "/b" }]));
++  assert.throws(() => ap({}, [{ op: "move", from: "/a", path: "/a" }]));
++});
++
++test("copy (4.5, A.8) copies deeply", () => {
++  const out = ap({ a: { x: [1] } }, [
++    { op: "copy", from: "/a", path: "/b" },
++    { op: "add", path: "/b/x/-", value: 2 },
++  ]) as any;
++  assert.deepEqual(out, { a: { x: [1] }, b: { x: [1, 2] } });
++  assert.throws(() => ap({}, [{ op: "copy", from: "/a", path: "/b" }]));
++});
++
++test("test (4.6, A.8-A.15)", () => {
++  assert.deepEqual(ap({ baz: "qux" }, [{ op: "test", path: "/baz", value: "qux" }]), { baz: "qux" });
++  assert.throws(() => ap({ baz: "qux" }, [{ op: "test", path: "/baz", value: "bar" }]));
++  assert.throws(() => ap({}, [{ op: "test", path: "/a", value: null }]));
++  assert.deepEqual(ap({ a: null }, [{ op: "test", path: "/a", value: null }]), { a: null });
++  assert.deepEqual(ap({ a: { x: 1, y: [1, { z: 2 }] } }, [{ op: "test", path: "/a", value: { y: [1, { z: 2 }], x: 1 } }]), {
++    a: { x: 1, y: [1, { z: 2 }] },
++  });
++  assert.throws(() => ap({ a: [1, 2] }, [{ op: "test", path: "/a", value: [2, 1] }]));
++  assert.throws(() => ap({ a: { x: 1 } }, [{ op: "test", path: "/a", value: { x: 1, y: 2 } }]));
++  assert.throws(() => ap({ a: 1 }, [{ op: "test", path: "/a", value: "1" }]));
++  assert.throws(() => ap({ a: [] }, [{ op: "test", path: "/a", value: {} }]));
++  assert.deepEqual(ap({ a: 1 }, [{ op: "test", path: "/a", value: 1.0 }]), { a: 1 });
++  assert.deepEqual(ap({ a: 1 }, [{ op: "test", path: "", value: { a: 1 } }]), { a: 1 });
++});
++
++test("pointer escaping in paths (RFC 6901 4)", () => {
++  assert.deepEqual(ap({}, [{ op: "add", path: "/a~1b", value: 1 }, { op: "add", path: "/m~0n", value: 2 }]), { "a/b": 1, "m~n": 2 });
++  assert.throws(() => ap({}, [{ op: "add", path: "/a~2", value: 1 }]));
++  assert.throws(() => ap({}, [{ op: "add", path: "a", value: 1 }]));
++});
++
++test("invalid patches", () => {
++  assert.throws(() => ap({}, {}));
++  assert.throws(() => ap({}, [1]));
++  assert.throws(() => ap({}, [null]));
++  assert.throws(() => ap({}, [[]]));
++  assert.throws(() => ap({}, [{ path: "/a", value: 1 }]));
++  assert.throws(() => ap({}, [{ op: "bogus", path: "/a" }]));
++  assert.throws(() => ap({}, [{ op: "add", value: 1 }]));
++  assert.throws(() => ap({}, [{ op: "add", path: 1, value: 1 }]));
++  assert.throws(() => ap({}, [{ op: "add", path: "/a" }]));
++  assert.throws(() => ap({}, [{ op: "replace", path: "/a" }]));
++  assert.throws(() => ap({ a: 1 }, [{ op: "test", path: "/a" }]));
++  assert.throws(() => ap({ a: 1 }, [{ op: "move", path: "/b" }]));
++  assert.throws(() => ap({ a: 1 }, [{ op: "copy", path: "/b" }]));
++  assert.deepEqual(ap({ a: 1 }, []), { a: 1 });
++});
++
++test("ops apply sequentially; failure leaves input untouched (4)", () => {
++  const doc = { a: [1] };
++  assert.throws(() =>
++    ap(doc, [{ op: "add", path: "/a/-", value: 2 }, { op: "test", path: "/a/1", value: 3 }]),
++  );
++  assert.deepEqual(doc, { a: [1] });
++  assert.deepEqual(ap(doc, [{ op: "add", path: "/b", value: 1 }, { op: "move", from: "/b", path: "/c" }]), { a: [1], c: 1 });
++});
++
++test("does not mutate document or patch value", () => {
++  const doc = { a: { b: [1, 2] }, c: 1 };
++  const snap = JSON.stringify(doc);
++  const value = { n: [1] };
++  const out = ap(doc, [
++    { op: "add", path: "/a/b/0", value: 0 },
++    { op: "remove", path: "/c" },
++    { op: "add", path: "/v", value },
++    { op: "add", path: "/v/n/-", value: 2 },
++  ]) as any;
++  assert.equal(JSON.stringify(doc), snap);
++  assert.deepEqual(value, { n: [1] });
++  assert.notEqual(out.a, doc.a);
++});
++
++test("hostile keys: __proto__ is an ordinary member", () => {
++  const out = ap({}, [{ op: "add", path: "/__proto__", value: { polluted: true } }]) as any;
++  assert.equal(Object.getPrototypeOf(out), Object.prototype);
++  assert.equal(({} as any).polluted, undefined);
++  assert.equal(out.polluted, undefined);
++  assert.deepEqual(Object.keys(out), ["__proto__"]);
++  const out2 = ap(JSON.parse('{"__proto__":{"x":1}}'), [{ op: "add", path: "/__proto__/y", value: 2 }]) as any;
++  assert.deepEqual(Object.keys(out2), ["__proto__"]);
++  assert.equal(({} as any).y, undefined);
++  assert.throws(() => ap({}, [{ op: "remove", path: "/__proto__" }]));
++  assert.throws(() => ap({}, [{ op: "test", path: "/constructor", value: 1 }]));
++  assert.throws(() => ap({}, [{ op: "add", path: "/constructor/x", value: 1 }]));
++});

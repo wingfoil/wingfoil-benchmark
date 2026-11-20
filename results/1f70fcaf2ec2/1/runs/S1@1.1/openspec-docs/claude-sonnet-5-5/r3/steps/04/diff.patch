@@ -1,0 +1,74 @@
+diff --git a/src/index.ts b/src/index.ts
+index 74d5d53012c52d0223fc3d929520cd1eafeea90b..5546fb098f8b150ffe523a3248d85567e64fbe05 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -228,3 +228,28 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   });
+   return doc;
+ }
++
++
++const isPlainObject = (v: unknown): v is Record<string, unknown> =>
++  typeof v === "object" && v !== null && !Array.isArray(v);
++
++/**
++ * Applies an RFC 7386 JSON Merge Patch to `target` and returns the result as a new value.
++ * The inputs are not mutated. A non-object patch replaces the target; `null` members delete.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isPlainObject(patch)) return clone(patch);
++  const result: Record<string, unknown> = {};
++  if (isPlainObject(target)) {
++    for (const key of Object.keys(target)) setMember(result, key, clone(target[key]));
++  }
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, applyMergePatch(hasOwn(result, key) ? result[key] : undefined, value));
++    }
++  }
++  return result;
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..fadb5d5dce1d47276ffcebef9fb863c3bfa4278a
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,35 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "../src/index.ts";
++
++test("RFC 7386 appendix A examples", () => {
++  const cases: [unknown, unknown, unknown][] = [
++    [{ a: "b" }, { a: "c" }, { a: "c" }],
++    [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++    [{ a: "b" }, { a: null }, {}],
++    [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++    [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++    [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++    [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++    [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++    [["a", "b"], ["c", "d"], ["c", "d"]],
++    [{ a: "b" }, ["c"], ["c"]],
++    [{ a: "foo" }, null, null],
++    [{ a: "foo" }, "bar", "bar"],
++    [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++    [[1, 2], { a: "b", c: null }, { a: "b" }],
++    [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++  ];
++  for (const [target, patch, expected] of cases) {
++    assert.deepEqual(applyMergePatch(target, patch), expected);
++  }
++});
++
++test("does not mutate inputs and handles __proto__", () => {
++  const target = { a: { b: 1 } };
++  const patch = JSON.parse('{"a":{"c":2},"__proto__":{"x":1}}');
++  const out = applyMergePatch(target, patch) as Record<string, unknown>;
++  assert.deepEqual(target, { a: { b: 1 } });
++  assert.equal(({} as Record<string, unknown>).x, undefined);
++  assert.deepEqual(Object.keys(out), ["a", "__proto__"]);
++});

@@ -1,0 +1,324 @@
+diff --git a/openspec/changes/add-json-patch/.openspec.yaml b/openspec/changes/add-json-patch/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..4ee7b3f00e155023b32f9805ab1b7ea631b7215e
+--- /dev/null
++++ b/openspec/changes/add-json-patch/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-11-20
+diff --git a/openspec/changes/add-json-patch/design.md b/openspec/changes/add-json-patch/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..cba5f21f7a17bc747581458e044aa8726bfd58a3
+--- /dev/null
++++ b/openspec/changes/add-json-patch/design.md
+@@ -0,0 +1,31 @@
++# Design
++
++## Context
++
++`src/index.ts` holds `resolvePointer` and `JsonPointerError` (RFC 6901). The package is ESM TypeScript (strict) with no runtime dependencies, and tests run with `node --test` on `test/*.test.ts`, importing `../src/index.ts`. Requirements are in specs/json-patch/spec.md; scope is in proposal.md.
++
++## Goals / Non-Goals
++
++**Goals:** a small, dependency-free RFC 6902 §4 conformant `applyPatch`, atomic and non-mutating.
++
++**Non-Goals:** diffing, merge patch, JSON text parsing, non-JSON values.
++
++## Decisions
++
++- **Stay in `src/index.ts`**, as in the previous change (re-exports across `.ts` files would need tsconfig changes).
++- **Clone first, mutate the clone.** `applyPatch` deep-clones the document once, applies operations in place on the clone, and returns it. A throw discards the clone, so atomicity (§5) and non-mutation are by construction. Values from `add`/`replace`/`test`-free ops and `copy` sources are deep-cloned when inserted so the result never aliases the patch or itself. Validate every operation's shape before applying any, so a malformed later operation throws before work is done (the result is the same either way, as an error always discards).
++- **Own pointer parsing for write access.** `resolvePointer` only reads, and the writer needs the parent plus last token. A private helper splits and decodes a pointer using the same rules (§3/§4 of RFC 6901: split first, then `~1` before `~0`, reject `~` not followed by 0/1). Parent lookup walks tokens with the same rules as `resolvePointer` (own properties only, array index regex, range check). Duplicating the small decode function is preferable to widening the exported API.
++- **Hostile keys.** Object members are written with `Object.defineProperty` (enumerable, writable, configurable), never `obj[key] = v`, so an own `__proto__` key is created rather than invoking the setter. Cloning uses the same mechanism, so a parsed `__proto__` key survives. Reads use `Object.hasOwn`.
++- **Array indexes.** `add` accepts `-` and indexes `0..length`; other operations require `0..length-1` (`-` refers to no element, RFC 6901 §4, so it errors). Indexes follow `^(0|[1-9][0-9]*)$`, so a leading zero or sign is an error (RFC 6901 §4).
++- **Root cases.** `add`/`replace` at `""` replace the document (§4.1, §4.3). `test` and `copy` from `""` work. `remove` at `""` is unspecified by the RFC (the result would not be a JSON value to return); we throw. `move` from `""` is only possible to a child of itself, which §4.4 forbids, so it throws; `move` from `""` to `""` is a same-location no-op, which we allow like any same-location move.
++- **move.** Check `from` exists, then reject if `from` is a proper prefix of `path` by token comparison (so `/a` vs `/ab` is fine). If `from === path` (same tokens) do nothing. Otherwise remove from `from`, then add at `path` on the post-removal document, as §4.4 says; this is why `/0` to `/2` on a 3-array gives `[b,c,a]`.
++- **replace** on an array assigns in place (same position), which equals remove+add at that index.
++- **test equality** is a private recursive `jsonEqual`: same JS type, `Object.is`-free numeric `===` (so `1` equals `1.0`; `-0` equals `0`, numerically equal per §4.6), arrays pairwise, objects by own key set and values with order ignored. §4.6 leaves no room for loose equality.
++- **Errors.** One `JsonPatchError extends Error` for every failure, including invalid pointers (wrapped, message includes the operation index), in line with `JsonPointerError`'s single-catch approach. Operation members: `op` and `path` are checked with `typeof`; `value` presence uses `Object.hasOwn(op, "value")` so `null` is valid and `undefined`-valued members count as missing. Unknown extra members are ignored (§4).
++- **Large indexes** only fail range checks; no `Number` precision concerns matter because lengths are small.
++
++## Risks / Trade-offs
++
++- [Deep clone of the whole document per call is O(size)] → accepted for correctness and the no-mutation contract; the structural-sharing alternative adds complexity.
++- [Recursive clone/equality can overflow the stack on extremely deep documents] → inputs are parsed JSON, so depth is bounded by the parser; noted, not handled.
++- [`remove` of the root throws, where some libraries return `null`/`undefined`] → documented departure for an unspecified case.
+diff --git a/openspec/changes/add-json-patch/proposal.md b/openspec/changes/add-json-patch/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..693b04a7bcff85ca32f3d373d013c647c5f29510
+--- /dev/null
++++ b/openspec/changes/add-json-patch/proposal.md
+@@ -0,0 +1,25 @@
++# Proposal
++
++## Why
++
++Our services need to change JSON documents with standard patches rather than ad-hoc code. JSON Patch (RFC 6902) is that standard; it builds on the JSON Pointer support already in the library (RFC 6901).
++
++## What Changes
++
++- Add `applyPatch(document, patch)`, exported from `src/index.ts`: applies an array of RFC 6902 operations (`add`, `remove`, `replace`, `move`, `copy`, `test`) in order and returns the resulting document as a new value. Neither `document` nor `patch` is mutated, and the result shares no mutable structure with either.
++- Add an exported `JsonPatchError` (extends `Error`), thrown for an invalid patch and for a failed operation, so callers can tell patch failures from programming errors.
++- Governing standards: RFC 6902 (§3 document structure, §4 operations, §5 error handling), with paths evaluated per RFC 6901 (§3–§4, `-` per RFC 6902 §4.1). Not breaking: purely additive.
++- Atomicity (RFC 6902 §5): if any operation fails, an error is thrown and no result is returned; the input is untouched.
++- Out of scope: parsing JSON text, the `application/json-patch+json` media type, JSON Merge Patch (RFC 7396), generating a patch by diffing, URI fragment pointers, non-JSON values (`undefined`, functions, cycles).
++
++## Capabilities
++
++### New Capabilities
++- `json-patch`: applying an RFC 6902 JSON Patch to a JSON document.
++
++### Modified Capabilities
++
++## Impact
++
++- New code in `src/index.ts` and tests under `test/` run by `npm test`; no runtime dependencies; `package.json` unchanged.
++- New public API surface (`applyPatch`, `JsonPatchError`). `resolvePointer` and `JsonPointerError` are unchanged.
+diff --git a/openspec/changes/add-json-patch/specs/json-patch/spec.md b/openspec/changes/add-json-patch/specs/json-patch/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3ae6da96d53f4646fdeba559778c714e330a81bd
+--- /dev/null
++++ b/openspec/changes/add-json-patch/specs/json-patch/spec.md
+@@ -0,0 +1,214 @@
++# json-patch Specification
++
++## ADDED Requirements
++
++### Requirement: Patch structure
++Per RFC 6902 §3, a patch SHALL be an array of operation objects, each with an `op` member naming one of `add`, `remove`, `replace`, `move`, `copy`, `test` and a string `path` member holding a JSON Pointer. Members not defined for the operation MUST be ignored (§4). Operations SHALL be applied sequentially, each to the result of the previous one (§5). An invalid patch MUST cause an error to be thrown (§4, §5), before any result is returned.
++
++#### Scenario: Empty patch
++- **WHEN** the patch is `[]`
++- **THEN** the result equals the document
++
++#### Scenario: Patch is not an array
++- **WHEN** the patch is an object, `null`, a string or a number
++- **THEN** a `JsonPatchError` is thrown
++
++#### Scenario: Operation is malformed
++- **WHEN** an operation is not an object (e.g. `null`, an array, a string)
++- **OR** `op` is missing, not a string, or not one of the six names (including different case, e.g. `"Add"`)
++- **OR** `path` is missing or not a string
++- **THEN** a `JsonPatchError` is thrown
++
++#### Scenario: Required members missing
++- **WHEN** `add`, `replace` or `test` has no `value` member, or `move` or `copy` has no string `from` member
++- **THEN** a `JsonPatchError` is thrown
++- **AND** `"value": null` is a present value and is accepted
++
++#### Scenario: Unknown extra members
++- **WHEN** an operation has extra members, e.g. `{"op":"remove","path":"/a","comment":"x"}`
++- **THEN** they are ignored
++
++#### Scenario: Invalid pointer
++- **WHEN** a `path` or `from` is not a valid JSON Pointer (e.g. `"a"`, or a bad escape such as `"/a~2"`)
++- **THEN** a `JsonPatchError` is thrown
++
++#### Scenario: Later operation fails
++- **WHEN** the first operation succeeds and the second fails
++- **THEN** an error is thrown and no result is returned
++- **AND** the original document is unchanged
++
++### Requirement: Inputs are not mutated and results are not aliased
++`applyPatch` SHALL NOT mutate `document` or `patch`. The result SHALL NOT share any object or array with `document` or `patch`, so later mutation of the result cannot affect either input.
++
++#### Scenario: Document not mutated
++- **WHEN** a patch with `add`, `remove`, `replace`, `move` and `copy` operations is applied to a nested document
++- **THEN** a deep copy of the document taken beforehand is still deeply equal to it
++
++#### Scenario: Patch values not aliased
++- **WHEN** an `add` value is an object and the result is later mutated
++- **THEN** the object in the patch is unchanged
++- **AND** a `copy` of that value yields an independent object, not a shared reference
++
++### Requirement: add
++Per RFC 6902 §4.1, `add` SHALL work by the type of the parent of the target location:
++- the whole document, if `path` is `""` (the result is `value`);
++- an array: `value` is inserted before the given index, shifting later elements; index equal to the array length, or `-`, appends; an index greater than the length MUST be an error; the index must follow RFC 6901 §4 (no leading zeros, no sign);
++- an object: a new member is added; an existing member is replaced.
++The parent of the target MUST exist; otherwise an error SHALL be thrown.
++
++#### Scenario: Add object member
++- **WHEN** `{"op":"add","path":"/b","value":2}` is applied to `{"a":1}`
++- **THEN** the result is `{"a":1,"b":2}`
++
++#### Scenario: Add replaces existing object member
++- **WHEN** `{"op":"add","path":"/a","value":9}` is applied to `{"a":1}`
++- **THEN** the result is `{"a":9}`
++
++#### Scenario: Add into array
++- **WHEN** `add` at `/1` of value `"x"` is applied to `["a","b"]`
++- **THEN** the result is `["a","x","b"]`
++- **AND** at `/0` it is prepended, at `/2` (the length) and at `/-` it is appended
++
++#### Scenario: Add array index errors
++- **WHEN** the index is greater than the array length (e.g. `/3` on a 2-element array), is `01`, `-1`, `+1`, `1.0`, or is not a number (e.g. `/a`)
++- **THEN** a `JsonPatchError` is thrown
++
++#### Scenario: Add whole document
++- **WHEN** `{"op":"add","path":"","value":[1]}` is applied to any document
++- **THEN** the result is `[1]`
++
++#### Scenario: Missing parent
++- **WHEN** `add` at `/a/b` is applied to `{}`
++- **THEN** a `JsonPatchError` is thrown
++
++#### Scenario: Parent is a scalar
++- **WHEN** `add` at `/a/b` is applied to `{"a":1}` or `{"a":null}`
++- **THEN** a `JsonPatchError` is thrown
++
++#### Scenario: Empty-string and escaped keys
++- **WHEN** `add` at `/` (key `""`), at `/a~1b` (key `a/b`) and at `/m~0n` (key `m~n`) is applied to `{}`
++- **THEN** the result has exactly those keys `""`, `"a/b"`, `"m~n"`
++
++#### Scenario: Hostile key
++- **WHEN** `add` at `/__proto__` with value `{"polluted":true}` is applied to `{}`
++- **THEN** the result has an own member named `__proto__` with that value
++- **AND** `Object.prototype` is not modified and `({}).polluted` is `undefined`
++
++### Requirement: remove
++Per RFC 6902 §4.2, `remove` SHALL remove the value at the target location, which MUST exist. Removing from an array shifts later elements down. Removing the whole document (`path` `""`) is not defined by the RFC and SHALL be an error.
++
++#### Scenario: Remove object member
++- **WHEN** `remove` at `/a` is applied to `{"a":1,"b":2}`
++- **THEN** the result is `{"b":2}`
++
++#### Scenario: Remove array element
++- **WHEN** `remove` at `/1` is applied to `["a","b","c"]`
++- **THEN** the result is `["a","c"]`
++
++#### Scenario: Remove nonexistent target
++- **WHEN** `remove` targets a missing member, an index equal to or beyond the array length, `-`, or an inherited name such as `/toString`
++- **THEN** a `JsonPatchError` is thrown
++
++#### Scenario: Remove whole document
++- **WHEN** `remove` at `""` is applied
++- **THEN** a `JsonPatchError` is thrown
++
++### Requirement: replace
++Per RFC 6902 §4.3, `replace` SHALL replace the value at the target location, which MUST exist (semantically `remove` then `add`, but a replaced array element keeps its position). `path` `""` replaces the whole document.
++
++#### Scenario: Replace object member and array element
++- **WHEN** `replace` at `/a` with `2` is applied to `{"a":1}`, and at `/1` with `"x"` to `["a","b","c"]`
++- **THEN** the results are `{"a":2}` and `["a","x","c"]`
++
++#### Scenario: Replace nonexistent target
++- **WHEN** `replace` targets a missing member, an array index beyond the last element, or `-`
++- **THEN** a `JsonPatchError` is thrown
++
++#### Scenario: Replace whole document
++- **WHEN** `replace` at `""` with `null` is applied
++- **THEN** the result is `null`
++
++### Requirement: move
++Per RFC 6902 §4.4, `move` SHALL remove the value at `from` (which MUST exist) and add it at `path`, as `remove` followed by `add` of that value. `from` MUST NOT be a proper prefix of `path` (a location cannot be moved into one of its own children); this SHALL be an error. A prefix is compared by whole reference tokens, not by characters.
++
++#### Scenario: Move object member
++- **WHEN** `{"op":"move","from":"/a","path":"/b"}` is applied to `{"a":1}`
++- **THEN** the result is `{"b":1}`
++
++#### Scenario: Move within an array
++- **WHEN** `move` from `/0` to `/2` is applied to `["a","b","c"]`
++- **THEN** the result is `["b","c","a"]`, because the index of `path` is evaluated after the removal
++- **AND** from `/2` to `/0` yields `["c","a","b"]`
++
++#### Scenario: Move to the same location
++- **WHEN** `from` equals `path` and the location exists
++- **THEN** the document is unchanged
++
++#### Scenario: Move into own child
++- **WHEN** `move` from `/a` to `/a/b` is applied to `{"a":{}}`
++- **THEN** a `JsonPatchError` is thrown
++
++#### Scenario: Similar names are not prefixes
++- **WHEN** `move` from `/a` to `/ab` is applied to `{"a":1}`
++- **THEN** the result is `{"ab":1}`
++
++#### Scenario: Move from nonexistent location
++- **WHEN** `from` does not exist
++- **THEN** a `JsonPatchError` is thrown
++
++#### Scenario: Move of the whole document
++- **WHEN** `from` is `""` and `path` is non-empty
++- **THEN** a `JsonPatchError` is thrown
++
++### Requirement: copy
++Per RFC 6902 §4.5, `copy` SHALL add a copy of the value at `from` (which MUST exist) at `path`, with `add` semantics. The copy SHALL be independent of the source.
++
++#### Scenario: Copy value
++- **WHEN** `{"op":"copy","from":"/a","path":"/b"}` is applied to `{"a":{"x":[1]}}`
++- **THEN** the result is `{"a":{"x":[1]},"b":{"x":[1]}}`
++- **AND** the two values are distinct objects
++
++#### Scenario: Copy into array
++- **WHEN** `copy` from `/0` to `/-` is applied to `["a","b"]`
++- **THEN** the result is `["a","b","a"]`
++
++#### Scenario: Copy from nonexistent location
++- **WHEN** `from` does not exist
++- **THEN** a `JsonPatchError` is thrown
++
++### Requirement: test
++Per RFC 6902 §4.6, `test` SHALL succeed only if the value at `path` (which MUST exist) is equal to `value`, and otherwise an error SHALL be thrown. Equality: same type; strings equal by code points; numbers equal by numeric value (`1` and `1.0` are equal); `null`, `true`, `false` equal to themselves; arrays equal if same length and elements equal pairwise in order; objects equal if they have the same set of member names and equal values, regardless of order. `test` does not change the document.
++
++#### Scenario: Passing tests
++- **WHEN** `test` compares equal scalars, `null`, arrays, nested objects, or objects with members in a different order
++- **THEN** it succeeds and the result equals the document
++
++#### Scenario: Failing tests
++- **WHEN** values differ in type (`1` vs `"1"`, `null` vs `0`, `0` vs `false`, `[]` vs `{}`), in array order or length, or in object member names or values
++- **THEN** a `JsonPatchError` is thrown
++
++#### Scenario: Test of nonexistent location
++- **WHEN** `path` does not exist, even if `value` is `null`
++- **THEN** a `JsonPatchError` is thrown
++
++#### Scenario: Test whole document
++- **WHEN** `test` at `""` compares to an equal value
++- **THEN** it succeeds
++
++#### Scenario: Test guards later operations
++- **WHEN** a failing `test` is followed by an `add`
++- **THEN** an error is thrown and no result is returned
++
++### Requirement: Errors
++All failures (invalid patch, invalid pointer, failed operation) SHALL be thrown as `JsonPatchError`, an `Error` subclass with `name` `"JsonPatchError"`.
++
++#### Scenario: Error type
++- **WHEN** any invalid patch or failed operation occurs
++- **THEN** the thrown value is an instance of `JsonPatchError` and of `Error`
++
++### Requirement: RFC 6902 Appendix A examples
++The implementation SHALL produce the documented results for the RFC 6902 Appendix A examples A.1–A.16.
++
++#### Scenario: Appendix A
++- **WHEN** each example's document and patch are applied
++- **THEN** the result equals the documented result, or an error is thrown where the RFC documents an error (A.12, A.13, A.15, A.16)
+diff --git a/openspec/changes/add-json-patch/tasks.md b/openspec/changes/add-json-patch/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fa2b46957ac9f4ca8a85257d434919467e0410ed
+--- /dev/null
++++ b/openspec/changes/add-json-patch/tasks.md
+@@ -0,0 +1,22 @@
++# Tasks
++
++## 1. Foundations
++
++- [ ] 1.1 Add `JsonPatchError`, a private pointer-tokenizer, a prototype-safe deep clone, and `jsonEqual` to `src/index.ts`, with short doc comments citing RFC 6902/6901; verify the module loads under `npm test`
++- [ ] 1.2 Add `applyPatch` skeleton: patch/operation validation (array, object, `op`, `path`, `value`, `from`, unknown `op`), cloning the document, sequential application; verify with the structure scenarios
++
++## 2. Operations
++
++- [ ] 2.1 Implement `add` (object, array insert, `-`, index errors, root, missing/scalar parent, `__proto__`)
++- [ ] 2.2 Implement `remove` and `replace` (existence, array shift, root rules)
++- [ ] 2.3 Implement `move` (post-removal add, same-location no-op, proper-prefix check by token, missing `from`) and `copy` (independent copy)
++- [ ] 2.4 Implement `test` using `jsonEqual` (missing location, type differences, key order)
++
++## 3. Tests
++
++- [ ] 3.1 Add `test/patch.test.ts` with a test for every scenario in specs/json-patch/spec.md (structure, no mutation/aliasing, add, remove, replace, move, copy, test, errors); verify with `npm test`
++- [ ] 3.2 Add the RFC 6902 Appendix A examples A.1–A.16 as tests; verify with `npm test`
++
++## 4. Integration
++
++- [ ] 4.1 Run `npm test` from a clean state and `openspec validate add-json-patch`; verify both succeed

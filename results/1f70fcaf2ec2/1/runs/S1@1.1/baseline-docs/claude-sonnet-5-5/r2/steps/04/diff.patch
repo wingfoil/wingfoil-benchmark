@@ -1,0 +1,142 @@
+diff --git a/README.md b/README.md
+index 0caa3d7526f43e1fc8cb7a5e376ab6d5a82df5d8..217dd423a83f4b3149de79940692e6c744412532 100644
+--- a/README.md
++++ b/README.md
+@@ -28,4 +28,19 @@ own children, a `test` that does not match). A failing patch returns nothing: it
+ whole document (`remove` with the empty path) is rejected because no JSON value would be left. `test`
+ compares deeply, ignoring member order. `__proto__` is an ordinary member name.
+ 
++## JSON Merge Patch (RFC 7386)
++
++`applyMergePatch(target, patch)` (exported from `src/index.ts`) applies a JSON Merge Patch and returns the
++merged document as a new value. Neither `target` nor `patch` is mutated, and the result shares no
++structure with them.
++
++A patch that is not an object (including an array or `null`) replaces the target as a whole. For an
++object patch, a `null` member removes that member from the target, and any other member is merged
++recursively; a target that is not an object is treated as an empty object. Arrays are replaced, never
++merged, and `null` inside an array is kept. `__proto__` is an ordinary member name. Because `null`
++means "remove", a merge patch cannot set a member to `null`.
++
++It throws an `Error` when `target` or `patch` is not a JSON value (`undefined`, `NaN`, a `Date`, a sparse
++array...).
++
+ Run the tests with `npm test`.
+diff --git a/src/index.ts b/src/index.ts
+index 3cd3ee106b8f8610fddaa35a1b64fedd7a9df09a..0c58ac527422536f767e2cfb36153f6531d105fa 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -244,3 +244,39 @@ export function applyPatch(document: JsonValue, patch: PatchOperation[]): JsonVa
+   const operations = Array.from(patch, parseOperation);
+   return operations.reduce(applyOperation, structuredClone(document));
+ }
++
++function mergeValue(target: JsonValue | undefined, patch: JsonValue): JsonValue {
++  if (!isObject(patch)) {
++    return structuredClone(patch);
++  }
++  const result: { [key: string]: JsonValue } = isObject(target) ? (structuredClone(target) as { [key: string]: JsonValue }) : {};
++  for (const [key, value] of Object.entries(patch as { [key: string]: JsonValue })) {
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, mergeValue(Object.hasOwn(result, key) ? result[key] : undefined, value));
++    }
++  }
++  return result;
++}
++
++/**
++ * Applies the JSON Merge Patch `patch` (RFC 7386) to `target` and returns the merged document.
++ *
++ * A patch that is not an object replaces the target as a whole (arrays included). For an object
++ * patch, a `null` member removes that member from the target and any other member is merged
++ * recursively; a target that is not an object is treated as an empty one. Neither input is mutated
++ * and the result shares no structure with them. As in the RFC, a `null` inside an array of the
++ * patch is kept, and a `null` patch yields `null`.
++ *
++ * @throws Error if `target` or `patch` is not a JSON value.
++ */
++export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  if (!isJsonValue(target)) {
++    throw new Error("Invalid JSON Merge Patch: the target must be a JSON value");
++  }
++  if (!isJsonValue(patch)) {
++    throw new Error("Invalid JSON Merge Patch: the patch must be a JSON value");
++  }
++  return mergeValue(target, patch);
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..bb8787321ad424645c34abf9de979a2b28766bd7
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,68 @@
++import assert from "node:assert/strict";
++import { test } from "node:test";
++import { applyMergePatch, type JsonValue } from "../src/index.ts";
++
++const apply = (target: unknown, patch: unknown) => applyMergePatch(target as JsonValue, patch as JsonValue);
++
++test("RFC 7386 appendix A examples", () => {
++  const cases: [unknown, unknown, unknown][] = [
++    [{ a: "b" }, { a: "c" }, { a: "c" }],
++    [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++    [{ a: "b" }, { a: null }, {}],
++    [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++    [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++    [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++    [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++    [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++    [["a", "b"], ["c", "d"], ["c", "d"]],
++    [{ a: "b" }, ["c"], ["c"]],
++    [{ a: "foo" }, null, null],
++    [{ a: "foo" }, "bar", "bar"],
++    [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++    [[1, 2], { a: "b", c: null }, { a: "b" }],
++    [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++  ];
++  for (const [target, patch, expected] of cases) {
++    assert.deepEqual(apply(target, patch), expected);
++  }
++});
++
++test("a non-object target is replaced by an empty object before merging", () => {
++  assert.deepEqual(apply("x", { a: 1 }), { a: 1 });
++  assert.deepEqual(apply(null, { a: null }), {});
++  assert.deepEqual(apply({ a: 1 }, {}), { a: 1 });
++});
++
++test("neither input is mutated and the result shares no structure with them", () => {
++  const target = { a: { b: 1 }, c: [1] };
++  const patch = { a: { d: { e: 2 } }, f: [{ g: 3 }] };
++  const targetCopy = structuredClone(target);
++  const patchCopy = structuredClone(patch);
++  const result = apply(target, patch) as any;
++  assert.deepEqual(target, targetCopy);
++  assert.deepEqual(patch, patchCopy);
++  assert.notEqual(result.a, target.a);
++  assert.notEqual(result.c, target.c);
++  assert.notEqual(result.a.d, patch.a.d);
++  assert.notEqual(result.f, patch.f);
++  assert.notEqual(result.f[0], patch.f[0]);
++});
++
++test("__proto__ is an ordinary member name", () => {
++  const patch = JSON.parse('{"__proto__": {"polluted": true}, "a": 1}');
++  const result = apply({}, patch) as any;
++  assert.equal(Object.hasOwn(result, "__proto__"), true);
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal(({} as any).polluted, undefined);
++  assert.deepEqual(apply(JSON.parse('{"__proto__": 1, "b": 2}'), JSON.parse('{"__proto__": null}')), { b: 2 });
++});
++
++test("rejects values that are not JSON values", () => {
++  assert.throws(() => apply({}, undefined), Error);
++  assert.throws(() => apply({}, { a: undefined }), Error);
++  assert.throws(() => apply({}, { a: NaN }), Error);
++  assert.throws(() => apply({}, { a: new Date() }), Error);
++  assert.throws(() => apply({}, { a: [1, , 3] }), Error);
++  assert.throws(() => apply(undefined, { a: 1 }), Error);
++  assert.throws(() => apply({ a: new Date() }, { b: 1 }), Error);
++});

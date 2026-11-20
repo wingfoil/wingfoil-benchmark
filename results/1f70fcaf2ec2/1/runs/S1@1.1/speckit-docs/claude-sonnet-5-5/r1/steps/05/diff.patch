@@ -1,0 +1,131 @@
+diff --git a/src/index.ts b/src/index.ts
+index c73bef937119af98f66e7471babcae38919ca1fe..1bceb323e313ddec0ab0470d2f87f056e89dbf48 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -259,3 +259,88 @@ export function applyMergePatch(target: unknown, patch: unknown): unknown {
+   }
+   return result;
+ }
++
++type PatchOperation = { op: "add" | "remove" | "replace"; path: string; value?: unknown };
++
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++/** Pairs of indices (into `a` and `b`) of a longest common subsequence of equal items, in order. */
++function commonItems(a: unknown[], b: unknown[]): Array<[number, number]> {
++  const lengths: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
++  for (let i = a.length - 1; i >= 0; i--) {
++    for (let j = b.length - 1; j >= 0; j--) {
++      lengths[i][j] = jsonEqual(a[i], b[j]) ? lengths[i + 1][j + 1] + 1 : Math.max(lengths[i + 1][j], lengths[i][j + 1]);
++    }
++  }
++  const pairs: Array<[number, number]> = [];
++  let i = 0;
++  let j = 0;
++  while (i < a.length && j < b.length) {
++    if (jsonEqual(a[i], b[j])) {
++      pairs.push([i++, j++]);
++    } else if (lengths[i + 1][j] >= lengths[i][j + 1]) {
++      i++;
++    } else {
++      j++;
++    }
++  }
++  return pairs;
++}
++
++function diffInto(ops: PatchOperation[], from: unknown, to: unknown, path: string): void {
++  if (Array.isArray(from) && Array.isArray(to)) {
++    // Walk the arrays; `k` is the position in the array being patched, which matches `to` up to there.
++    let k = 0;
++    let i = 0;
++    let j = 0;
++    const sync = (endI: number, endJ: number): void => {
++      const removals = endI - i;
++      const additions = endJ - j;
++      const paired = Math.min(removals, additions);
++      for (let p = 0; p < paired; p++) {
++        diffInto(ops, from[i + p], to[j + p], `${path}/${k + p}`);
++      }
++      for (let p = paired; p < removals; p++) {
++        ops.push({ op: "remove", path: `${path}/${k + paired}` });
++      }
++      for (let p = paired; p < additions; p++) {
++        ops.push({ op: "add", path: `${path}/${k + p}`, value: clone(to[j + p]) });
++      }
++      k += additions;
++      i = endI;
++      j = endJ;
++    };
++    for (const [mi, mj] of commonItems(from, to)) {
++      sync(mi, mj);
++      k++;
++      i++;
++      j++;
++    }
++    sync(from.length, to.length);
++  } else if (isObject(from) && isObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!hasOwn(to, key)) ops.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++    for (const key of Object.keys(to)) {
++      const child = `${path}/${escapeToken(key)}`;
++      if (!hasOwn(from, key)) ops.push({ op: "add", path: child, value: clone(to[key]) });
++      else diffInto(ops, from[key], to[key], child);
++    }
++  } else if (!jsonEqual(from, to)) {
++    ops.push({ op: "replace", path, value: clone(to) });
++  }
++}
++
++/**
++ * Returns a JSON Patch (RFC 6902) that turns `from` into `to` when applied. Neither input is mutated.
++ *
++ * The patch is minimal in spirit: only changed members and array items are touched. An item inserted into
++ * or removed from an array is added or removed on its own, and an item that moved is removed and added back.
++ */
++export function createPatch(from: unknown, to: unknown): PatchOperation[] {
++  const ops: PatchOperation[] = [];
++  diffInto(ops, from, to, "");
++  return ops;
++}
+diff --git a/test/create-patch.test.ts b/test/create-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..c35fe931d085c51ca672505e05f7f02c3889d986
+--- /dev/null
++++ b/test/create-patch.test.ts
+@@ -0,0 +1,32 @@
++import test from "node:test";
++import assert from "node:assert/strict";
++import { createPatch, applyPatch } from "../src/index.ts";
++
++test("createPatch: small change yields a small patch", () => {
++  assert.deepEqual(createPatch({ a: { b: 1, c: 2 }, d: [1] }, { a: { b: 1, c: 3 }, d: [1] }), [
++    { op: "replace", path: "/a/c", value: 3 },
++  ]);
++});
++
++test("createPatch: array insert and remove touch only that item", () => {
++  assert.deepEqual(createPatch([1, 2, 3, 4], [1, 3, 4]), [{ op: "remove", path: "/1" }]);
++  assert.deepEqual(createPatch([1, 3, 4], [1, 2, 3, 4]), [{ op: "add", path: "/1", value: 2 }]);
++});
++
++test("createPatch: array move does not rewrite items between", () => {
++  const from = [1, 2, 3, 4];
++  const to = [2, 3, 4, 1];
++  const patch = createPatch(from, to);
++  assert.equal(patch.length, 2);
++  assert.deepEqual(applyPatch(from, patch), to);
++});
++
++test("createPatch: escapes pointers, round-trips, does not mutate", () => {
++  const from = { "a/b": { "~": [1, { x: 1 }] }, gone: 1 };
++  const to = { "a/b": { "~": [0, 1, { x: 2 }] }, added: null };
++  const copy = JSON.stringify(from);
++  assert.deepEqual(applyPatch(from, createPatch(from, to)), to);
++  assert.equal(JSON.stringify(from), copy);
++  assert.deepEqual(createPatch(1, 1), []);
++  assert.deepEqual(applyPatch(1, createPatch(1, [2])), [2]);
++});

@@ -1,0 +1,126 @@
+diff --git a/src/inventory.ts b/src/inventory.ts
+index d53e3aa4b8b4b4c367ace2773d6a1078b714868f..07b0f1d75e6e7df977a01de5552d95b53a50bc16 100644
+--- a/src/inventory.ts
++++ b/src/inventory.ts
+@@ -3,6 +3,7 @@
+  * on hand minus what placed orders hold; shipping an order takes its units off hand, and cancelling it
+  * returns them. Every change is kept as a movement, for the stock report.
+  */
++import { canonicalSku } from './catalog.ts';
+ import { OutOfStockError, ValidationError } from './errors.ts';
+ 
+ export type MovementKind = 'restock' | 'reserve' | 'release' | 'ship' | 'adjust';
+@@ -30,17 +31,17 @@ export class Inventory {
+   readonly #movements: Movement[] = [];
+ 
+   #record(sku: string, kind: MovementKind, quantity: number, reference: string): void {
+-    this.#movements.push({ sku, kind, quantity, reference });
++    this.#movements.push({ sku: canonicalSku(sku), kind, quantity, reference });
+   }
+ 
+   /** Units physically in the warehouse. */
+   onHand(sku: string): number {
+-    return this.#onHand.get(sku) ?? 0;
++    return this.#onHand.get(canonicalSku(sku)) ?? 0;
+   }
+ 
+   /** Units held by placed orders not yet shipped. */
+   reserved(sku: string): number {
+-    return this.#reserved.get(sku) ?? 0;
++    return this.#reserved.get(canonicalSku(sku)) ?? 0;
+   }
+ 
+   /** Units that can still be ordered. */
+@@ -49,7 +50,7 @@ export class Inventory {
+   }
+ 
+   restock(sku: string, quantity: number, reference = 'restock'): void {
+-    this.#onHand.set(sku, this.onHand(sku) + checkQuantity(quantity));
++    this.#onHand.set(canonicalSku(sku), this.onHand(sku) + checkQuantity(quantity));
+     this.#record(sku, 'restock', quantity, reference);
+   }
+ 
+@@ -58,7 +59,7 @@ export class Inventory {
+     checkQuantity(quantity);
+     const available = this.available(sku);
+     if (quantity > available) throw new OutOfStockError(sku, quantity, available);
+-    this.#reserved.set(sku, this.reserved(sku) + quantity);
++    this.#reserved.set(canonicalSku(sku), this.reserved(sku) + quantity);
+     this.#record(sku, 'reserve', quantity, reference);
+   }
+ 
+@@ -66,7 +67,7 @@ export class Inventory {
+   release(sku: string, quantity: number, reference: string): void {
+     checkQuantity(quantity);
+     if (quantity > this.reserved(sku)) throw new ValidationError(`cannot release more of ${sku} than is reserved`);
+-    this.#reserved.set(sku, this.reserved(sku) - quantity);
++    this.#reserved.set(canonicalSku(sku), this.reserved(sku) - quantity);
+     this.#record(sku, 'release', quantity, reference);
+   }
+ 
+@@ -74,8 +75,8 @@ export class Inventory {
+   ship(sku: string, quantity: number, reference: string): void {
+     checkQuantity(quantity);
+     if (quantity > this.reserved(sku)) throw new ValidationError(`cannot ship more of ${sku} than is reserved`);
+-    this.#reserved.set(sku, this.reserved(sku) - quantity);
+-    this.#onHand.set(sku, this.onHand(sku) - quantity);
++    this.#reserved.set(canonicalSku(sku), this.reserved(sku) - quantity);
++    this.#onHand.set(canonicalSku(sku), this.onHand(sku) - quantity);
+     this.#record(sku, 'ship', quantity, reference);
+   }
+ 
+@@ -85,18 +86,18 @@ export class Inventory {
+       throw new ValidationError(`${sku} cannot hold fewer units than are reserved`);
+     }
+     this.#record(sku, 'adjust', onHand - this.onHand(sku), reference);
+-    this.#onHand.set(sku, onHand);
++    this.#onHand.set(canonicalSku(sku), onHand);
+   }
+ 
+   /** SKUs whose available stock is below LOW_STOCK_THRESHOLD, with it. */
+   lowStock(skus: readonly string[]): { sku: string; available: number }[] {
+     return skus
+-      .map((sku) => ({ sku, available: this.available(sku) }))
++      .map((sku) => ({ sku: canonicalSku(sku), available: this.available(sku) }))
+       .filter(({ available }) => available < LOW_STOCK_THRESHOLD);
+   }
+ 
+   /** Every movement of `sku`, oldest first. */
+   movements(sku: string): Movement[] {
+-    return this.#movements.filter((movement) => movement.sku === sku);
++    return this.#movements.filter((movement) => movement.sku === canonicalSku(sku));
+   }
+ }
+diff --git a/test/inventory.test.ts b/test/inventory.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..75ed591d61311562545042df26044a6c3f423f9e
+--- /dev/null
++++ b/test/inventory.test.ts
+@@ -0,0 +1,27 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++
++import { createShop } from '../src/index.ts';
++
++describe('inventory SKUs', () => {
++  it('keys stock by the canonical SKU, so an order sees stock restocked in any spelling', () => {
++    const { catalog, inventory, orders } = createShop();
++    catalog.add({ sku: 'MUG-01', name: 'Enamel mug', priceCents: 1000, vatClass: 'standard', weightGrams: 300 });
++    inventory.restock(' mug-01', 10);
++    assert.equal(inventory.onHand('MUG-01'), 10);
++    assert.equal(inventory.available(' Mug-01 '), 10);
++    orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'MUG-01', quantity: 2 }] });
++    assert.equal(inventory.available('mug-01'), 8);
++  });
++
++  it('adjusts, reports low stock and lists movements under the canonical SKU', () => {
++    const { inventory } = createShop();
++    inventory.restock('tea-7', 3);
++    inventory.adjust(' TEA-7', 2);
++    assert.deepEqual(inventory.lowStock(['tea-7']), [{ sku: 'TEA-7', available: 2 }]);
++    assert.deepEqual(inventory.movements('Tea-7').map((m) => [m.sku, m.kind, m.quantity]), [
++      ['TEA-7', 'restock', 3],
++      ['TEA-7', 'adjust', -1],
++    ]);
++  });
++});

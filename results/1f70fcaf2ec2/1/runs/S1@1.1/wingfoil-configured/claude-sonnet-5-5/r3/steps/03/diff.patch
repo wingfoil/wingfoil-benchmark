@@ -1,0 +1,152 @@
+diff --git a/README.md b/README.md
+index d00ae3faf4315979e3683623cdab6b0834f9f5f4..18de45f67494da840ad3635db6ae603f57874c60 100644
+--- a/README.md
++++ b/README.md
+@@ -33,6 +33,8 @@ applyPatch({ foo: "bar" }, [{ op: "add", path: "/baz", value: "qux" }]); // { fo
+ - Throws a `TypeError` if the patch is invalid (not an array, an operation that is not an object, a missing
+   or unknown `op`, a missing `path`, `from` or `value`), a `SyntaxError` for an invalid pointer, and an
+   `Error` when an operation fails (missing target, bad array index, `move` into its own child, failed `test`).
++- The whole patch is validated (shape of every operation, every pointer) before any operation runs, so an
++  invalid operation is always reported as `TypeError`/`SyntaxError`, even after an operation that would fail.
+ - Atomic: a failing patch has no effect. Neither the document nor the patch is mutated, and the result shares
+   no structure with either.
+ - `test` uses JSON equality: member order is irrelevant. `__proto__` is handled as a plain member name.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3d463f2c527a2154115e8a8355279edcb4068fba
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "Make applyPatch conform to RFC 6902"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ab3f8b39c5bbc6264f215cb2d2445675fc8e2b7a
+--- /dev/null
++++ b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md
+@@ -0,0 +1,22 @@
++---
++id: task-003-make-applypatch-conform-to-rfc-6902
++type: task
++title: "Make applyPatch conform to RFC 6902"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++## Outcome
++
++Request: review `applyPatch` and make it conform to RFC 6902, errors included (§4, §5).
++
++- The whole patch is now validated (operation shape, `op`, `path`, `from`, `value`, pointer syntax) before any
++  operation is applied; previously an invalid later operation could be masked by an earlier failing one, an
++  unknown `op` with a bad pointer reported `SyntaxError`, and holes in a sparse patch array were silently skipped.
++- Tests added in `test/patch.test.ts`; `npm test` passes (32/32). README updated.
+diff --git a/src/index.ts b/src/index.ts
+index 8a5e5ebaa2cf789690a66c99450f90a0e67ac976..1cd9786f4021b912ac47699d6d18c9ace91aa1dc 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -161,18 +161,13 @@ export function applyPatch(document: unknown, patch: unknown): JsonValue {
+   if (!Array.isArray(patch)) {
+     throw new TypeError("Invalid JSON Patch: must be an array of operations");
+   }
++  // §4: the patch must be a valid JSON Patch document before any operation runs, so an invalid
++  // operation is reported as such whatever the earlier operations would have done. Index loop: a
++  // sparse array hole is not an operation, and forEach would skip it.
++  const prepared: Prepared[] = [];
++  for (let index = 0; index < patch.length; index++) prepared.push(prepare(patch[index], index));
+   let root = clone(document);
+-  patch.forEach((raw: unknown, index: number) => {
+-    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+-      throw new TypeError(`Invalid JSON Patch: operation ${index} must be an object`);
+-    }
+-    const operation = raw as Record<string, unknown>;
+-    const op = Object.hasOwn(operation, "op") ? operation.op : undefined;
+-    if (typeof op !== "string") {
+-      throw new TypeError(`Invalid JSON Patch: operation ${index} needs a string "op"`);
+-    }
+-    const path = pointerMember(operation, "path", index);
+-    const tokens = parseTokens(path);
++  for (const { op, operation, index, path, tokens } of prepared) {
+     switch (op) {
+       case "add":
+         root = addAt(root, tokens, path, valueMember(operation, index));
+@@ -207,9 +202,36 @@ export function applyPatch(document: unknown, patch: unknown): JsonValue {
+           throw new Error(`JSON Patch: test failed at ${JSON.stringify(path)}`);
+         }
+         break;
+-      default:
+-        throw new TypeError(`Invalid JSON Patch: operation ${index} has unknown op ${JSON.stringify(op)}`);
+     }
+-  });
++  }
+   return root;
+ }
++
++interface Prepared {
++  op: string;
++  operation: Record<string, unknown>;
++  index: number;
++  path: string;
++  tokens: string[];
++}
++
++const OPERATIONS = ["add", "remove", "replace", "move", "copy", "test"];
++
++/** Validates the shape of one operation (RFC 6902 §4) and parses its pointers. */
++function prepare(raw: unknown, index: number): Prepared {
++  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
++    throw new TypeError(`Invalid JSON Patch: operation ${index} must be an object`);
++  }
++  const operation = raw as Record<string, unknown>;
++  const op = Object.hasOwn(operation, "op") ? operation.op : undefined;
++  if (typeof op !== "string") {
++    throw new TypeError(`Invalid JSON Patch: operation ${index} needs a string "op"`);
++  }
++  if (!OPERATIONS.includes(op)) {
++    throw new TypeError(`Invalid JSON Patch: operation ${index} has unknown op ${JSON.stringify(op)}`);
++  }
++  const path = pointerMember(operation, "path", index);
++  if (op === "add" || op === "replace" || op === "test") valueMember(operation, index);
++  if (op === "move" || op === "copy") parseTokens(pointerMember(operation, "from", index));
++  return { op, operation, index, path, tokens: parseTokens(path) };
++}
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index e8d35d38644a8ccb86c9f67eab40f32310b36134..1d5496030190335d5271d819246cf5a0e2162d53 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -143,3 +143,14 @@ test("no prototype pollution", () => {
+   assert.equal(copy.a, undefined);
+   assert.ok(Object.hasOwn(copy, "__proto__"));
+ });
++
++test("RFC 6902 §4: invalid patch is rejected before any operation runs", () => {
++  assert.throws(() => applyPatch({}, [{ op: "test", path: "/x", value: 1 }, { op: "bogus", path: "/x" }]), TypeError);
++  assert.throws(() => applyPatch({}, [{ op: "bogus", path: "bad" }]), TypeError);
++  assert.throws(() => applyPatch({}, [{ op: "remove", path: "/x" }, { op: "add", path: "/y" }]), TypeError);
++  assert.throws(() => applyPatch({}, [{ op: "remove", path: "/x" }, { op: "move", path: "/y" }]), TypeError);
++});
++test("RFC 6902 §4: a hole in the patch array is not an operation", () => {
++  // eslint-disable-next-line no-sparse-arrays
++  assert.throws(() => applyPatch({}, [, { op: "add", path: "/a", value: 1 }]), TypeError);
++});

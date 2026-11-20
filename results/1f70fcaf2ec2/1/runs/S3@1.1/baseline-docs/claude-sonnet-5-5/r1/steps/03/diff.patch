@@ -1,0 +1,71 @@
+diff --git a/README.md b/README.md
+index cbb0433d211b87f630b967a9cdc72e441186f77b..32a31318824c7474ffc8e2da24ec20aa8c7273ea 100644
+--- a/README.md
++++ b/README.md
+@@ -20,6 +20,9 @@ Money is an integer number of euro cents. `start` and `end` are ISO-8601 UTC str
+ booked for any part of the period. Booking ids are sequential (`booking-1`, `booking-2`, ...) so that
+ behaviour stays deterministic.
+ 
++A rental of 3 days or more costs 10% less than its full price, in both `quote` and `book`. The reduced
++total is rounded to whole cents, a half cent in favour of the customer.
++
+ Cancellation (no refund less than 24 hours before the start, full refund otherwise) is not implemented yet.
+ 
+ Run the tests with `npm test`.
+diff --git a/src/index.ts b/src/index.ts
+index fd09364fea38c0e3c32caf0b851908b8a28d6ce8..74747a9de44da28b8246b3bf5ceb95394a125e8a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,4 +1,5 @@
+ const DAY_MS = 24 * 60 * 60 * 1000;
++const LONG_STAY_DAYS = 3;
+ const MIDNIGHT_UTC = /^\d{4}-\d{2}-\d{2}T00:00:00(\.0+)?Z$/;
+ 
+ /** The kinds of equipment the school rents. */
+@@ -95,10 +96,11 @@ export function createRentalService(): RentalService {
+     }
+     const { start, end } = parsePeriod(request.start, request.end);
+     const days = (end - start) / DAY_MS;
+-    const total = item.dailyPrice * days;
+-    if (!Number.isSafeInteger(total)) {
++    const fullPrice = item.dailyPrice * days;
++    if (!Number.isSafeInteger(fullPrice)) {
+       throw new Error('total is too large');
+     }
++    const total = days >= LONG_STAY_DAYS ? fullPrice - Math.floor((fullPrice + 5) / 10) : fullPrice;
+     return { quote: { itemId: item.id, start: request.start, end: request.end, total }, start, end };
+   }
+ 
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index f1e4a90ec35070ae5bdaa3fe3c0ea87c7f682cb4..a1c1695fbcd5c25a6f420e8d403bd0a94a8300c2 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -12,11 +12,26 @@ function setup() {
+ const d = (day: number) => `2026-07-${String(day).padStart(2, '0')}T00:00:00.000Z`;
+ 
+ test('quote prices whole days in cents', () => {
+-  assert.deepEqual(setup().quote({ itemId: 'board-1', start: d(1), end: d(4) }), {
+-    itemId: 'board-1', start: d(1), end: d(4), total: 13500,
++  assert.deepEqual(setup().quote({ itemId: 'board-1', start: d(1), end: d(3) }), {
++    itemId: 'board-1', start: d(1), end: d(3), total: 9000,
+   });
+ });
+ 
++test('a rental of 3 days or more costs 10% less', () => {
++  const s = setup();
++  assert.deepEqual(s.quote({ itemId: 'board-1', start: d(1), end: d(4) }), {
++    itemId: 'board-1', start: d(1), end: d(4), total: 12150,
++  });
++  assert.equal(s.quote({ itemId: 'board-1', start: d(1), end: d(8) }).total, 28350);
++  assert.equal(s.book({ itemId: 'board-1', start: d(1), end: d(4) }).total, 12150);
++});
++
++test('the long-stay discount rounds to whole cents in favour of the customer', () => {
++  const s = setup();
++  s.addEquipment({ id: 'odd', kind: 'board', dailyPrice: 1005 });
++  assert.equal(s.quote({ itemId: 'odd', start: d(1), end: d(4) }).total, 2713);
++});
++
+ test('quote accepts the form without milliseconds', () => {
+   const q = setup().quote({ itemId: 'sail-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
+   assert.equal(q.total, 2000);

@@ -1,0 +1,76 @@
+diff --git a/src/index.ts b/src/index.ts
+index bb079121d16d579ade2d69ce19823564a2ad3d99..4997d998f2d6b76552f7d4f8a79ceda4cbf9c98c 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -45,6 +45,17 @@ export interface RentalService {
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
++/** Rule 5: a rental of at least this many days gets the long-stay discount. */
++const LONG_STAY_MIN_DAYS = 3;
++/** Rule 5: the long-stay price is this many tenths of the full price (10% off). */
++const LONG_STAY_TENTHS = 9;
++
++/** Rule 5: full price in cents, less 10% from 3 days; rounded half up to a whole cent. */
++function rentalTotal(days: number, dailyPrice: number): number {
++  const full = days * dailyPrice;
++  return days >= LONG_STAY_MIN_DAYS ? Math.floor((full * LONG_STAY_TENTHS + 5) / 10) : full;
++}
++
+ const MIDNIGHT_UTC = /^\d{4}-\d{2}-\d{2}T00:00(:00(\.0+)?)?(Z|\+00:00)$/;
+ 
+ /** Rule 2 and 3: an ISO-8601 string at midnight UTC, as milliseconds since the epoch. */
+@@ -78,7 +89,7 @@ export function createRentalService(): RentalService {
+     const start = new Date(startMs).toISOString();
+     const end = new Date(endMs).toISOString();
+     return {
+-      quote: { itemId: item.id, start, end, total: days * item.dailyPrice },
++      quote: { itemId: item.id, start, end, total: rentalTotal(days, item.dailyPrice) },
+       startMs,
+       endMs,
+     };
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 2bba3a084a4b0942872d9aa7dce8b26df69dbc75..fd9ca3c274da2b20d29f5c2dacba22c53281e8da 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -11,13 +11,13 @@ function setup() {
+ 
+ const req = (itemId: string, start: string, end: string) => ({ itemId, start, end });
+ 
+-test('quote is days times daily price in cents', () => {
++test('quote is days times daily price in cents (under 3 days)', () => {
+   const s = setup();
+-  assert.deepEqual(s.quote(req('b1', '2026-07-01T00:00:00Z', '2026-07-04T00:00:00Z')), {
++  assert.deepEqual(s.quote(req('b1', '2026-07-01T00:00:00Z', '2026-07-03T00:00:00Z')), {
+     itemId: 'b1',
+     start: '2026-07-01T00:00:00.000Z',
+-    end: '2026-07-04T00:00:00.000Z',
+-    total: 7500,
++    end: '2026-07-03T00:00:00.000Z',
++    total: 5000,
+   });
+ });
+ 
+@@ -138,3 +138,22 @@ test('availability is empty without equipment of the kind and rejects bad querie
+     t.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z', kind: 'kayak' as never }),
+   );
+ });
++
++test('long stay: 3 days or more cost 10% less, 2 days do not', () => {
++  const s = setup();
++  assert.equal(s.quote(req('b1', '2026-07-01T00:00:00Z', '2026-07-03T00:00:00Z')).total, 5000);
++  assert.equal(s.quote(req('b1', '2026-07-01T00:00:00Z', '2026-07-04T00:00:00Z')).total, 6750);
++  assert.equal(s.quote(req('b1', '2026-07-01T00:00:00Z', '2026-07-08T00:00:00Z')).total, 15750);
++});
++
++test('long stay: booking total equals the reduced quote', () => {
++  const s = setup();
++  const r = req('b1', '2026-07-01T00:00:00Z', '2026-07-04T00:00:00Z');
++  assert.equal(s.book(r).total, 6750);
++});
++
++test('long stay: fractional cents round half up', () => {
++  const s = createRentalService();
++  s.addEquipment({ id: 'x', kind: 'board', dailyPrice: 5 }); // 15 * 0.9 = 13.5
++  assert.equal(s.quote(req('x', '2026-07-01T00:00:00Z', '2026-07-04T00:00:00Z')).total, 14);
++});

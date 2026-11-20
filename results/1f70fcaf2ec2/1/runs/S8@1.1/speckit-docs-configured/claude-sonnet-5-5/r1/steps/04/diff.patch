@@ -1,0 +1,104 @@
+diff --git a/src/domain/import.ts b/src/domain/import.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..cad88b0716d16be6b022fc2cb51097b1467b68ee
+--- /dev/null
++++ b/src/domain/import.ts
+@@ -0,0 +1,46 @@
++import type { TaskList } from './list.ts';
++import type { NewTask, Priority } from './task.ts';
++
++/** A line of the import text that could not be added: its number, from 1, and why. */
++export interface RejectedLine {
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** The outcome of an import: how many tasks were added, and the lines that were not. */
++export interface ImportReport {
++  readonly imported: number;
++  readonly rejected: readonly RejectedLine[];
++}
++
++/**
++ * Adds the tasks written in `text` to `list`, one per line as `title;priority;tags`. The priority may be
++ * empty (normal), the tags are separated by spaces, and blank lines are skipped. A line that cannot be added
++ * is reported with its number, counting from 1, and does not stop the others.
++ *
++ * @param list - the task list to add to
++ * @param text - the lines to import
++ */
++export function importTasks(list: TaskList, text: string): ImportReport {
++  const rejected: RejectedLine[] = [];
++  let imported = 0;
++  text.split(/\r\n|\r|\n/).forEach((raw, index) => {
++    if (raw.trim() === '') return;
++    const line = index + 1;
++    const fields = raw.split(';');
++    if (fields.length > 3) {
++      rejected.push({ line, reason: 'too many ";": a line is title;priority;tags' });
++      return;
++    }
++    const [title = '', priority = '', tags = ''] = fields.map((field) => field.trim());
++    const input: NewTask = {
++      title,
++      ...(priority === '' ? {} : { priority: priority as Priority }),
++      tags: tags.split(/\s+/).filter((tag) => tag !== ''),
++    };
++    const added = list.add(input);
++    if (added.ok) imported += 1;
++    else rejected.push({ line, reason: added.error.message });
++  });
++  return { imported, rejected };
++}
+diff --git a/src/index.ts b/src/index.ts
+index a94df5c15ac2278caa2802c82dfedd6fd4557647..54dad3dda261bc0f4562b281d4ec86cf9e27c596 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -3,6 +3,8 @@ import type { TaskList } from './domain/list.ts';
+ 
+ export type { TaskFilter, TaskList } from './domain/list.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
++export { importTasks } from './domain/import.ts';
++export type { ImportReport, RejectedLine } from './domain/import.ts';
+ export { summarize } from './domain/summary.ts';
+ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+diff --git a/test/import.test.ts b/test/import.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ea5af12e4113ebded110660852a4a7e38e5c202
+--- /dev/null
++++ b/test/import.test.ts
+@@ -0,0 +1,33 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++
++import { createTodoList, importTasks } from '../src/index.ts';
++
++describe('importTasks', () => {
++  it('adds valid lines with priority and tags, skipping blank lines', () => {
++    const list = createTodoList();
++    const report = importTasks(list, 'Renew the insurance;high;admin money\n\nBuy milk;;\nCall mum\r\nPay rent;low;home');
++    assert.deepEqual(report, { imported: 4, rejected: [] });
++    const insurance = list.find('Renew the insurance');
++    assert.ok(insurance.ok);
++    assert.equal(insurance.value.priority, 'high');
++    assert.deepEqual(insurance.value.tags, ['admin', 'money']);
++    const milk = list.find('Buy milk');
++    assert.ok(milk.ok);
++    assert.equal(milk.value.priority, 'normal');
++    assert.deepEqual(milk.value.tags, []);
++  });
++
++  it('rejects bad lines with their number and keeps importing', () => {
++    const list = createTodoList();
++    list.add({ title: 'Existing' });
++    const report = importTasks(list, 'Ok;;\n\n;high;x\nBad;urgent;x\nExisting;;\nOk;;\na;b;c;d');
++    assert.equal(report.imported, 1);
++    assert.deepEqual(
++      report.rejected.map((r) => r.line),
++      [3, 4, 5, 6, 7],
++    );
++    assert.ok(report.rejected.every((r) => r.reason !== ''));
++    assert.equal(list.list().length, 2);
++  });
++});

@@ -1,0 +1,123 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-6-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-6-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e21b097046e3b9619a8f3ac5b8b9940fae351004
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-6-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-6-plan
++type: plan
++title: "Fix refund policy review finding"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-6"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-005-cancel-bookings.md b/docs/memory/task/task-005-cancel-bookings.md
+index 91cfe91aa4da193e78ee37d97ebe0f8b6c92736b..e1e5eed332c3a9fd3e28a794baadd9c41db79ed2 100644
+--- a/docs/memory/task/task-005-cancel-bookings.md
++++ b/docs/memory/task/task-005-cancel-bookings.md
+@@ -19,6 +19,6 @@ Request: add `cancel(bookingId, at)` to the rental service. It cancels the booki
+ (`book` and `availability` ignore it) and a booking can only be cancelled once (a second cancel throws, as
+ do an unknown id or an invalid `at`).
+ 
+-Refund policy (the request gave none, so this is an assumption to confirm): the whole booking total when
+-`at` is before the booking starts, nothing from its start on.
++Refund policy (from task-001, superseded by task-006's fix): none under 24 h before the start, else the whole
++booking total.
+ Implemented in `src/index.ts`; covered by tests in `test/rental.test.ts`.
+diff --git a/docs/memory/task/task-006-fix-cancel-refund-policy-to-task-001-s-24-h-rule.md b/docs/memory/task/task-006-fix-cancel-refund-policy-to-task-001-s-24-h-rule.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3b1ff33d7c5108b691b5b2b42927bd2f2415c75f
+--- /dev/null
++++ b/docs/memory/task/task-006-fix-cancel-refund-policy-to-task-001-s-24-h-rule.md
+@@ -0,0 +1,22 @@
++---
++id: task-006-fix-cancel-refund-policy-to-task-001-s-24-h-rule
++type: task
++title: "Fix cancel refund policy to task-001's 24 h rule"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++# Fix cancel refund policy
++
++Review finding: `cancel` refunded in full whenever `at` was before the start, contradicting task-001's
++policy (none under 24 h before start, else full). task-005 wrongly called its policy an assumption.
++
++Fix: the refund is the whole total when `at` is at least 24 h before the booking starts, nothing from
++24 h before the start on. Changed in `src/index.ts`, covered by tests in `test/rental.test.ts`;
++task-005's policy note corrected to point to task-001.
+diff --git a/src/index.ts b/src/index.ts
+index b28d094bbd3c37c7e93e6beca9d361ef8cccc1fd..5805648cebc6613866f26b5ad44ba2ab4786ae53 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -49,7 +49,7 @@ export interface RentalService {
+   availability(query: AvailabilityQuery): string[];
+   /**
+    * Cancels a booking at `at` (ISO-8601 UTC); the equipment is free again. A booking can be cancelled once.
+-   * Refund policy: the whole total when `at` is before the booking starts, nothing from its start on.
++   * Refund policy: the whole total when `at` is at least 24 h before the booking starts, nothing after that.
+    */
+   cancel(bookingId: string, at: string): Cancellation;
+ }
+@@ -201,7 +201,7 @@ export function createRentalService(): RentalService {
+         throw new Error(`booking ${booking.id} is already cancelled`);
+       }
+       booking.cancelled = true;
+-      return { bookingId: booking.id, refund: atMs < booking.start ? booking.total : 0 };
++      return { bookingId: booking.id, refund: booking.start - atMs >= DAY_MS ? booking.total : 0 };
+     },
+   };
+ }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index e1d28b5aa3317c6b2a9df7718e0b1ac0bb1f4d79..5f89b712d58307fe341f75658e921d9eb753aecd 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -127,7 +127,7 @@ test('addEquipment validates hourlyPrice', () => {
+   s.addEquipment({ id: 'a', kind: 'board', dailyPrice: 10, hourlyPrice: 0 });
+ });
+ 
+-test('cancel frees the equipment and refunds before the start only', () => {
++test('cancel frees the equipment and refunds from 24 h before the start only', () => {
+   const s = createRentalService();
+   s.addEquipment({ id: 'x', kind: 'board', dailyPrice: 1000 });
+   const b = s.book({ itemId: 'x', start: d(10), end: d(12) });
+@@ -137,13 +137,22 @@ test('cancel frees the equipment and refunds before the start only', () => {
+   s.book({ itemId: 'x', start: d(10), end: d(12) });
+ });
+ 
++test('cancel under 24 h before the start refunds nothing', () => {
++  const s = createRentalService();
++  s.addEquipment({ id: 'x', kind: 'board', dailyPrice: 1000 });
++  const a = s.book({ itemId: 'x', start: d(10), end: d(12) });
++  const b = s.book({ itemId: 'x', start: d(12), end: d(13) });
++  assert.equal(s.cancel(a.id, '2026-04-09T22:00:00Z').refund, 0);
++  assert.equal(s.cancel(b.id, '2026-04-11T00:00:01Z').refund, 0);
++});
++
+ test('cancel after the start refunds nothing', () => {
+   const s = createRentalService();
+   s.addEquipment({ id: 'x', kind: 'board', dailyPrice: 1000 });
+   const a = s.book({ itemId: 'x', start: d(10), end: d(12) });
+   const b = s.book({ itemId: 'x', start: d(12), end: d(13) });
+   assert.equal(s.cancel(a.id, d(10)).refund, 0);
+-  assert.equal(s.cancel(b.id, '2026-04-11T23:59:59Z').refund, 1000);
++  assert.equal(s.cancel(b.id, '2026-04-11T23:59:59Z').refund, 0);
+ });
+ 
+ test('a booking can only be cancelled once, and must exist', () => {

@@ -1,0 +1,149 @@
+diff --git a/specs/001-fix-order-rules/checklists/requirements.md b/specs/001-fix-order-rules/checklists/requirements.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f90481011a419ec41389b025856cded7f3cbc2d1
+--- /dev/null
++++ b/specs/001-fix-order-rules/checklists/requirements.md
+@@ -0,0 +1 @@
++# Checklist: all items pass (spec is small, no clarification markers)
+diff --git a/specs/001-fix-order-rules/plan.md b/specs/001-fix-order-rules/plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f9e914dbf2a21b9e839a607c931a85571775bcda
+--- /dev/null
++++ b/specs/001-fix-order-rules/plan.md
+@@ -0,0 +1,4 @@
++# Plan: fix-order-rules
++Constitution check: README is truth (I); tests first (II); no API change (III); reuse `percentOf`, `canonicalSku` (IV, V). No complexity deviations.
++Changes: `src/catalog.ts` find() uses canonicalSku; `src/shipping.ts` `>=`; `src/tax.ts` lineVat uses percentOf.
++Tests: test/catalog.test.ts, test/orders.test.ts (boundaries).
+diff --git a/specs/001-fix-order-rules/spec.md b/specs/001-fix-order-rules/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d405aa64ce352efa403c6e6ecee55bcbfe6216f
+--- /dev/null
++++ b/specs/001-fix-order-rules/spec.md
+@@ -0,0 +1,33 @@
++# Feature Specification: Fix SKU lookup, free-shipping threshold and line VAT rounding
++
++**Created**: 2026-11-20 | **Status**: Draft
++**Input**: Reports from sales desk (lower-case SKU refused), a customer (delivery charged at €50.00), accounting (line VAT one cent low).
++
++## User Scenarios & Testing
++
++### User Story 1 - Lower-case SKUs are accepted (P1)
++Keying `lb-220` (or ` lb-220 `) orders the same product as `LB-220`.
++**Acceptance**: Given product LB-220, when an order names `lb-220`, then it is placed with SKU shown as `LB-220`; catalogue find/get/reprice/deactivate behave the same.
++
++### User Story 2 - Free shipping at exactly €50.00 (P1)
++**Acceptance**: goods of €50.00 after all discounts → shipping €0 (and no shipping VAT); €49.99 → weight-band cost.
++
++### User Story 3 - VAT per line rounds half up (P1)
++**Acceptance**: one item at €1.99, standard rate → line VAT €0.44 (€1.99 × 22% = 0.4378 € → 43.78 cents → 44).
++
++## Edge Cases
++- README rules affected: Products (SKU case-insensitivity), Shipping (free from €50.00), VAT (half up per line), Money (half up).
++- Boundary: exactly €50.00 goods; €49.99; VAT at exactly 0.5 cent (net 25 cents at 22% = 5.5 → 6; net 125 at 4% = 5.0).
++- Free-shipping threshold looks at goods after coupon and volume discounts.
++
++## Requirements
++- **FR-001**: Catalogue lookups MUST canonicalise SKU (trim, upper-case).
++- **FR-002**: Shipping MUST be free when goods ≥ 5000 cents.
++- **FR-003**: Line VAT MUST be the line net × rate rounded half up to the cent.
++- **FR-004**: Totals MUST remain goods + shipping + VAT + shipping VAT.
++
++## Success Criteria
++- All three reported examples produce the expected results; `npm test` passes.
++
++## Assumptions
++- README is authoritative; no README change needed since code was deviating from it.
+diff --git a/specs/001-fix-order-rules/tasks.md b/specs/001-fix-order-rules/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d2d96d3965ba3d1d9da5bd6923d9a941ac0b3ff7
+--- /dev/null
++++ b/specs/001-fix-order-rules/tasks.md
+@@ -0,0 +1,6 @@
++# Tasks
++- [X] T001 Add failing tests: lower-case SKU order/lookup; goods exactly 5000 ships free, 4999 not; line VAT 199@22% = 44, half-cent boundary
++- [X] T002 catalog.ts find(): canonicalSku
++- [X] T003 shipping.ts: `>=`
++- [X] T004 tax.ts lineVat: percentOf
++- [X] T005 npm test passes
+diff --git a/src/catalog.ts b/src/catalog.ts
+index 0dfc92645f10374f948e9312a79dc7dca44318e5..b114b9c78623136e5ee8c9b1fc6d118c4c478c33 100644
+--- a/src/catalog.ts
++++ b/src/catalog.ts
+@@ -56,7 +56,7 @@ export class Catalog {
+ 
+   /** The product with `sku`, or undefined. */
+   find(sku: string): Product | undefined {
+-    return this.#products.get(sku.trim());
++    return this.#products.get(canonicalSku(sku));
+   }
+ 
+   /** The product with `sku`; throws UnknownProductError when there is none. */
+diff --git a/src/shipping.ts b/src/shipping.ts
+index 71920b9dc3b375440460eaebb217a70a48152b33..f4290d2a7729ec7e4c062d0d5606894fb26fae09 100644
+--- a/src/shipping.ts
++++ b/src/shipping.ts
+@@ -30,6 +30,6 @@ export function parcelCost(grams: number): Cents {
+ 
+ /** The shipping cost of an order whose goods amount to `goods` and weigh `grams`. */
+ export function shippingCost(goods: Cents, grams: number): Cents {
+-  if (goods > FREE_SHIPPING_FROM_CENTS) return 0;
++  if (goods >= FREE_SHIPPING_FROM_CENTS) return 0;
+   return parcelCost(grams);
+ }
+diff --git a/src/tax.ts b/src/tax.ts
+index 7449c567971f4c22ec68c991949f8652936e091b..5e12c55f1ca4a2044012df5ea175a5b57febbef3 100644
+--- a/src/tax.ts
++++ b/src/tax.ts
+@@ -23,7 +23,7 @@ export function vatRate(vatClass: VatClass): number {
+ 
+ /** The VAT of one order line whose net amount is `net`. */
+ export function lineVat(net: Cents, vatClass: VatClass): Cents {
+-  return Math.floor((net * vatRate(vatClass)) / 100);
++  return percentOf(net, vatRate(vatClass));
+ }
+ 
+ /** The VAT on a shipping cost: the standard rate. */
+diff --git a/test/orders.test.ts b/test/orders.test.ts
+index d07f06bd09b3489b674e3119a14ea7d2ced148a7..ecde340369a6c072a76f29a8f139ed469dd5cfda 100644
+--- a/test/orders.test.ts
++++ b/test/orders.test.ts
+@@ -80,3 +80,38 @@ describe('orders', () => {
+     assert.match(text, /Total\s+€/);
+   });
+ });
++
++describe('reported defects', () => {
++  function bugShop() {
++    const s = createShop();
++    s.catalog.add({ sku: 'LB-220', name: 'Lamp', priceCents: 199, vatClass: 'standard', weightGrams: 300 });
++    s.catalog.add({ sku: 'FIFTY', name: 'Fifty', priceCents: 5000, vatClass: 'standard', weightGrams: 300 });
++    s.catalog.add({ sku: 'FIFTY-1', name: 'Almost', priceCents: 4999, vatClass: 'standard', weightGrams: 300 });
++    s.catalog.add({ sku: 'HALF', name: 'Half', priceCents: 25, vatClass: 'standard', weightGrams: 1 });
++    for (const sku of ['LB-220', 'FIFTY', 'FIFTY-1', 'HALF']) s.inventory.restock(sku, 10);
++    return s;
++  }
++
++  it('accepts a lower-case SKU and shows it in capitals', () => {
++    const { orders, catalog } = bugShop();
++    const order = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: ' lb-220 ', quantity: 1 }] });
++    assert.equal(order.lines[0]?.sku, 'LB-220');
++    assert.equal(catalog.get('lb-220').sku, 'LB-220');
++  });
++
++  it('ships free at exactly €50.00 of goods, not at €49.99', () => {
++    const { orders } = bugShop();
++    const at = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'FIFTY', quantity: 1 }] });
++    assert.equal(at.totals.shippingCents, 0);
++    const below = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'FIFTY-1', quantity: 1 }] });
++    assert.equal(below.totals.shippingCents, 490);
++  });
++
++  it('rounds line VAT half up', () => {
++    const { orders } = bugShop();
++    const a = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'LB-220', quantity: 1 }] });
++    assert.equal(a.lines[0]?.vatCents, 44);
++    const b = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'HALF', quantity: 1 }] });
++    assert.equal(b.lines[0]?.vatCents, 6);
++  });
++});

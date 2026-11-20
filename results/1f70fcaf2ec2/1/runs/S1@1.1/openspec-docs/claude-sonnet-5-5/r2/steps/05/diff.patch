@@ -1,0 +1,171 @@
+diff --git a/src/index.ts b/src/index.ts
+index ceea1d79db6dc6b0cab9d0a5f75538b2f2a97fcd..c4ae8cc5277bfcd519b601f104ea5aa67ec23d4f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -224,3 +224,94 @@ export function applyMergePatch(target: unknown, patch: unknown): unknown {
+   }
+   return result;
+ }
++
++export type PatchOperation =
++  | { op: "add" | "replace"; path: string; value: unknown }
++  | { op: "remove"; path: string };
++
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++/** Pairs of indexes (in `a` and `b`) of a longest common subsequence of equal items. */
++function commonItems(a: Json[], b: Json[]): Array<[number, number]> {
++  let start = 0;
++  while (start < a.length && start < b.length && jsonEqual(a[start], b[start])) start++;
++  let endA = a.length;
++  let endB = b.length;
++  while (endA > start && endB > start && jsonEqual(a[endA - 1], b[endB - 1])) {
++    endA--;
++    endB--;
++  }
++  const n = endA - start;
++  const m = endB - start;
++  const table: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
++  for (let i = n - 1; i >= 0; i--) {
++    for (let j = m - 1; j >= 0; j--) {
++      table[i][j] = jsonEqual(a[start + i], b[start + j])
++        ? table[i + 1][j + 1] + 1
++        : Math.max(table[i + 1][j], table[i][j + 1]);
++    }
++  }
++  const pairs: Array<[number, number]> = [];
++  for (let i = 0; i < start; i++) pairs.push([i, i]);
++  let i = 0;
++  let j = 0;
++  while (i < n && j < m) {
++    if (jsonEqual(a[start + i], b[start + j])) {
++      pairs.push([start + i, start + j]);
++      i++;
++      j++;
++    } else if (table[i + 1][j] >= table[i][j + 1]) i++;
++    else j++;
++  }
++  for (let k = 0; endA + k < a.length; k++) pairs.push([endA + k, endB + k]);
++  return pairs;
++}
++
++function diff(from: Json, to: Json, path: string, ops: PatchOperation[]): void {
++  if (jsonEqual(from, to)) return;
++  if (Array.isArray(from) && Array.isArray(to)) {
++    let pos = 0; // index in the array as it stands after the operations so far
++    let ia = 0;
++    let ib = 0;
++    const gap = (endA: number, endB: number): void => {
++      while (ia < endA && ib < endB) diff(from[ia++], to[ib++], `${path}/${pos++}`, ops);
++      while (ia < endA) {
++        ia++;
++        ops.push({ op: "remove", path: `${path}/${pos}` });
++      }
++      while (ib < endB) {
++        ops.push({ op: "add", path: `${path}/${pos++}`, value: structuredClone(to[ib++]) });
++      }
++    };
++    for (const [ma, mb] of commonItems(from, to)) {
++      gap(ma, mb);
++      ia++;
++      ib++;
++      pos++;
++    }
++    gap(from.length, to.length);
++  } else if (isObject(from) && isObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!hasOwn(to, key)) ops.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++    for (const key of Object.keys(to)) {
++      const child = `${path}/${escapeToken(key)}`;
++      if (!hasOwn(from, key)) ops.push({ op: "add", path: child, value: structuredClone(to[key]) });
++      else diff(from[key], to[key], child, ops);
++    }
++  } else {
++    ops.push({ op: "replace", path, value: structuredClone(to) });
++  }
++}
++
++/**
++ * Returns a JSON Patch (RFC 6902) that turns `from` into `to` when applied.
++ * The inputs are not mutated. Only the parts that differ are described.
++ */
++export function createPatch(from: unknown, to: unknown): PatchOperation[] {
++  const ops: PatchOperation[] = [];
++  diff(from, to, "", ops);
++  return ops;
++}
+diff --git a/test/createpatch.test.ts b/test/createpatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..7cd1fecb53416d825f0ed1492acf3b6be025507c
+--- /dev/null
++++ b/test/createpatch.test.ts
+@@ -0,0 +1,66 @@
++import test from "node:test";
++import assert from "node:assert/strict";
++import { createPatch, applyPatch } from "../src/index.ts";
++
++const roundTrip = (a: unknown, b: unknown) => {
++  const ca = structuredClone(a);
++  const cb = structuredClone(b);
++  const patch = createPatch(a, b);
++  assert.deepEqual(a, ca);
++  assert.deepEqual(b, cb);
++  assert.deepEqual(applyPatch(a, patch), b);
++  return patch;
++};
++
++test("equal documents give an empty patch", () => {
++  assert.deepEqual(roundTrip({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] }), []);
++});
++
++test("small nested change", () => {
++  assert.deepEqual(roundTrip({ a: { b: 1, c: [1, 2] }, d: 1 }, { a: { b: 2, c: [1, 2] }, d: 1 }), [
++    { op: "replace", path: "/a/b", value: 2 },
++  ]);
++});
++
++test("root and type changes", () => {
++  roundTrip(1, { a: 1 });
++  roundTrip([1], { a: 1 });
++  roundTrip(null, []);
++});
++
++test("escaped keys and __proto__", () => {
++  roundTrip({ "a/b": 1, "~": 2 }, { "a/b": 2, "~x": 3 });
++  roundTrip(JSON.parse('{"__proto__":1}'), JSON.parse('{"__proto__":2}'));
++});
++
++test("array insert and delete touch only that item", () => {
++  assert.deepEqual(roundTrip([1, 2, 3, 4], [1, 2, 9, 3, 4]), [{ op: "add", path: "/2", value: 9 }]);
++  assert.deepEqual(roundTrip([1, 2, 3, 4], [1, 3, 4]), [{ op: "remove", path: "/1" }]);
++  assert.deepEqual(roundTrip([{ a: 1 }, { a: 2 }], [{ a: 0 }, { a: 1 }, { a: 2 }]).length, 1);
++});
++
++test("array move does not rewrite items between", () => {
++  const patch = roundTrip([1, 2, 3, 4, 5], [2, 3, 4, 5, 1]);
++  assert.ok(patch.length <= 2);
++  roundTrip([1, 2, 3, 4, 5], [1, 5, 2, 3, 4]);
++});
++
++test("array item modified in place", () => {
++  assert.deepEqual(roundTrip([{ a: 1, b: 2 }, 5], [{ a: 1, b: 3 }, 5]), [
++    { op: "replace", path: "/0/b", value: 3 },
++  ]);
++});
++
++test("random round trips", () => {
++  let seed = 7;
++  const rnd = (n: number) => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff), seed % n);
++  const gen = (d: number): unknown => {
++    const k = rnd(d > 2 ? 3 : 5);
++    if (k === 0) return rnd(4);
++    if (k === 1) return null;
++    if (k === 2) return "s" + rnd(3);
++    if (k === 3) return Array.from({ length: rnd(6) }, () => gen(d + 1));
++    return Object.fromEntries(Array.from({ length: rnd(4) }, () => ["k" + rnd(4), gen(d + 1)]));
++  };
++  for (let i = 0; i < 500; i++) roundTrip(gen(0), gen(0));
++});

@@ -1,0 +1,82 @@
+diff --git a/README.md b/README.md
+index 45c8676148c3068b4d9aa489ea1968bf792f700b..0caa3d7526f43e1fc8cb7a5e376ab6d5a82df5d8 100644
+--- a/README.md
++++ b/README.md
+@@ -22,7 +22,7 @@ the prototype chain.
+ value. Neither `document` nor `patch` is mutated, and the result shares no structure with them.
+ 
+ It throws an `Error` when the patch is invalid (not an array, an operation that is not an object, an
+-unknown `op`, a missing or non-string `path` or `from`, a missing `value`, an invalid pointer), or when an
++unknown `op`, a missing or non-string `path` or `from`, a missing `value` or one that is not a JSON value (`undefined`, `NaN`, a `Date`, a sparse array...), an invalid pointer), or when an
+ operation fails (missing target, array index out of range or with a leading zero, `move` into one of its
+ own children, a `test` that does not match). A failing patch returns nothing: it is atomic. Removing the
+ whole document (`remove` with the empty path) is rejected because no JSON value would be left. `test`
+diff --git a/src/index.ts b/src/index.ts
+index 6f0393b362613b034cb20f2583057b568f3468ce..3cd3ee106b8f8610fddaa35a1b64fedd7a9df09a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -75,6 +75,27 @@ function requireString(operation: { [key: string]: unknown }, member: string): s
+   return value;
+ }
+ 
++function isJsonValue(value: unknown): value is JsonValue {
++  if (value === null || typeof value === "string" || typeof value === "boolean") {
++    return true;
++  }
++  if (typeof value === "number") {
++    return Number.isFinite(value);
++  }
++  if (Array.isArray(value)) {
++    return Array.from(value).every(isJsonValue);
++  }
++  return isObject(value) && Object.getPrototypeOf(value) === Object.prototype && Object.values(value).every(isJsonValue);
++}
++
++function requireValue(operation: { [key: string]: unknown }): JsonValue {
++  const value = operation.value;
++  if (!isJsonValue(value)) {
++    throw new Error(`Invalid JSON Patch: "${operation.op}" requires a JSON "value"`);
++  }
++  return value;
++}
++
+ function parseOperation(raw: unknown): PatchOperation {
+   if (!isObject(raw)) {
+     throw new Error("Invalid JSON Patch: an operation must be an object");
+@@ -86,10 +107,7 @@ function parseOperation(raw: unknown): PatchOperation {
+     case "add":
+     case "replace":
+     case "test":
+-      if (!Object.hasOwn(raw, "value")) {
+-        throw new Error(`Invalid JSON Patch: "${op}" requires a "value"`);
+-      }
+-      return { op, path, value: raw.value as JsonValue };
++      return { op, path, value: requireValue(raw) };
+     case "remove":
+       return { op, path };
+     case "move":
+@@ -223,6 +241,6 @@ export function applyPatch(document: JsonValue, patch: PatchOperation[]): JsonVa
+   if (!Array.isArray(patch)) {
+     throw new Error("Invalid JSON Patch: a patch must be an array of operations");
+   }
+-  const operations = patch.map(parseOperation);
++  const operations = Array.from(patch, parseOperation);
+   return operations.reduce(applyOperation, structuredClone(document));
+ }
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index f76f9a8104587dba12caf2c912e35ad1f7965ac3..ab22c8bb90de5ae7c943450f6d4eee92399d7123 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -146,3 +146,12 @@ test("invalid patches are rejected", () => {
+ test("a value of null is a present value", () => {
+   assert.deepEqual(apply({}, [{ op: "add", path: "/a", value: null }]), { a: null });
+ });
++
++test("a value that is not JSON is rejected", () => {
++  assert.throws(() => apply({}, [{ op: "add", path: "/a", value: undefined as any }]));
++  assert.throws(() => apply({}, [{ op: "add", path: "/a", value: { b: undefined } as any }]));
++  assert.throws(() => apply({}, [{ op: "add", path: "/a", value: NaN }]));
++  assert.throws(() => apply({}, [{ op: "add", path: "/a", value: new Date() as any }]));
++  assert.throws(() => apply({}, [{ op: "add", path: "/a", value: [1, , 3] as any }]));
++  assert.throws(() => apply({}, [, { op: "add", path: "/a", value: 1 }] as any));
++});

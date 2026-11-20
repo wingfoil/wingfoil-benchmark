@@ -1,0 +1,110 @@
+diff --git a/README.md b/README.md
+index 2d5cd8a5f693503d0f3ba5be19fda6d4725f8ff9..22d2b2bd17569b53de4970d7f9250e3eb0a79db9 100644
+--- a/README.md
++++ b/README.md
+@@ -34,4 +34,4 @@ order, with paths as JSON Pointers (RFC 6901), and returns the result as a new v
+ and the result shares no structure with them. It throws `JsonPatchInvalidError` when the patch is not valid (not an
+ array, bad `op`, missing or invalid `path`, `value` or `from`) and `JsonPatchOperationError` when an operation fails
+ (missing target, bad array index, `move` into its own child, failed `test`, removing the whole document). Both extend
+-`JsonPatchError`, whose `index` is the failing operation's position. Per RFC 6902 §5 a failing patch has no effect.
++`JsonPatchError`, whose `index` is the failing operation's position. The whole patch is validated before any operation is applied. Per RFC 6902 §5 a failing patch has no effect.
+diff --git a/specs/003-patch-conformance/spec.md b/specs/003-patch-conformance/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7bb2b26183ee9af49bf8a3a7d08790e137747159
+--- /dev/null
++++ b/specs/003-patch-conformance/spec.md
+@@ -0,0 +1,6 @@
++# Spec: applyPatch conformance review (RFC 6902 sections 3, 4, 5)
++- A patch is validated in full before any operation is applied, so an invalid operation is reported as
++  `JsonPatchInvalidError` even when an earlier operation would fail (section 5: error, no effect).
++- Holes in a sparse patch array are invalid operations, not skipped.
++- `op` is read only as an own member of the operation object.
++Tests: tests/patch.test.ts ("whole patch is validated before applying...").
+diff --git a/src/index.ts b/src/index.ts
+index 16cb14cd92ae07509ad37f36266a677f36043e97..a89c7a89c7410cfdadd35e82706f2ba7a1cd7257 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -176,12 +176,20 @@ function removeAt(root: unknown, path: string[]): unknown {
+   return root;
+ }
+ 
+-function applyOperation(root: unknown, op: unknown): unknown {
++interface Operation {
++  name: string;
++  path: string[];
++  from: string[];
++  value: unknown;
++}
++
++/** Checks one operation's shape (RFC 6902 section 4) without touching any document. */
++function parseOperation(op: unknown): Operation {
+   if (typeof op !== "object" || op === null || Array.isArray(op)) {
+     throw new JsonPatchInvalidError("Patch operation must be an object", -1);
+   }
+   const o = op as Record<string, unknown>;
+-  const name = o["op"];
++  const name = Object.hasOwn(o, "op") ? o["op"] : undefined;
+   if (typeof name !== "string") throw new JsonPatchInvalidError('Operation "op" must be a string', -1);
+   if (!["add", "remove", "replace", "move", "copy", "test"].includes(name)) {
+     throw new JsonPatchInvalidError(`Unknown operation "${name}"`, -1);
+@@ -190,7 +198,11 @@ function applyOperation(root: unknown, op: unknown): unknown {
+   const needsValue = name === "add" || name === "replace" || name === "test";
+   if (needsValue && !Object.hasOwn(o, "value")) throw new JsonPatchInvalidError(`"${name}" requires "value"`, -1);
+   const from = name === "move" || name === "copy" ? tokens(Object.hasOwn(o, "from") ? o["from"] : undefined, "from") : [];
++  return { name, path, from, value: o["value"] };
++}
+ 
++function applyOperation(root: unknown, { name, path, from, value: opValue }: Operation): unknown {
++  const o = { value: opValue };
+   switch (name) {
+     case "add":
+       return addAt(root, path, clone(o["value"]));
+@@ -226,16 +238,22 @@ function applyOperation(root: unknown, op: unknown): unknown {
+  */
+ export function applyPatch(document: unknown, patch: readonly unknown[]): unknown {
+   if (!Array.isArray(patch)) throw new JsonPatchInvalidError("A JSON Patch must be an array of operations", -1);
+-  let result = clone(document);
+-  patch.forEach((op, index) => {
++  const at = <T>(index: number, f: () => T): T => {
+     try {
+-      result = applyOperation(result, op);
++      return f();
+     } catch (e) {
+       if (e instanceof JsonPatchError) {
+         throw new (e.constructor as new (m: string, i: number) => JsonPatchError)(`Operation ${index}: ${e.message}`, index);
+       }
+       throw e;
+     }
++  };
++  // The whole patch is validated before anything is applied; holes of a sparse array are not skipped.
++  const ops: Operation[] = [];
++  for (let index = 0; index < patch.length; index++) ops.push(at(index, () => parseOperation(patch[index])));
++  let result = clone(document);
++  ops.forEach((op, index) => {
++    result = at(index, () => applyOperation(result, op));
+   });
+   return result;
+ }
+diff --git a/tests/patch.test.ts b/tests/patch.test.ts
+index f1696bc2c5eb01d746e15e1943531972263a7ae4..7a7f324b7f462d5f98f8b5e9281e109f66080445 100644
+--- a/tests/patch.test.ts
++++ b/tests/patch.test.ts
+@@ -1,6 +1,6 @@
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
+-import { applyPatch, JsonPatchError } from "../src/index.ts";
++import { applyPatch, JsonPatchError, JsonPatchInvalidError } from "../src/index.ts";
+ 
+ type Op = Record<string, unknown>;
+ const ok = (doc: unknown, patch: Op[], expected: unknown) => assert.deepEqual(applyPatch(doc, patch), expected);
+@@ -141,3 +141,10 @@ test("prototype safety", () => {
+   assert.equal(Object.getPrototypeOf(out2), Object.prototype);
+   assert.equal(({} as Record<string, unknown>).y, undefined);
+ });
++
++test("whole patch is validated before applying; sparse arrays rejected", () => {
++  assert.throws(() => applyPatch({}, [{ op: "remove", path: "/zz" }, { op: "bogus", path: "/a" }]), JsonPatchInvalidError);
++  // eslint-disable-next-line no-sparse-arrays
++  bad({}, [{ op: "add", path: "/a", value: 1 }, , { op: "add", path: "/b", value: 2 }]);
++  bad({}, [Object.create({ op: "add", path: "/a", value: 1 })]);
++});

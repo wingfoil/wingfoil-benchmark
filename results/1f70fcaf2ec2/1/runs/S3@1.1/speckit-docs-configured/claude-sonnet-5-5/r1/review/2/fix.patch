@@ -1,0 +1,62 @@
+diff --git a/src/index.ts b/src/index.ts
+index 0ec6a0e477ac6c73b8554a93bd6f5d90e90e3124..0bf4a7ecc0e62e6ca281336c639c7441824f1d5a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -53,14 +53,21 @@ const LONG_STAY_MIN_DAYS = 3;
+ /** Rule 5: the long-stay price is this many tenths of the full price (10% off). */
+ const LONG_STAY_TENTHS = 9;
+ 
++/** Beyond the safe-integer range the arithmetic would silently lose precision. */
++function safeTotal(value: number): number {
++  if (!Number.isSafeInteger(value)) {
++    throw new Error('rental total is too large');
++  }
++  return value;
++}
++
+ /** Rule 5: full price in cents, less 10% from 3 days; rounded half up to a whole cent. */
+ function rentalTotal(days: number, dailyPrice: number): number {
+-  const full = days * dailyPrice;
+-  // Beyond the safe-integer range the arithmetic would silently lose precision.
+-  if (!Number.isSafeInteger(full) || !Number.isSafeInteger(full * LONG_STAY_TENTHS + 5)) {
+-    throw new Error('rental total is too large');
++  const full = safeTotal(days * dailyPrice);
++  if (days < LONG_STAY_MIN_DAYS) {
++    return full;
+   }
+-  return days >= LONG_STAY_MIN_DAYS ? Math.floor((full * LONG_STAY_TENTHS + 5) / 10) : full;
++  return Math.floor(safeTotal(full * LONG_STAY_TENTHS + 5) / 10);
+ }
+ 
+ const ON_THE_HOUR_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:00(:00(\.0+)?)?(Z|\+00:00)$/;
+@@ -111,7 +118,7 @@ export function createRentalService(): RentalService {
+       if (item.hourlyPrice === undefined) {
+         throw new Error(`Item ${item.id} cannot be rented by the hour`);
+       }
+-      total = ((endMs - startMs) / HOUR_MS) * item.hourlyPrice;
++      total = safeTotal(((endMs - startMs) / HOUR_MS) * item.hourlyPrice);
+     } else {
+       parseMidnightUtc(request.start, 'start');
+       parseMidnightUtc(request.end, 'end');
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index b98f5e30537464b008c67c9fec7e99f07157bf08..e5ef2a34f82f08bae6f4dd580613507348662600 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -218,3 +218,17 @@ test('a total beyond the safe-integer range is rejected', () => {
+   s.addEquipment({ id: 'big', kind: 'board', dailyPrice: Number.MAX_SAFE_INTEGER });
+   assert.throws(() => s.quote(req('big', '2026-07-01T00:00:00Z', '2026-07-05T00:00:00Z')));
+ });
++
++test('an hourly total beyond the safe-integer range is rejected', () => {
++  const s = createRentalService();
++  s.addEquipment({ id: 'big', kind: 'board', dailyPrice: 1, hourlyPrice: Number.MAX_SAFE_INTEGER });
++  assert.throws(() => s.quote(req('big', '2026-07-01T10:00:00Z', '2026-07-01T12:00:00Z')), /too large/);
++  assert.equal(s.quote(req('big', '2026-07-01T10:00:00Z', '2026-07-01T11:00:00Z')).total, Number.MAX_SAFE_INTEGER);
++});
++
++test('a short stay is not rejected for discount arithmetic it never uses', () => {
++  const s = createRentalService();
++  const dailyPrice = Math.floor(Number.MAX_SAFE_INTEGER / 2);
++  s.addEquipment({ id: 'big', kind: 'board', dailyPrice });
++  assert.equal(s.quote(req('big', '2026-07-01T00:00:00Z', '2026-07-03T00:00:00Z')).total, dailyPrice * 2);
++});

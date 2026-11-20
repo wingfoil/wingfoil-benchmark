@@ -1,0 +1,120 @@
+diff --git a/specs/002-availability/spec.md b/specs/002-availability/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e54766de9633e68a635a59a69ae87bd713b1eb7f
+--- /dev/null
++++ b/specs/002-availability/spec.md
+@@ -0,0 +1,41 @@
++# Feature Specification: Availability
++
++**Created**: 2026-11-20
++**Status**: Draft
++**Input**: `availability(query)` on the rental service; `query` is `{ start, end, kind }`, `kind` optional.
++
++## User Scenarios & Testing
++
++### User Story 1 - See what can still be rented (Priority: P1)
++
++The desk gives a period and optionally a kind, and gets the ids of the equipment free for the whole period.
++
++**Acceptance Scenarios**:
++
++1. **Given** boards b1, b2 and sail s1 with b1 booked inside the period, **When** availability is asked for the period with no kind, **Then** `['b2', 's1']`.
++2. **Given** the same state, **When** kind is `board`, **Then** `['b2']`.
++3. **Given** a booking ending exactly at `start` or starting exactly at `end`, **Then** the item is still free (half-open periods).
++4. **Given** a booking overlapping only part of the period, **Then** the item is not listed.
++5. **Given** equipment added in any order, **Then** ids are returned sorted.
++
++### Edge Cases
++
++- No equipment matches: empty list.
++- Invalid period (not midnight UTC, not ISO UTC, end <= start) or invalid kind: throws, as for `quote`/`book`.
++
++## Requirements
++
++- **FR-001**: `availability({ start, end, kind? })` returns the sorted ids of equipment free for all of `[start, end)`.
++- **FR-002**: When `kind` is given only that kind is considered; otherwise all kinds.
++- **FR-003**: Period validation is identical to `quote`/`book`.
++- **FR-004**: A `kind` that is neither absent nor `'board'`/`'sail'` throws.
++- **FR-005**: Querying never changes bookings.
++
++## Assumptions
++
++- Sorting is default string order (code-unit) of ids.
++- `kind: undefined` counts as absent; `null` is invalid.
++
++## Success Criteria
++
++- **SC-001**: The desk's answer matches what `book` would accept for each listed item, and rejects each unlisted one.
+diff --git a/src/index.ts b/src/index.ts
+index 9ed4da0515d91d74d09fc39adcc2ac9f21bd29dd..ab48bbd5c8090c481b9812f14e944bf44c3416bc 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -27,10 +27,21 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++export interface AvailabilityQuery {
++  /** ISO-8601 UTC, midnight. */
++  start: string;
++  /** ISO-8601 UTC, midnight; the start of the day after the last rental day. */
++  end: string;
++  /** Restrict to one kind; any kind when omitted. */
++  kind?: EquipmentKind;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  /** Ids, sorted, of the equipment free for the whole period. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+@@ -98,5 +109,18 @@ export function createRentalService(): RentalService {
+         total,
+       };
+     },
++
++    availability(query) {
++      if (query === null || typeof query !== 'object') throw new Error('query is required');
++      const { kind } = query;
++      if (kind !== undefined && kind !== 'board' && kind !== 'sail') throw new Error("kind must be 'board' or 'sail'");
++      const startMs = parseInstant(query.start, 'start');
++      const endMs = parseInstant(query.end, 'end');
++      if (endMs <= startMs) throw new Error('end must be after start');
++      return [...items.values()]
++        .filter((s) => (kind === undefined || s.item.kind === kind) && !s.bookings.some((b) => startMs < b.endMs && b.startMs < endMs))
++        .map((s) => s.item.id)
++        .sort();
++    },
+   };
+ }
+diff --git a/src/rental.test.ts b/src/rental.test.ts
+index 972bc4878709856d134880e9cdb907e4d0b54f26..21371af582b705dcc7d55599b2bc0b773ed6309d 100644
+--- a/src/rental.test.ts
++++ b/src/rental.test.ts
+@@ -27,3 +27,23 @@ test('book prevents overlaps but allows adjacent periods', () => {
+   const b = s.book(r('2026-05-03T00:00:00Z', '2026-05-04T00:00:00Z'));
+   assert.notEqual(a.id, b.id);
+ });
++
++test('availability lists free items, sorted, optionally by kind', () => {
++  const s = createRentalService();
++  s.addEquipment({ id: 's1', kind: 'sail', dailyPrice: 1000 });
++  s.addEquipment({ id: 'b2', kind: 'board', dailyPrice: 1000 });
++  s.addEquipment({ id: 'b1', kind: 'board', dailyPrice: 1000 });
++  s.book(r('2026-05-02T00:00:00Z', '2026-05-04T00:00:00Z'));
++  const q = { start: '2026-05-01T00:00:00Z', end: '2026-05-03T00:00:00Z' };
++  assert.deepEqual(s.availability(q), ['b2', 's1']);
++  assert.deepEqual(s.availability({ ...q, kind: 'board' }), ['b2']);
++  assert.deepEqual(s.availability({ ...q, kind: 'sail' }), ['s1']);
++  assert.deepEqual(s.availability({ start: '2026-05-04T00:00:00Z', end: '2026-05-05T00:00:00Z' }), ['b1', 'b2', 's1']);
++  assert.deepEqual(s.availability({ start: '2026-04-30T00:00:00Z', end: '2026-05-02T00:00:00Z', kind: 'board' }), ['b1', 'b2']);
++});
++test('availability validates the query', () => {
++  const s = mk();
++  assert.throws(() => s.availability({ start: '2026-05-01T10:00:00Z', end: '2026-05-02T00:00:00Z' }));
++  assert.throws(() => s.availability({ start: '2026-05-02T00:00:00Z', end: '2026-05-02T00:00:00Z' }));
++  assert.throws(() => s.availability({ start: '2026-05-01T00:00:00Z', end: '2026-05-02T00:00:00Z', kind: 'x' as never }));
++});

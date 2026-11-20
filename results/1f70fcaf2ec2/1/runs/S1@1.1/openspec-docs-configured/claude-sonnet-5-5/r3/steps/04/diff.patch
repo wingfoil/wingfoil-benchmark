@@ -1,0 +1,98 @@
+diff --git a/src/index.ts b/src/index.ts
+index 199bbb79013339887f48bc235343795ef2aa6b88..de570c04fa9a5bb92c64af99ad3a797cdc7e41e7 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -231,3 +231,27 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   }
+   return doc;
+ }
++
++// ---------------------------------------------------------------------------
++// JSON Merge Patch (RFC 7396, which obsoletes RFC 7386)
++// ---------------------------------------------------------------------------
++
++/**
++ * Applies a JSON Merge Patch (RFC 7396 section 2) to a JSON document and returns the result as a new value.
++ * Neither argument is mutated. A non-object patch replaces the target; in an object patch, a null member
++ * removes that member and any other value is merged recursively. Arrays are replaced as a whole, and
++ * null values inside an object that is added to the target are dropped, as the section 2 algorithm requires.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isObject(patch)) return clone(patch);
++  const result: Record<string, unknown> = isObject(target) ? clone(target) : {};
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, applyMergePatch(has(result, key) ? result[key] : undefined, value));
++    }
++  }
++  return result;
++}
+diff --git a/test/mergepatch.test.ts b/test/mergepatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..0b4a5e7808294a10abce48bd19c1b96aecc857b3
+--- /dev/null
++++ b/test/mergepatch.test.ts
+@@ -0,0 +1,60 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "../src/index.ts";
++
++const j = (s: string) => JSON.parse(s);
++
++test("RFC 7396 appendix A examples", () => {
++  const cases: [string, string, string][] = [
++    ['{"a":"b"}', '{"a":"c"}', '{"a":"c"}'],
++    ['{"a":"b"}', '{"b":"c"}', '{"a":"b","b":"c"}'],
++    ['{"a":"b"}', '{"a":null}', "{}"],
++    ['{"a":"b","b":"c"}', '{"a":null}', '{"b":"c"}'],
++    ['{"a":["b"]}', '{"a":"c"}', '{"a":"c"}'],
++    ['{"a":"c"}', '{"a":["b"]}', '{"a":["b"]}'],
++    ['{"a":{"b":"c"}}', '{"a":{"b":"d","c":null}}', '{"a":{"b":"d"}}'],
++    ['{"a":[{"b":"c"}]}', '{"a":[1]}', '{"a":[1]}'],
++    ['["a","b"]', '["c","d"]', '["c","d"]'],
++    ['{"a":"b"}', '["c"]', '["c"]'],
++    ['{"a":"foo"}', "null", "null"],
++    ['{"a":"foo"}', '"bar"', '"bar"'],
++    ['{"e":null}', '{"a":1}', '{"e":null,"a":1}'],
++    ['[1,2]', '{"a":"b","c":null}', '{"a":"b"}'],
++    ['{}', '{"a":{"bb":{"ccc":null}}}', '{"a":{"bb":{}}}'],
++  ];
++  for (const [t, p, r] of cases) assert.deepEqual(applyMergePatch(j(t), j(p)), j(r), `${t} + ${p}`);
++});
++
++test("scalar targets and patches", () => {
++  assert.deepEqual(applyMergePatch(5, { a: 1 }), { a: 1 });
++  assert.equal(applyMergePatch({ a: 1 }, 5), 5);
++  assert.equal(applyMergePatch(undefined, "x"), "x");
++});
++
++test("null inside added objects is dropped", () => {
++  assert.deepEqual(applyMergePatch({}, { a: { b: null, c: 1 } }), { a: { c: 1 } });
++});
++
++test("does not mutate inputs and does not share structure", () => {
++  const target = j('{"a":{"b":1},"c":[1]}');
++  const patch = j('{"a":{"b":null},"d":{"e":[2]}}');
++  const t = structuredClone(target);
++  const p = structuredClone(patch);
++  const out = applyMergePatch(target, patch) as any;
++  assert.deepEqual(target, t);
++  assert.deepEqual(patch, p);
++  out.d.e.push(3);
++  out.c.push(2);
++  assert.deepEqual(patch, p);
++  assert.deepEqual(target, t);
++});
++
++test("hostile __proto__ keys are handled safely", () => {
++  const out = applyMergePatch({}, j('{"__proto__":{"polluted":true},"a":1}')) as any;
++  assert.equal(({} as any).polluted, undefined);
++  assert.equal(Object.getPrototypeOf(out), Object.prototype);
++  assert.ok(Object.prototype.hasOwnProperty.call(out, "__proto__"));
++  assert.deepEqual(applyMergePatch(j('{"__proto__":{"x":1}}'), j('{"__proto__":{"y":2}}')), j('{"__proto__":{"x":1,"y":2}}'));
++  assert.deepEqual(applyMergePatch(j('{"__proto__":1,"a":2}'), j('{"__proto__":null}')), { a: 2 });
++  assert.equal(({} as any).y, undefined);
++});

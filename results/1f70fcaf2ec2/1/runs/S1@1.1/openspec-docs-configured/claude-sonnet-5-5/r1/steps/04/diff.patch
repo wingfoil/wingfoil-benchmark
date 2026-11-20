@@ -1,0 +1,102 @@
+diff --git a/src/index.ts b/src/index.ts
+index 63f5ee2eedd18b61e4311ac7cdd2dc2713c5c08b..a1e4b6880e8cc98d4798a3eeb75f6585a687340b 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -208,3 +208,28 @@ export function applyPatch(document: unknown, patch: unknown): JsonValue {
+   }
+   return result as JsonValue;
+ }
++
++// RFC 7396 section 2: MergePatch(Target, Patch), on already-copied values.
++function merge(target: unknown, patch: unknown): unknown {
++  if (!isObject(patch)) return clone(patch); // non-objects (including arrays) replace the target
++  const result: Record<string, unknown> = isObject(target) ? clone(target) : {};
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key]; // null removes the member; absent members are ignored
++    } else {
++      setMember(result, key, merge(hasOwn(result, key) ? result[key] : undefined, value));
++    }
++  }
++  return result;
++}
++
++/**
++ * Applies a JSON Merge Patch (RFC 7396, section 2) to a target document and returns the result.
++ * Object patches merge recursively, `null` members delete, and any other patch value (arrays
++ * included) replaces the target wholesale. A null inside an array is data, not a deletion.
++ * Neither argument is modified and the result shares no structure with them.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): JsonValue {
++  return merge(target, patch) as JsonValue;
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d0fb2fcd8cea1c3f902cc298c823167ab82669cf
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,63 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch as m } from "../src/index.ts";
++
++// RFC 7396 section 3 example.
++test("section 3 example", () => {
++  const target = { title: "Goodbye!", author: { givenName: "John", familyName: "Doe" }, tags: ["example", "sample"], content: "This will be unchanged" };
++  const patch = { title: "Hello!", phoneNumber: "+01-123-456-7890", author: { familyName: null }, tags: ["example"] };
++  assert.deepEqual(m(target, patch), {
++    title: "Hello!", author: { givenName: "John" }, tags: ["example"], content: "This will be unchanged", phoneNumber: "+01-123-456-7890",
++  });
++});
++
++// RFC 7396 section 3 test-case table.
++const cases: [unknown, unknown, unknown][] = [
++  [{ a: "b" }, { a: "c" }, { a: "c" }],
++  [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++  [{ a: "b" }, { a: null }, {}],
++  [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++  [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++  [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++  [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++  [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++  [["a", "b"], ["c", "d"], ["c", "d"]],
++  [{ a: "b" }, ["c"], ["c"]],
++  [{ a: "foo" }, null, null],
++  [{ a: "foo" }, "bar", "bar"],
++  [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++  [[1, 2], { a: "b", c: null }, { a: "b" }],
++  [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++];
++cases.forEach(([t, p, r], i) => test(`table case ${i + 1}`, () => assert.deepEqual(m(t, p), r)));
++
++test("null in array patch is data", () => assert.deepEqual(m({ a: [1] }, { a: [null] }), { a: [null] }));
++test("non-object target becomes object", () => assert.deepEqual(m(5, { a: 1 }), { a: 1 }));
++test("empty object patch keeps target", () => assert.deepEqual(m({ a: 1 }, {}), { a: 1 }));
++test("empty object patch on scalar yields {}", () => assert.deepEqual(m("x", {}), {}));
++
++test("inputs are not mutated and result shares no structure", () => {
++  const target = { a: { b: 1 }, c: [1] };
++  const patch = { a: { d: { e: 2 } }, c: [{ f: 1 }] };
++  const t0 = structuredClone(target), p0 = structuredClone(patch);
++  const r = m(target, patch) as any;
++  assert.deepEqual(target, t0);
++  assert.deepEqual(patch, p0);
++  assert.notEqual(r.a.d, patch.a.d);
++  assert.notEqual(r.c, patch.c);
++});
++
++test("__proto__ is a plain member, no prototype pollution", () => {
++  const patch = JSON.parse('{"__proto__":{"polluted":true},"a":{"__proto__":{"x":1}}}');
++  const r = m({}, patch) as any;
++  assert.equal(({} as any).polluted, undefined);
++  assert.equal(Object.getPrototypeOf(r), Object.prototype);
++  assert.equal(Object.prototype.hasOwnProperty.call(r, "__proto__"), true);
++  assert.deepEqual(JSON.parse(JSON.stringify(r)), patch);
++});
++
++test("__proto__ null deletes own member only", () => {
++  const target = JSON.parse('{"__proto__":1,"a":2}');
++  const r = m(target, JSON.parse('{"__proto__":null}')) as any;
++  assert.deepEqual(Object.keys(r), ["a"]);
++});

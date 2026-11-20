@@ -1,0 +1,82 @@
+diff --git a/README.md b/README.md
+index 8de7a32c0b6c19d040e2cf880336fe9ed55c65ba..b7bcaeac156b42e9df40bc95d9824eabc3e70de3 100644
+--- a/README.md
++++ b/README.md
+@@ -17,6 +17,9 @@ and sails:
+   any kind when none is given, that is free for the whole period (no booking overlaps it). It throws for an
+   invalid period or kind.
+ 
++A rental of 3 days or more costs 10% less than its full price (daily price times days, rounded to the
++nearest euro cent); `quote` and `book` both return the reduced `total`.
++
+ Periods are whole days: `start` and `end` are ISO-8601 UTC strings at midnight, and `end` is the start of
+ the day after the last rented day. `quote` and `book` throw for an unknown item or an invalid period, and
+ `book` throws when the item is already booked for any part of the period. Cancellations (with the 24-hour
+diff --git a/src/index.ts b/src/index.ts
+index cab3e9664cc28a8bc7c40ab622cdebc09f40d643..acc081d944795729c5b3636967591e99f2e13182 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -48,6 +48,10 @@ export interface RentalService {
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
++/** Rentals of at least this many days get the long-stay discount. */
++const LONG_STAY_DAYS = 3;
++/** The long-stay discount, in percent of the full price. */
++const LONG_STAY_DISCOUNT_PERCENT = 10;
+ const MIDNIGHT_UTC = /^\d{4}-\d{2}-\d{2}T00:00(:00(\.0+)?)?(Z|[+-]00:?00)$/;
+ 
+ function parseMidnightUtc(value: unknown, label: string): number {
+@@ -70,6 +74,12 @@ function parsePeriod(request: RentalRequest): { start: number; end: number; days
+   return { start, end, days: (end - start) / DAY_MS };
+ }
+ 
++/** Full price of `days` days, less the long-stay discount, rounded to whole euro cents. */
++function rentalTotal(dailyPrice: number, days: number): number {
++  const full = dailyPrice * days;
++  return days >= LONG_STAY_DAYS ? Math.round((full * (100 - LONG_STAY_DISCOUNT_PERCENT)) / 100) : full;
++}
++
+ function validateEquipment(item: Equipment): void {
+   if (typeof item?.id !== 'string' || item.id === '') {
+     throw new Error('id must be a non-empty string');
+@@ -94,7 +104,7 @@ export function createRentalService(): RentalService {
+     }
+     const { start, end, days } = parsePeriod(request);
+     const { itemId, start: s, end: e } = request;
+-    return { quote: { itemId, start: s, end: e, total: item.dailyPrice * days }, start, end };
++    return { quote: { itemId, start: s, end: e, total: rentalTotal(item.dailyPrice, days) }, start, end };
+   }
+ 
+   function isFree(itemId: string, start: number, end: number): boolean {
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index a75d96f2f4ffc6e5f1478ea850e7da0f826e865a..7c767ccf096b6576372f2f0d38ced0c4a07e0837 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -13,7 +13,25 @@ function setup() {
+ 
+ test('quote prices whole days in cents', () => {
+   const q = setup().quote({ itemId: 'board-1', start: day(1), end: day(4) });
+-  assert.deepStrictEqual(q, { itemId: 'board-1', start: day(1), end: day(4), total: 7500 });
++  assert.deepStrictEqual(q, { itemId: 'board-1', start: day(1), end: day(4), total: 6750 });
++});
++
++test('quote gives 10% off from 3 days, not for 2 days', () => {
++  const s = setup();
++  assert.strictEqual(s.quote({ itemId: 'board-1', start: day(1), end: day(3) }).total, 5000);
++  assert.strictEqual(s.quote({ itemId: 'board-1', start: day(1), end: day(4) }).total, 6750);
++  assert.strictEqual(s.quote({ itemId: 'board-1', start: day(1), end: day(8) }).total, 15750);
++});
++
++test('discounted total is rounded to whole cents', () => {
++  const s = createRentalService();
++  s.addEquipment({ id: 'b', kind: 'board', dailyPrice: 1001 });
++  assert.strictEqual(s.quote({ itemId: 'b', start: day(1), end: day(4) }).total, 2703);
++});
++
++test('book shows the discounted total', () => {
++  const b = setup().book({ itemId: 'board-1', start: day(1), end: day(4) });
++  assert.strictEqual(b.total, 6750);
+ });
+ 
+ test('quote accepts the Z form without milliseconds', () => {

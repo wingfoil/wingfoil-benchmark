@@ -1,0 +1,232 @@
+diff --git a/README.md b/README.md
+index f67f0a921b5331006f16eb7c61a4fb43381e5b1a..b4179a0b28a95bd344671616ccecacaeea7f6b34 100644
+--- a/README.md
++++ b/README.md
+@@ -37,6 +37,21 @@ with the document or the patch. Operations apply in order, and the patch is atom
+ missing `value`) or when an operation fails (a missing target, an array index out of range, a failed
+ `test`, removing the whole document, moving a value into its own child).
+ 
++## Creating a JSON Patch
++
++`createPatch(from, to)`, exported from `src/index.ts`, returns a JSON Patch (see above) that turns
++`from` into `to` when applied with `applyPatch`.
++
++```ts
++createPatch({ a: 1, b: [1, 2, 3] }, { a: 1, b: [1, 3] }); // [{ op: "remove", path: "/b/1" }]
++```
++
++The patch holds only what changed. Objects are compared member by member and arrays by their longest
++common run of items: an inserted or removed item is an `add` or a `remove`, a moved item is a `remove`
++followed by an `add`, and the items around them are left alone. An array item that changed in place is
++patched inside, and a value whose type changed is replaced. Neither input is mutated and the patch
++shares no structure with them. It does not throw.
++
+ ## JSON Merge Patch (RFC 7386)
+ 
+ `applyMergePatch(target, patch)`, exported from `src/index.ts`, applies a JSON Merge Patch to `target`
+diff --git a/src/create-patch.ts b/src/create-patch.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..7bcd3d03240e6ebd26ff59a4331cda837fe52c6a
+--- /dev/null
++++ b/src/create-patch.ts
+@@ -0,0 +1,95 @@
++import { deepEqual, isObject, type PatchOperation } from "./patch.ts";
++
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++function child(path: string, token: string | number): string {
++  return `${path}/${escapeToken(String(token))}`;
++}
++
++/** Returns, for the longest common subsequence of `a` and `b`, the matched index pairs in order. */
++function commonPairs(a: unknown[], b: unknown[]): [number, number][] {
++  const lengths = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
++  for (let i = a.length - 1; i >= 0; i--) {
++    for (let j = b.length - 1; j >= 0; j--) {
++      lengths[i][j] = deepEqual(a[i], b[j]) ? lengths[i + 1][j + 1] + 1 : Math.max(lengths[i + 1][j], lengths[i][j + 1]);
++    }
++  }
++  const pairs: [number, number][] = [];
++  let i = 0;
++  let j = 0;
++  while (i < a.length && j < b.length) {
++    if (deepEqual(a[i], b[j])) {
++      pairs.push([i++, j++]);
++    } else if (lengths[i + 1][j] >= lengths[i][j + 1]) {
++      i++;
++    } else {
++      j++;
++    }
++  }
++  return pairs;
++}
++
++function diffGap(from: unknown[], to: unknown[], path: string, start: number, out: PatchOperation[]): void {
++  const paired = Math.min(from.length, to.length);
++  for (let k = 0; k < paired; k++) {
++    diff(from[k], to[k], child(path, start + k), out);
++  }
++  for (let k = paired; k < from.length; k++) {
++    out.push({ op: "remove", path: child(path, start + paired) });
++  }
++  for (let k = paired; k < to.length; k++) {
++    out.push({ op: "add", path: child(path, start + k), value: structuredClone(to[k]) });
++  }
++}
++
++function diffArrays(from: unknown[], to: unknown[], path: string, out: PatchOperation[]): void {
++  const anchors = [...commonPairs(from, to), [from.length, to.length] as [number, number]];
++  let fromStart = 0;
++  let toStart = 0;
++  for (const [fromAnchor, toAnchor] of anchors) {
++    diffGap(from.slice(fromStart, fromAnchor), to.slice(toStart, toAnchor), path, toStart, out);
++    fromStart = fromAnchor + 1;
++    toStart = toAnchor + 1;
++  }
++}
++
++function diffObjects(from: Record<string, unknown>, to: Record<string, unknown>, path: string, out: PatchOperation[]): void {
++  for (const key of Object.keys(from)) {
++    if (!Object.hasOwn(to, key)) {
++      out.push({ op: "remove", path: child(path, key) });
++    }
++  }
++  for (const key of Object.keys(to)) {
++    if (Object.hasOwn(from, key)) {
++      diff(from[key], to[key], child(path, key), out);
++    } else {
++      out.push({ op: "add", path: child(path, key), value: structuredClone(to[key]) });
++    }
++  }
++}
++
++function diff(from: unknown, to: unknown, path: string, out: PatchOperation[]): void {
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArrays(from, to, path, out);
++  } else if (isObject(from) && isObject(to)) {
++    diffObjects(from, to, path, out);
++  } else if (!deepEqual(from, to)) {
++    out.push({ op: "replace", path, value: structuredClone(to) });
++  }
++}
++
++/**
++ * Returns a JSON Patch (RFC 6902) that turns `from` into `to` when applied with `applyPatch`.
++ *
++ * The patch holds only what changed: objects are compared member by member and arrays by their
++ * longest common run of items, so an inserted or removed item is an `add` or `remove`, and a moved
++ * item is a `remove` followed by an `add`, without rewriting the items around it. Neither input is
++ * mutated and the patch shares no structure with them.
++ */
++export function createPatch(from: unknown, to: unknown): PatchOperation[] {
++  const out: PatchOperation[] = [];
++  diff(from, to, "", out);
++  return out;
++}
+diff --git a/src/index.ts b/src/index.ts
+index 0f5aa9ff92446865b5d5c6a5fc2a6956a4aed23f..12a8d9c0754fd0daf76d25a5e5cc1200e4555722 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,3 +1,4 @@
+ export { resolvePointer } from "./pointer.ts";
+ export { applyPatch } from "./patch.ts";
+ export { applyMergePatch } from "./merge-patch.ts";
++export { createPatch } from "./create-patch.ts";
+diff --git a/src/patch.ts b/src/patch.ts
+index 42b54dca4253a9d670afbf8e3f44c504756ef9d3..5e2a97402b070b47e6720cd78eeb453f3c969b13 100644
+--- a/src/patch.ts
++++ b/src/patch.ts
+@@ -10,7 +10,7 @@ type Container = Record<string, unknown> | unknown[];
+ 
+ const OPERATIONS = ["add", "remove", "replace", "move", "copy", "test"];
+ 
+-function isObject(value: unknown): value is Record<string, unknown> {
++export function isObject(value: unknown): value is Record<string, unknown> {
+   return typeof value === "object" && value !== null && !Array.isArray(value);
+ }
+ 
+@@ -103,7 +103,8 @@ function replaceValue(document: unknown, tokens: string[], value: unknown): unkn
+   return document;
+ }
+ 
+-function deepEqual(a: unknown, b: unknown): boolean {
++/** Returns whether two JSON values are structurally equal, ignoring member order. */
++export function deepEqual(a: unknown, b: unknown): boolean {
+   if (Array.isArray(a) || Array.isArray(b)) {
+     return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => deepEqual(v, b[i]));
+   }
+diff --git a/test/create-patch.test.ts b/test/create-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..3cc5b6c0da535321de7f7c3a0f45dfabb1ee54d5
+--- /dev/null
++++ b/test/create-patch.test.ts
+@@ -0,0 +1,67 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++function roundTrip(from: unknown, to: unknown) {
++  const before = structuredClone(from);
++  const target = structuredClone(to);
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.deepEqual(from, before);
++  assert.deepEqual(to, target);
++  return patch;
++}
++
++test("identical documents give an empty patch", () => {
++  assert.deepEqual(roundTrip({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] }), []);
++});
++
++test("a small change deep in a document is a single operation", () => {
++  assert.deepEqual(roundTrip({ a: { b: { c: 1, d: 2 } }, e: [1] }, { a: { b: { c: 1, d: 3 } }, e: [1] }), [
++    { op: "replace", path: "/a/b/d", value: 3 },
++  ]);
++});
++
++test("object members are added and removed, with escaped pointers", () => {
++  assert.deepEqual(roundTrip({ "a/b": 1, "m~n": 2 }, { "m~n": 2, c: null }), [
++    { op: "remove", path: "/a~1b" },
++    { op: "add", path: "/c", value: null },
++  ]);
++});
++
++test("root and type changes are replaced", () => {
++  assert.deepEqual(roundTrip(1, 2), [{ op: "replace", path: "", value: 2 }]);
++  roundTrip({ a: [1] }, { a: { 0: 1 } });
++  roundTrip([1], null);
++});
++
++test("an inserted or removed array item does not rewrite its neighbours", () => {
++  assert.deepEqual(roundTrip([1, 2, 3, 4], [1, 2, 9, 3, 4]), [{ op: "add", path: "/2", value: 9 }]);
++  assert.deepEqual(roundTrip([1, 2, 3, 4], [1, 3, 4]), [{ op: "remove", path: "/1" }]);
++  assert.deepEqual(roundTrip([], [1]), [{ op: "add", path: "/0", value: 1 }]);
++});
++
++test("a moved array item is not rewritten along with the items between", () => {
++  const patch = roundTrip(["a", "b", "c", "d", "e"], ["a", "e", "b", "c", "d"]);
++  assert.ok(patch.length <= 2);
++  roundTrip([{ id: 1 }, { id: 2 }, { id: 3 }], [{ id: 3 }, { id: 1 }, { id: 2 }]);
++});
++
++test("a changed array item is patched in place", () => {
++  assert.deepEqual(roundTrip([{ id: 1, v: 1 }, { id: 2, v: 2 }], [{ id: 1, v: 1 }, { id: 2, v: 3 }]), [
++    { op: "replace", path: "/1/v", value: 3 },
++  ]);
++});
++
++test("mixed array edits round-trip", () => {
++  roundTrip([1, 2, 3, 4, 5, 6], [6, 2, 7, 8, 4]);
++  roundTrip([[1, 2], [3]], [[3], [1, 2, 5]]);
++  roundTrip([1, 1, 1], [1, 1]);
++});
++
++test("the patch shares no structure with the inputs", () => {
++  const to = { a: { b: 1 } };
++  const patch = createPatch({}, to);
++  (patch[0] as { value: { b: number } }).value.b = 2;
++  assert.equal(to.a.b, 1);
++});

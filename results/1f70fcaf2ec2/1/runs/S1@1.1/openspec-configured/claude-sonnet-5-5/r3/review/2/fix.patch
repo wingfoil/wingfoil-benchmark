@@ -1,0 +1,238 @@
+diff --git a/openspec/changes/archive/2026-11-20-reject-sparse-and-circular-json-values/.openspec.yaml b/openspec/changes/archive/2026-11-20-reject-sparse-and-circular-json-values/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..4ee7b3f00e155023b32f9805ab1b7ea631b7215e
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-reject-sparse-and-circular-json-values/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-11-20
+diff --git a/openspec/changes/archive/2026-11-20-reject-sparse-and-circular-json-values/design.md b/openspec/changes/archive/2026-11-20-reject-sparse-and-circular-json-values/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c868204af8b1c416bb202f484d507468ccd06ac4
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-reject-sparse-and-circular-json-values/design.md
+@@ -0,0 +1,18 @@
++## Context
++
++`isJsonValue` uses `Array.prototype.every`, which skips holes, and recurses without a bound.
++
++## Goals / Non-Goals
++
++**Goals:** reject holes, cycles and excessive depth with `JsonPatchError` (RFC 8259 §3: JSON values are finite trees without holes).
++**Non-Goals:** validating the document; other operations.
++
++## Decisions
++
++- Arrays are checked with an indexed loop, so a hole reads as `undefined` and is rejected (`Object.hasOwn` is not needed: `undefined` fails the type switch).
++- `isJsonValue` takes a depth argument and returns `false` beyond 512 levels. A cycle never terminates, so the same cap rejects it; no extra visited set is needed. 512 is far below the engine stack limit for `isJsonValue` and the later `cloneJson`, and RFC 8259 §9 allows implementations to limit nesting depth.
++- No runtime dependencies.
++
++## Risks / Trade-offs
++
++- Legitimate values nested deeper than 512 levels are rejected; this is permitted by RFC 8259 §9 and unrealistic for real payloads.
+diff --git a/openspec/changes/archive/2026-11-20-reject-sparse-and-circular-json-values/proposal.md b/openspec/changes/archive/2026-11-20-reject-sparse-and-circular-json-values/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5696beec29d19f3f3ba7a82b2867c9cc42d50461
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-reject-sparse-and-circular-json-values/proposal.md
+@@ -0,0 +1,29 @@
++# Proposal
++
++## Why
++
++Review of `harden-json-patch-values` found two gaps in `isJsonValue`: sparse array holes (`[ , 1]`, `new Array(3)`) pass because `Array.prototype.every` skips holes, and circular or very deeply nested values throw a raw `RangeError` (stack overflow) instead of `JsonPatchError`.
++
++## What Changes
++
++- A `value` containing a sparse array hole at any depth is rejected with `JsonPatchError` (a hole reads as `undefined`, which is not a JSON value).
++- A `value` that contains itself, or is nested deeper than a fixed limit, is rejected with `JsonPatchError` rather than overflowing the stack.
++- Not breaking for valid input: only values that were already outside the standard, or that crashed, change behaviour.
++
++**Governing standards:** RFC 8259 §3 (JSON values; JSON text is finite and has no holes or cycles), RFC 6902 §3, §4.1, §4.3, §4.6.
++
++**Out of scope:** validating the `document` argument, other operations, other error types.
++
++## Capabilities
++
++### New Capabilities
++<!-- None -->
++
++### Modified Capabilities
++- `json-patch`: the "Patch document structure" requirement gains rules on holes, cycles and depth.
++
++## Impact
++
++- `src/index.ts`: `isJsonValue`.
++- `test/patch.test.ts`: new tests.
++- No new dependencies; no `package.json` change.
+diff --git a/openspec/changes/archive/2026-11-20-reject-sparse-and-circular-json-values/specs/json-patch/spec.md b/openspec/changes/archive/2026-11-20-reject-sparse-and-circular-json-values/specs/json-patch/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a977a8949bd56e7ed25cd431b58eb11041237e8d
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-reject-sparse-and-circular-json-values/specs/json-patch/spec.md
+@@ -0,0 +1,52 @@
++## MODIFIED Requirements
++
++### Requirement: Patch document structure
++Per RFC 6902 §3, a patch SHALL be an array of operation objects. Each operation SHALL have a string `op` that is one of `add`, `remove`, `replace`, `move`, `copy`, `test` and a string `path` that is a valid JSON Pointer (RFC 6901). The `value` of `add`, `replace` and `test` SHALL be a JSON value (RFC 8259 §3): an object or array of JSON values, a string, a finite number, a boolean or `null`. A value containing a sparse array hole, a circular reference, or nesting deeper than 512 levels SHALL NOT be a JSON value. Members not defined for the operation SHALL be ignored. Operations are applied in order. Any violation SHALL cause an error.
++
++#### Scenario: Empty patch
++- **WHEN** the patch is `[]`
++- **THEN** the result equals the document
++
++#### Scenario: Patch is not an array
++- **WHEN** the patch is an object, `null`, a string or `undefined`
++- **THEN** an error is thrown
++
++#### Scenario: Operation is not an object
++- **WHEN** an element is `null`, an array or a scalar
++- **THEN** an error is thrown
++
++#### Scenario: Unknown or missing op
++- **WHEN** `op` is missing, not a string, or not one of the six names (e.g. `"merge"`, `"ADD"`)
++- **THEN** an error is thrown
++
++#### Scenario: Missing or invalid path
++- **WHEN** `path` is missing, not a string, or not a valid JSON Pointer (e.g. `"a"`, `"/a~2"`)
++- **THEN** an error is thrown
++
++#### Scenario: Missing value
++- **WHEN** an `add`, `replace` or `test` operation has no `value` member (RFC 6902 §4.1, §4.3, §4.6)
++- **THEN** an error is thrown, whereas `"value": null` is a valid value
++
++#### Scenario: Value is not JSON
++- **WHEN** an `add`, `replace` or `test` `value` is, or contains at any depth, `undefined`, `NaN`, `Infinity`, a function, a `bigint`, a symbol, or a non-plain object such as a `Date` or `Map`
++- **THEN** an error is thrown
++
++#### Scenario: Value contains a sparse array hole
++- **WHEN** an `add`, `replace` or `test` `value` is, or contains at any depth, a sparse array such as `[ , 1]` or `new Array(3)`
++- **THEN** a `JsonPatchError` is thrown
++
++#### Scenario: Value is circular
++- **WHEN** an `add`, `replace` or `test` `value` contains itself, e.g. `o.self = o`
++- **THEN** a `JsonPatchError` is thrown, not a `RangeError`
++
++#### Scenario: Value is nested too deeply
++- **WHEN** an `add`, `replace` or `test` `value` is nested more than 512 levels deep
++- **THEN** a `JsonPatchError` is thrown, not a `RangeError`, whereas shallower nesting is accepted
++
++#### Scenario: Missing or invalid from
++- **WHEN** a `move` or `copy` operation has no `from` member, or it is not a valid JSON Pointer (§4.4, §4.5)
++- **THEN** an error is thrown
++
++#### Scenario: Unrecognised members
++- **WHEN** an operation carries extra members such as `"comment"`
++- **THEN** they are ignored
+diff --git a/openspec/changes/archive/2026-11-20-reject-sparse-and-circular-json-values/tasks.md b/openspec/changes/archive/2026-11-20-reject-sparse-and-circular-json-values/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3281be8a23cf647d629fea600d8c4bb4deae3b8c
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-reject-sparse-and-circular-json-values/tasks.md
+@@ -0,0 +1,8 @@
++## 1. Implementation
++
++- [x] 1.1 In `src/index.ts`, make `isJsonValue` reject array holes (indexed loop) and values nested deeper than 512 levels, so cycles raise `JsonPatchError`
++
++## 2. Tests
++
++- [x] 2.1 Test scenarios "sparse array hole" (top-level and nested), "circular" and "nested too deeply" (and that depth just under the limit passes) for `add`, `replace` and `test`
++- [x] 2.2 Run `npm test` and confirm all tests pass
+diff --git a/openspec/specs/json-patch/spec.md b/openspec/specs/json-patch/spec.md
+index b182aa39d061e5db91b47374cee9092e53078f61..a02155609ad5ea26a8425aa1eb8db016533d887f 100644
+--- a/openspec/specs/json-patch/spec.md
++++ b/openspec/specs/json-patch/spec.md
+@@ -6,7 +6,7 @@ Defines how an RFC 6902 JSON Patch is validated and applied to a JSON document,
+ ## Requirements
+ 
+ ### Requirement: Patch document structure
+-Per RFC 6902 §3, a patch SHALL be an array of operation objects. Each operation SHALL have a string `op` that is one of `add`, `remove`, `replace`, `move`, `copy`, `test` and a string `path` that is a valid JSON Pointer (RFC 6901). The `value` of `add`, `replace` and `test` SHALL be a JSON value (RFC 8259 §3): an object or array of JSON values, a string, a finite number, a boolean or `null`. Members not defined for the operation SHALL be ignored. Operations are applied in order. Any violation SHALL cause an error.
++Per RFC 6902 §3, a patch SHALL be an array of operation objects. Each operation SHALL have a string `op` that is one of `add`, `remove`, `replace`, `move`, `copy`, `test` and a string `path` that is a valid JSON Pointer (RFC 6901). The `value` of `add`, `replace` and `test` SHALL be a JSON value (RFC 8259 §3): an object or array of JSON values, a string, a finite number, a boolean or `null`. A value containing a sparse array hole, a circular reference, or nesting deeper than 512 levels SHALL NOT be a JSON value. Members not defined for the operation SHALL be ignored. Operations are applied in order. Any violation SHALL cause an error.
+ 
+ #### Scenario: Empty patch
+ - **WHEN** the patch is `[]`
+@@ -36,6 +36,18 @@ Per RFC 6902 §3, a patch SHALL be an array of operation objects. Each operation
+ - **WHEN** an `add`, `replace` or `test` `value` is, or contains at any depth, `undefined`, `NaN`, `Infinity`, a function, a `bigint`, a symbol, or a non-plain object such as a `Date` or `Map`
+ - **THEN** an error is thrown
+ 
++#### Scenario: Value contains a sparse array hole
++- **WHEN** an `add`, `replace` or `test` `value` is, or contains at any depth, a sparse array such as `[ , 1]` or `new Array(3)`
++- **THEN** a `JsonPatchError` is thrown
++
++#### Scenario: Value is circular
++- **WHEN** an `add`, `replace` or `test` `value` contains itself, e.g. `o.self = o`
++- **THEN** a `JsonPatchError` is thrown, not a `RangeError`
++
++#### Scenario: Value is nested too deeply
++- **WHEN** an `add`, `replace` or `test` `value` is nested more than 512 levels deep
++- **THEN** a `JsonPatchError` is thrown, not a `RangeError`, whereas shallower nesting is accepted
++
+ #### Scenario: Missing or invalid from
+ - **WHEN** a `move` or `copy` operation has no `from` member, or it is not a valid JSON Pointer (§4.4, §4.5)
+ - **THEN** an error is thrown
+diff --git a/src/index.ts b/src/index.ts
+index c61659508df8e878c8e751c2108d4d2af7f43e61..cc4d684a4d2c967d4b6193f57feb20ea05a16dbf 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -178,7 +178,10 @@ function replaceAt(document: unknown, tokens: string[], value: unknown): unknown
+   return document;
+ }
+ 
+-function isJsonValue(value: unknown): boolean {
++const MAX_JSON_DEPTH = 512;
++
++function isJsonValue(value: unknown, depth = 0): boolean {
++  if (depth > MAX_JSON_DEPTH) return false;
+   switch (typeof value) {
+     case "string":
+     case "boolean":
+@@ -187,10 +190,13 @@ function isJsonValue(value: unknown): boolean {
+       return Number.isFinite(value);
+     case "object": {
+       if (value === null) return true;
+-      if (Array.isArray(value)) return value.every(isJsonValue);
++      if (Array.isArray(value)) {
++        for (let i = 0; i < value.length; i++) if (!isJsonValue(value[i], depth + 1)) return false;
++        return true;
++      }
+       const proto = Object.getPrototypeOf(value);
+       if (proto !== Object.prototype && proto !== null) return false;
+-      return Object.values(value).every(isJsonValue);
++      return Object.values(value).every((v) => isJsonValue(v, depth + 1));
+     }
+     default:
+       return false;
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 8bc03654a403d10df13a44dab783880dfdbc09a2..e4cf4aa303a9f0e9d05ddf962af2b91a7bb37b36 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -129,6 +129,30 @@ test("escaping and hostile keys", () => {
+   }
+ });
+ 
++test("value with sparse holes, cycles or excessive depth is rejected with JsonPatchError", () => {
++  const circular: Record<string, unknown> = {};
++  circular.self = circular;
++  const nest = (n: number) => {
++    let v: unknown = 1;
++    for (let i = 0; i < n; i++) v = [v];
++    return v;
++  };
++  const values: unknown[] = [
++    [, 1], // eslint-disable-line no-sparse-arrays
++    new Array(3),
++    { x: [1, , 2] }, // eslint-disable-line no-sparse-arrays
++    circular,
++    [circular],
++    nest(100000),
++  ];
++  for (const name of ["add", "replace", "test"]) {
++    for (const value of values) {
++      assert.throws(() => applyPatch({ a: 1 }, [{ op: name, path: "/a", value }]), JsonPatchError);
++    }
++  }
++  assert.deepEqual(applyPatch({ a: 1 }, [{ op: "add", path: "/b", value: nest(100) }]), { a: 1, b: nest(100) });
++});
++
+ test("value is not JSON", () => {
+   const values: unknown[] = [undefined, NaN, Infinity, () => 1, 1n, Symbol("s"), new Date(), new Map()];
+   for (const name of ["add", "replace", "test"]) {

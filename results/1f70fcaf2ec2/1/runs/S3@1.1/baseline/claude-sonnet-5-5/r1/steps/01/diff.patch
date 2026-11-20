@@ -1,0 +1,174 @@
+diff --git a/README.md b/README.md
+index b5fe1b2a4feac926b16f4b55fd72f2bb6eb7b711..f4854c2721cf8e53a3148246f655f35a8c07e816 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,22 @@
+ The Lakeside Windsurf School teaches windsurfing on the lake from April to October, and rents boards and
+ sails to its students and to visitors who bring their own experience. This repository holds the software
+ of its booking desk, written in TypeScript with no runtime dependency.
++
++## Rental module (`src/index.ts`)
++
++`createRentalService()` returns an in-memory service: `addEquipment`, `quote`, `book`. Run tests with
++`npm test`.
++
++School rules, which apply to everything the module does:
++
++1. Money is an integer number of euro cents.
++2. Times are in UTC, written as ISO-8601 strings.
++3. A booking covers whole days only: a period starts and ends at midnight UTC, and it ends at the start
++   of the day after its last day.
++4. The same item cannot be booked twice for overlapping periods.
++5. Cancellation policy: a booking cancelled less than 24 hours before its start gets no refund;
++   otherwise the full amount is refunded.
++
++Not implemented yet: cancellations (rule 5 is for later). Notes: back-to-back bookings (one ends the
++day another starts) do not overlap; `start`/`end` must be full timestamps at midnight UTC (e.g.
++`2026-07-01T00:00:00Z`); `end` must be after `start`.
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..db03db9fbee73b3d5c9a56b21cc5526dd06ab381
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,103 @@
++export type EquipmentKind = 'board' | 'sail';
++
++export interface Equipment {
++  id: string;
++  kind: EquipmentKind;
++  /** Price of one day of rental, in integer euro cents. */
++  dailyPrice: number;
++}
++
++export interface RentalRequest {
++  itemId: string;
++  /** ISO-8601, midnight UTC. */
++  start: string;
++  /** ISO-8601, midnight UTC: the start of the day after the last rented day. */
++  end: string;
++}
++
++export interface Quote {
++  itemId: string;
++  start: string;
++  end: string;
++  /** Integer euro cents. */
++  total: number;
++}
++
++export interface Booking extends Quote {
++  id: string;
++}
++
++export interface RentalService {
++  addEquipment(item: Equipment): void;
++  quote(request: RentalRequest): Quote;
++  book(request: RentalRequest): Booking;
++}
++
++const DAY_MS = 24 * 60 * 60 * 1000;
++const MIDNIGHT_UTC = /^\d{4}-\d{2}-\d{2}T00:00(:00(\.0+)?)?(Z|[+-]00:00)$/;
++
++function parseMidnightUtc(value: unknown, label: string): number {
++  if (typeof value !== 'string' || !MIDNIGHT_UTC.test(value)) {
++    throw new Error(`${label} must be an ISO-8601 string at midnight UTC`);
++  }
++  const ms = Date.parse(value);
++  if (Number.isNaN(ms) || ms % DAY_MS !== 0) {
++    throw new Error(`${label} must be an ISO-8601 string at midnight UTC`);
++  }
++  return ms;
++}
++
++export function createRentalService(): RentalService {
++  const equipment = new Map<string, Equipment>();
++  const bookings: (Booking & { startMs: number; endMs: number })[] = [];
++
++  function price(request: RentalRequest) {
++    const item = equipment.get(request?.itemId);
++    if (!item) throw new Error(`Unknown item: ${String(request?.itemId)}`);
++    const startMs = parseMidnightUtc(request.start, 'start');
++    const endMs = parseMidnightUtc(request.end, 'end');
++    if (endMs <= startMs) throw new Error('end must be after start');
++    const days = (endMs - startMs) / DAY_MS;
++    return {
++      startMs,
++      endMs,
++      quote: {
++        itemId: item.id,
++        start: request.start,
++        end: request.end,
++        total: days * item.dailyPrice,
++      },
++    };
++  }
++
++  return {
++    addEquipment(item) {
++      if (!item || typeof item.id !== 'string' || item.id === '') {
++        throw new Error('Equipment id must be a non-empty string');
++      }
++      if (item.kind !== 'board' && item.kind !== 'sail') {
++        throw new Error("Equipment kind must be 'board' or 'sail'");
++      }
++      if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
++        throw new Error('dailyPrice must be a non-negative integer number of euro cents');
++      }
++      if (equipment.has(item.id)) throw new Error(`Duplicate item: ${item.id}`);
++      equipment.set(item.id, { id: item.id, kind: item.kind, dailyPrice: item.dailyPrice });
++    },
++
++    quote(request) {
++      return price(request).quote;
++    },
++
++    book(request) {
++      const { startMs, endMs, quote } = price(request);
++      const clash = bookings.some(
++        (b) => b.itemId === quote.itemId && startMs < b.endMs && b.startMs < endMs,
++      );
++      if (clash) throw new Error(`Item ${quote.itemId} is not free for that period`);
++      const booking: Booking = { id: `booking-${bookings.length + 1}`, ...quote };
++      bookings.push({ ...booking, startMs, endMs });
++      return { ...booking };
++    },
++  };
++}
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..c671ddf4523866c85eb7c385eee53df604128518
+--- /dev/null
++++ b/test/rental.test.ts
+@@ -0,0 +1,32 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { createRentalService } from '../src/index.ts';
++
++const d = (day: number) => `2026-07-${String(day).padStart(2, '0')}T00:00:00.000Z`;
++
++function setup() {
++  const s = createRentalService();
++  s.addEquipment({ id: 'b1', kind: 'board', dailyPrice: 2550 });
++  return s;
++}
++
++test('quote multiplies days by daily price', () => {
++  assert.equal(setup().quote({ itemId: 'b1', start: d(1), end: d(4) }).total, 7650);
++});
++
++test('rejects unknown items and bad periods', () => {
++  const s = setup();
++  assert.throws(() => s.quote({ itemId: 'x', start: d(1), end: d(2) }));
++  assert.throws(() => s.quote({ itemId: 'b1', start: d(2), end: d(2) }));
++  assert.throws(() => s.quote({ itemId: 'b1', start: d(3), end: d(2) }));
++  assert.throws(() => s.quote({ itemId: 'b1', start: '2026-07-01T10:00:00Z', end: d(2) }));
++});
++
++test('book prevents overlaps but allows back-to-back', () => {
++  const s = setup();
++  const a = s.book({ itemId: 'b1', start: d(1), end: d(3) });
++  assert.throws(() => s.book({ itemId: 'b1', start: d(2), end: d(4) }));
++  const b = s.book({ itemId: 'b1', start: d(3), end: d(4) });
++  assert.notEqual(a.id, b.id);
++  assert.equal(a.total, 5100);
++});

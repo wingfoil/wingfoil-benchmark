@@ -1,0 +1,55 @@
+diff --git a/specs/002-json-patch/spec.md b/specs/002-json-patch/spec.md
+index a6ba2297a0fe2f9b82aeeee034c55e78fcba80eb..3b353d07bd7e0a1f0a90f2fe942bff1f762a1725 100644
+--- a/specs/002-json-patch/spec.md
++++ b/specs/002-json-patch/spec.md
+@@ -11,3 +11,4 @@
+ - **FR-006**: `test` uses deep equality (object member order irrelevant; type-strict).
+ - **FR-007**: Inputs are never mutated and the result shares no structure with them.
+ - **FR-008**: Pointers use the RFC 6901 parser from feature 001; `__proto__` is an ordinary member.
++- **FR-009** (conformance review): `move` whose `from` equals `path` is a no-op once `from` is verified to exist (RFC 6902 §4.4 only forbids a *proper* prefix), including at the root; sparse patch arrays are invalid (every element is checked).
+diff --git a/src/patch.ts b/src/patch.ts
+index def9b61f4af69c281b7b14d6650c1c6c7a609933..ccd14ef4e832ed0ec6d34e4b7c3bfeb26ec36aee 100644
+--- a/src/patch.ts
++++ b/src/patch.ts
+@@ -104,7 +104,8 @@ function requireString(operation: Record<string, unknown>, member: string, index
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) throw new TypeError("JSON Patch must be an array of operations");
+   let result = structuredClone(document);
+-  patch.forEach((operation: unknown, i) => {
++  for (let i = 0; i < patch.length; i++) {
++    const operation: unknown = patch[i];
+     if (!isObject(operation)) throw new TypeError(`Patch operation ${i} must be an object`);
+     const op = operation.op;
+     if (typeof op !== "string" || !OPS.has(op)) {
+@@ -137,6 +138,7 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+           throw new Error(`Patch operation ${i}: cannot move "${from}" into one of its children`);
+         }
+         const moved = getAt(result, from);
++        if (from === path) break; // moving a value onto its own location changes nothing
+         result = addAt(removeAt(result, from), path, moved);
+         break;
+       }
+@@ -149,6 +151,6 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+         }
+         break;
+     }
+-  });
++  }
+   return result;
+ }
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 770c9ce401f2a096df78c6edda47b752777d4907..0ae210af9c1d8f0276fa4489a56d85f27be3b2f0 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -81,3 +81,11 @@ test("failed patch leaves input untouched; __proto__ is an ordinary member", ()
+   assert.deepEqual(Object.keys(out), ["__proto__"]);
+   assert.throws(() => applyPatch({}, [{ op: "remove", path: "/toString" }]));
+ });
++
++test("move onto its own location is a no-op; sparse patches are invalid", () => {
++  assert.deepEqual(applyPatch({ a: 1 }, [{ op: "move", from: "", path: "" }]), { a: 1 });
++  assert.deepEqual(applyPatch({ a: [1, 2] }, [{ op: "move", from: "/a/0", path: "/a/0" }]), { a: [1, 2] });
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: "move", from: "/b", path: "/b" }]));
++  // eslint-disable-next-line no-sparse-arrays
++  assert.throws(() => applyPatch({ a: 1 }, [, { op: "remove", path: "/a" }]));
++});

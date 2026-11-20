@@ -1,0 +1,81 @@
+diff --git a/src/index.ts b/src/index.ts
+index 9b5b1833287b6493eea86713cb838519de77d036..574f52bd13b1b9d797abbf7b90a7b98bd11ab357 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -47,6 +47,10 @@ export interface RentalService {
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
++/** Rentals of at least this many days get the long-stay discount. */
++const LONG_STAY_DAYS = 3;
++/** Long-stay discount, as a percentage off the full price. */
++const LONG_STAY_DISCOUNT_PERCENT = 10;
+ const ISO_UTC_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
+ const EQUIPMENT_KINDS: readonly string[] = ['board', 'sail'];
+ 
+@@ -103,7 +107,13 @@ export function createRentalService(): RentalService {
+   function priceOf(request: RentalRequest): { item: Equipment; period: Period; total: number } {
+     const item = findItem(request.itemId);
+     const period = parsePeriod(request);
+-    return { item, period, total: item.dailyPrice * period.days };
++    const fullPrice = item.dailyPrice * period.days;
++    // Integer arithmetic, rounded half up to the nearest cent.
++    const total =
++      period.days >= LONG_STAY_DAYS
++        ? Math.round((fullPrice * (100 - LONG_STAY_DISCOUNT_PERCENT)) / 100)
++        : fullPrice;
++    return { item, period, total };
+   }
+ 
+   function isBooked(itemId: string, period: Period): boolean {
+diff --git a/test/rental.test.js b/test/rental.test.js
+index e4838ce0971609e7d17a34c141981f136bb1795b..0cc9fb621a437333785172620de70b164b07fc44 100644
+--- a/test/rental.test.js
++++ b/test/rental.test.js
+@@ -12,14 +12,44 @@ test('quote multiplies the daily price by the number of whole days', () => {
+   const service = serviceWithBoard();
+   assert.deepEqual(
+     service.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' }),
+-    { itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z', total: 7500 },
++    { itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z', total: 6750 },
+   );
+ });
+ 
+ test('quote crosses month boundaries correctly', () => {
+   const service = serviceWithBoard();
+   const quote = service.quote({ itemId: 'board-1', start: '2026-02-27T00:00:00Z', end: '2026-03-02T00:00:00Z' });
+-  assert.equal(quote.total, 2500 * 3);
++  assert.equal(quote.total, 6750);
++});
++
++test('quote charges the full price for rentals shorter than 3 days', () => {
++  const service = serviceWithBoard();
++  const oneDay = { itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' };
++  const twoDays = { itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z' };
++  assert.equal(service.quote(oneDay).total, 2500);
++  assert.equal(service.quote(twoDays).total, 5000);
++});
++
++test('quote takes 10% off rentals of 3 days or more', () => {
++  const service = serviceWithBoard();
++  const week = { itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-08T00:00:00Z' };
++  assert.equal(service.quote(week).total, 15750);
++});
++
++test('quote rounds the discounted total to the nearest cent, halves up', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'a', kind: 'board', dailyPrice: 101 });
++  service.addEquipment({ id: 'b', kind: 'board', dailyPrice: 105 });
++  const threeDays = { start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' };
++  assert.equal(service.quote({ itemId: 'a', ...threeDays }).total, 273); // 303 * 0.9 = 272.7
++  assert.equal(service.quote({ itemId: 'b', ...threeDays }).total, 284); // 315 * 0.9 = 283.5
++});
++
++test('book charges the discounted total for rentals of 3 days or more', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' });
++  assert.equal(booking.total, 6750);
++  assert.equal(service.quote({ itemId: 'board-1', start: '2026-07-10T00:00:00Z', end: '2026-07-13T00:00:00Z' }).total, booking.total);
+ });
+ 
+ test('quote does not reserve anything', () => {

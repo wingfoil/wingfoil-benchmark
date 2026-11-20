@@ -1,0 +1,161 @@
+diff --git a/README.md b/README.md
+index f94531d2f6bec02eda6cef75d58134ed9a710973..a3d118270bfaa561790e37e113494efa1c34319f 100644
+--- a/README.md
++++ b/README.md
+@@ -34,3 +34,18 @@ array index, failed `test`, `move` into its own child). Processing stops at the
+ returned, so a failed patch has no partial effect. `test` compares by JSON equality (member order is
+ irrelevant). Removing the document root throws, as RFC 6902 leaves that case undefined. `__proto__` and
+ similar keys are ordinary members.
++
++## JSON Merge Patch (RFC 7386)
++
++```ts
++import { applyMergePatch } from "json-toolkit";
++
++applyMergePatch({ a: "b", c: { d: "e" } }, { a: "z", c: { d: null } }); // { a: "z", c: {} }
++```
++
++`applyMergePatch(target, patch)` applies a merge patch and returns the merged document as a new value;
++neither `target` nor `patch` is modified or shared with the result. An object patch is merged member by
++member: a `null` member removes that member of the target, any other member is merged recursively (a
++non-object target is treated as `{}`). Any non-object patch, arrays included, replaces the target as a
++whole; `null` is a valid patch and yields `null`. Because `null` means "remove", a merge patch cannot set a
++member to `null`. `__proto__` and similar keys are ordinary members.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..eda8f4bbeab90c5648c887588b24cff1480ce466
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-4-plan
++type: plan
++title: "JSON Merge Patch RFC 7386"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-4"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-004-implement-json-merge-patch-rfc-7386.md b/docs/memory/task/task-004-implement-json-merge-patch-rfc-7386.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0044d75abcd77afbe75ab88f434a3016cd896669
+--- /dev/null
++++ b/docs/memory/task/task-004-implement-json-merge-patch-rfc-7386.md
+@@ -0,0 +1,23 @@
++---
++id: task-004-implement-json-merge-patch-rfc-7386
++type: task
++title: "Implement JSON Merge Patch (RFC 7386)"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++## Request
++
++Implement JSON Merge Patch (RFC 7386): export `applyMergePatch(target, patch)` from `src/index.ts`.
++
++## Done
++
++- `applyMergePatch` in `src/index.ts`: non-object patch replaces the target; `null` members delete; other members merge recursively; non-object target treated as `{}`. Inputs are not modified or shared; `__proto__` is an ordinary member.
++- Tests in `test/mergepatch.test.ts` (RFC 7386 Appendix A cases, non-mutation, prototype safety); `npm test`: 47 pass, 0 fail.
++- README section added.
+diff --git a/src/index.ts b/src/index.ts
+index 4bc495cb5eefa765c9886dc1ae2342ed51c7fc91..a1198e58dc7319b969c8619631388851a4de8be9 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -231,3 +231,29 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   }
+   return result;
+ }
++
++const isObject = (v: Json): v is Record<string, Json> =>
++  typeof v === "object" && v !== null && !Array.isArray(v);
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a target document and returns the
++ * result as a new value. Neither `target` nor `patch` is modified or shared
++ * with the result.
++ *
++ * A non-object `patch` (including an array) replaces the target; a `null`
++ * member removes that member; any other member is merged recursively.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isObject(patch)) return clone(patch);
++  const result: Record<string, Json> = isObject(target) ? (clone(target) as Record<string, Json>) : {};
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      const current = Object.prototype.hasOwnProperty.call(result, key) ? result[key] : undefined;
++      setMember(result, key, applyMergePatch(current, value));
++    }
++  }
++  return result;
++}
+diff --git a/test/mergepatch.test.ts b/test/mergepatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ed52743ec9dd9128a9e527da2a5affd2e31f0d09
+--- /dev/null
++++ b/test/mergepatch.test.ts
+@@ -0,0 +1,46 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "../src/index.ts";
++
++const ok = (target: unknown, patch: unknown, expected: unknown) =>
++  assert.deepEqual(applyMergePatch(target, patch), expected);
++
++// RFC 7386 Appendix A examples.
++const cases: [unknown, unknown, unknown][] = [
++  [{ a: "b" }, { a: "c" }, { a: "c" }],
++  [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++  [{ a: "b" }, { a: null }, {}],
++  [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++  [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++  [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++  [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++  [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++  [["a", "b"], ["c", "d"], ["c", "d"]],
++  [{ a: "b" }, ["c"], ["c"]],
++  [{ a: "foo" }, null, null],
++  [{ a: "foo" }, "bar", "bar"],
++  [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++  [[1, 2], { a: "b", c: null }, { a: "b" }],
++  [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++];
++cases.forEach(([t, p, e], i) => test(`RFC 7386 A case ${i + 1}`, () => ok(t, p, e)));
++
++test("does not modify or share inputs", () => {
++  const target = { a: { b: 1 }, c: [1] };
++  const patch = { a: { d: { e: 2 } }, f: [{ g: 1 }] };
++  const result = applyMergePatch(target, patch) as any;
++  assert.deepEqual(target, { a: { b: 1 }, c: [1] });
++  assert.deepEqual(patch, { a: { d: { e: 2 } }, f: [{ g: 1 }] });
++  assert.notEqual(result.a.d, patch.a.d);
++  assert.notEqual(result.f, patch.f);
++  assert.notEqual(result.c, target.c);
++});
++
++test("__proto__ and inherited names are ordinary members", () => {
++  const patch = JSON.parse('{"__proto__":{"x":1},"toString":{"y":2}}');
++  const result = applyMergePatch({}, patch) as any;
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal(({} as any).x, undefined);
++  assert.deepEqual(Object.keys(result), ["__proto__", "toString"]);
++  assert.deepEqual(JSON.parse(JSON.stringify(result)), patch);
++});

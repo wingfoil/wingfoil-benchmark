@@ -1,0 +1,273 @@
+diff --git a/README.md b/README.md
+index b0b446592640de557c60ff22260df53f2ea53689..503eb244f2ed251a8ad46848e91f73f93f647572 100644
+--- a/README.md
++++ b/README.md
+@@ -8,3 +8,4 @@ other projects of the team, so its behaviour must follow the published standards
+ 
+ - `resolvePointer(document, pointer)`: resolves an RFC 6901 JSON Pointer.
+ - `applyPatch(document, patch)`: applies an RFC 6902 JSON Patch (`add`, `remove`, `replace`, `move`, `copy`, `test`) and returns a new document without mutating its input; throws if the patch is invalid or an operation fails.
++- `applyMergePatch(target, patch)`: applies an RFC 7386 JSON Merge Patch and returns a new document without mutating its input; `null` members in the patch remove members, arrays replace whole.
+diff --git a/openspec/changes/archive/2026-11-20-add-merge-patch/.openspec.yaml b/openspec/changes/archive/2026-11-20-add-merge-patch/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..4ee7b3f00e155023b32f9805ab1b7ea631b7215e
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-merge-patch/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-11-20
+diff --git a/openspec/changes/archive/2026-11-20-add-merge-patch/design.md b/openspec/changes/archive/2026-11-20-add-merge-patch/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c5b4aec31c7fbd3f88cb97c7a3d624f0a74e3138
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-merge-patch/design.md
+@@ -0,0 +1,10 @@
++## Context
++
++`src/json-patch.ts` already has private helpers (`isObject`, `setMember`, `clone`) that avoid prototype pollution and aliasing.
++
++## Decisions
++
++- New file `src/json-merge-patch.ts`; the helpers are not exported from json-patch.ts, so a small copy of them lives there rather than refactoring existing code.
++- Recursive algorithm straight from RFC 7386 section 2, building a new object; target members are cloned, patch values are cloned with null members stripped (equivalent to merging into `{}`).
++- Members are set with `Object.defineProperty` so `__proto__` is an own property.
++- Never throws: every JSON value is a valid patch.
+diff --git a/openspec/changes/archive/2026-11-20-add-merge-patch/proposal.md b/openspec/changes/archive/2026-11-20-add-merge-patch/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..57ed820d055b0775aad3f9a9165706541d00ee1f
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-merge-patch/proposal.md
+@@ -0,0 +1,18 @@
++## Why
++
++Some clients send partial updates as RFC 7386 JSON Merge Patch documents. The library only supports RFC 6902 JSON Patch.
++
++## What Changes
++
++- Add `applyMergePatch(target, patch)`, exported from `src/index.ts`, implementing RFC 7386.
++
++## Capabilities
++
++### New Capabilities
++- `json-merge-patch`: apply an RFC 7386 JSON Merge Patch to a JSON document.
++
++### Modified Capabilities
++
++## Impact
++
++New module `src/json-merge-patch.ts`, new export in `src/index.ts`, new tests, README entry.
+diff --git a/openspec/changes/archive/2026-11-20-add-merge-patch/specs/json-merge-patch/spec.md b/openspec/changes/archive/2026-11-20-add-merge-patch/specs/json-merge-patch/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a435c312fb25cdb2a3b1309edffc9d378e45575
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-merge-patch/specs/json-merge-patch/spec.md
+@@ -0,0 +1,43 @@
++## ADDED Requirements
++
++### Requirement: Apply a merge patch
++`applyMergePatch(target, patch)` SHALL implement RFC 7386 and return the merged document. If `patch` is an object, each member is applied to the target: a `null` value removes the member, any other value is merged recursively. If `patch` is not an object (including arrays and `null`), the result SHALL be a copy of `patch`. If `patch` is an object and `target` is not an object, the target is treated as `{}`. Arrays are replaced whole, never merged.
++
++#### Scenario: Replace and add members
++- **WHEN** target is `{"a":"b"}` and patch is `{"a":"c","d":1}`
++- **THEN** `{"a":"c","d":1}` is returned
++
++#### Scenario: Null removes a member
++- **WHEN** target is `{"a":"b","c":"d"}` and patch is `{"a":null}`
++- **THEN** `{"c":"d"}` is returned, and removing an absent member is not an error
++
++#### Scenario: Nested merge
++- **WHEN** target is `{"a":{"b":1,"c":2}}` and patch is `{"a":{"b":null,"d":3}}`
++- **THEN** `{"a":{"c":2,"d":3}}` is returned
++
++#### Scenario: Arrays replaced
++- **WHEN** target is `{"a":[1,2]}` and patch is `{"a":[3]}`
++- **THEN** `{"a":[3]}` is returned
++
++#### Scenario: Non-object patch replaces target
++- **WHEN** patch is `["x"]`, `"s"`, `1` or `null`
++- **THEN** the result equals the patch, whatever the target
++
++#### Scenario: Object patch onto non-object target
++- **WHEN** target is `["a"]` and patch is `{"b":1}`
++- **THEN** `{"b":1}` is returned
++
++#### Scenario: Nulls inside patch values are dropped
++- **WHEN** target is `{}` and patch is `{"a":{"b":null,"c":1}}`
++- **THEN** `{"a":{"c":1}}` is returned
++
++### Requirement: No mutation or aliasing, safe keys
++The function SHALL NOT mutate `target` or `patch`, and the result SHALL NOT share objects or arrays with either. Keys such as `__proto__` SHALL be treated as ordinary members and SHALL NOT affect any prototype.
++
++#### Scenario: Inputs untouched
++- **WHEN** a patch is applied
++- **THEN** target and patch are deeply equal to before and the result shares no references with them
++
++#### Scenario: Proto key
++- **WHEN** patch is parsed from `{"__proto__":{"polluted":true}}`
++- **THEN** the result has an own member `__proto__` and `({}).polluted` is undefined
+diff --git a/openspec/changes/archive/2026-11-20-add-merge-patch/tasks.md b/openspec/changes/archive/2026-11-20-add-merge-patch/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..77ea9935be5617a7241771fbdf014ecd59e6e409
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-merge-patch/tasks.md
+@@ -0,0 +1,9 @@
++## 1. Implementation
++
++- [x] 1.1 Create `src/json-merge-patch.ts` with `applyMergePatch`
++- [x] 1.2 Export it from `src/index.ts`
++
++## 2. Tests and docs
++
++- [x] 2.1 Add `test/json-merge-patch.test.ts` covering the RFC 7386 appendix cases, non-mutation, aliasing and `__proto__`
++- [x] 2.2 Add a README entry
+diff --git a/openspec/specs/json-merge-patch/spec.md b/openspec/specs/json-merge-patch/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..82005f01292e427a2705b8a5ea5fe5dbcde0cd71
+--- /dev/null
++++ b/openspec/specs/json-merge-patch/spec.md
+@@ -0,0 +1,48 @@
++# json-merge-patch Specification
++
++## Purpose
++TBD - created by archiving change add-merge-patch. Update Purpose after archive.
++
++## Requirements
++
++### Requirement: Apply a merge patch
++`applyMergePatch(target, patch)` SHALL implement RFC 7386 and return the merged document. If `patch` is an object, each member is applied to the target: a `null` value removes the member, any other value is merged recursively. If `patch` is not an object (including arrays and `null`), the result SHALL be a copy of `patch`. If `patch` is an object and `target` is not an object, the target is treated as `{}`. Arrays are replaced whole, never merged.
++
++#### Scenario: Replace and add members
++- **WHEN** target is `{"a":"b"}` and patch is `{"a":"c","d":1}`
++- **THEN** `{"a":"c","d":1}` is returned
++
++#### Scenario: Null removes a member
++- **WHEN** target is `{"a":"b","c":"d"}` and patch is `{"a":null}`
++- **THEN** `{"c":"d"}` is returned, and removing an absent member is not an error
++
++#### Scenario: Nested merge
++- **WHEN** target is `{"a":{"b":1,"c":2}}` and patch is `{"a":{"b":null,"d":3}}`
++- **THEN** `{"a":{"c":2,"d":3}}` is returned
++
++#### Scenario: Arrays replaced
++- **WHEN** target is `{"a":[1,2]}` and patch is `{"a":[3]}`
++- **THEN** `{"a":[3]}` is returned
++
++#### Scenario: Non-object patch replaces target
++- **WHEN** patch is `["x"]`, `"s"`, `1` or `null`
++- **THEN** the result equals the patch, whatever the target
++
++#### Scenario: Object patch onto non-object target
++- **WHEN** target is `["a"]` and patch is `{"b":1}`
++- **THEN** `{"b":1}` is returned
++
++#### Scenario: Nulls inside patch values are dropped
++- **WHEN** target is `{}` and patch is `{"a":{"b":null,"c":1}}`
++- **THEN** `{"a":{"c":1}}` is returned
++
++### Requirement: No mutation or aliasing, safe keys
++The function SHALL NOT mutate `target` or `patch`, and the result SHALL NOT share objects or arrays with either. Keys such as `__proto__` SHALL be treated as ordinary members and SHALL NOT affect any prototype.
++
++#### Scenario: Inputs untouched
++- **WHEN** a patch is applied
++- **THEN** target and patch are deeply equal to before and the result shares no references with them
++
++#### Scenario: Proto key
++- **WHEN** patch is parsed from `{"__proto__":{"polluted":true}}`
++- **THEN** the result has an own member `__proto__` and `({}).polluted` is undefined
+diff --git a/src/index.ts b/src/index.ts
+index bf364fb573794679b09744e9b69b73928392d5fb..730222b133cfc6a2616041d938afe0d342330bfe 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,2 +1,3 @@
+ export { resolvePointer, JsonPointerError } from "./json-pointer.ts";
+ export { applyPatch, JsonPatchError } from "./json-patch.ts";
++export { applyMergePatch } from "./json-merge-patch.ts";
+diff --git a/src/json-merge-patch.ts b/src/json-merge-patch.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..30cc1c9e1fde2263c36fffa061bcfca69778deb8
+--- /dev/null
++++ b/src/json-merge-patch.ts
+@@ -0,0 +1,27 @@
++function isObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++function setMember(object: Record<string, unknown>, key: string, value: unknown): void {
++  Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
++}
++
++function merge(target: unknown, patch: unknown): unknown {
++  if (Array.isArray(patch)) return patch.map((item) => merge(undefined, item));
++  if (!isObject(patch)) return patch;
++  const result: Record<string, unknown> = {};
++  if (isObject(target)) {
++    for (const key of Object.keys(target)) setMember(result, key, merge(undefined, target[key]));
++  }
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) delete result[key];
++    else setMember(result, key, merge(result[key], value));
++  }
++  return result;
++}
++
++/** Applies an RFC 7386 JSON Merge Patch and returns a new document; inputs are not mutated. */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  return merge(target, patch);
++}
+diff --git a/test/json-merge-patch.test.ts b/test/json-merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..e985145f6ff2a8827994454b6fef4e20c444dfe3
+--- /dev/null
++++ b/test/json-merge-patch.test.ts
+@@ -0,0 +1,51 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "../src/index.ts";
++
++const cases: [string, string, string][] = [
++  ['{"a":"b"}', '{"a":"c"}', '{"a":"c"}'],
++  ['{"a":"b"}', '{"b":"c"}', '{"a":"b","b":"c"}'],
++  ['{"a":"b"}', '{"a":null}', '{}'],
++  ['{"a":"b","b":"c"}', '{"a":null}', '{"b":"c"}'],
++  ['{"a":["b"]}', '{"a":"c"}', '{"a":"c"}'],
++  ['{"a":"c"}', '{"a":["b"]}', '{"a":["b"]}'],
++  ['{"a":{"b":"c"}}', '{"a":{"b":"d","c":null}}', '{"a":{"b":"d"}}'],
++  ['{"a":[{"b":"c"}]}', '{"a":[1]}', '{"a":[1]}'],
++  ['["a","b"]', '["c","d"]', '["c","d"]'],
++  ['{"a":"b"}', '["c"]', '["c"]'],
++  ['{"a":"foo"}', 'null', 'null'],
++  ['{"a":"foo"}', '"bar"', '"bar"'],
++  ['{"e":null}', '{"a":1}', '{"e":null,"a":1}'],
++  ['[1,2]', '{"a":"b","c":null}', '{"a":"b"}'],
++  ['{}', '{"a":{"bb":{"ccc":null}}}', '{"a":{"bb":{}}}'],
++  ['{}', '{"a":{"b":null,"c":1}}', '{"a":{"c":1}}'],
++  ['1', '{"a":1}', '{"a":1}'],
++];
++
++for (const [t, p, r] of cases) {
++  test(`RFC 7386: ${t} + ${p}`, () => {
++    assert.deepEqual(applyMergePatch(JSON.parse(t), JSON.parse(p)), JSON.parse(r));
++  });
++}
++
++test("does not mutate or alias inputs", () => {
++  const target = { a: { b: 1 }, l: [1] };
++  const patch = { a: { c: { d: 1 } }, m: [{ x: 1 }] };
++  const t0 = structuredClone(target);
++  const p0 = structuredClone(patch);
++  const out = applyMergePatch(target, patch) as any;
++  assert.deepEqual(target, t0);
++  assert.deepEqual(patch, p0);
++  assert.notEqual(out.a, target.a);
++  assert.notEqual(out.l, target.l);
++  assert.notEqual(out.a.c, patch.a.c);
++  assert.notEqual(out.m, patch.m);
++  assert.notEqual(out.m[0], patch.m[0]);
++});
++
++test("__proto__ is an ordinary member", () => {
++  const out = applyMergePatch({}, JSON.parse('{"__proto__":{"polluted":true}}')) as any;
++  assert.ok(Object.prototype.hasOwnProperty.call(out, "__proto__"));
++  assert.equal(({} as any).polluted, undefined);
++  assert.equal(out.polluted, undefined);
++});

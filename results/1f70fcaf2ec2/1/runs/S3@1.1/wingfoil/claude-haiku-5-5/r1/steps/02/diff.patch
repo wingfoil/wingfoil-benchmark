@@ -1,0 +1,223 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..56da6b22d1bbfdc0f7872208179d8b426e7697d5
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "rental availability query"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-rental-availability-query.md b/docs/memory/task/task-002-rental-availability-query.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..cb63428374666ad24457344851187abd7c6959c8
+--- /dev/null
++++ b/docs/memory/task/task-002-rental-availability-query.md
+@@ -0,0 +1,52 @@
++---
++id: task-002-rental-availability-query
++type: task
++title: "Rental availability query"
++status: approved
++format: 1
++---
++
++# Rental availability query
++
++## Request
++
++The desk needs to see at a glance what can still be rented. Add `availability(query)` to the rental
++service from task-001, where `query` is `{ start, end, kind }` and `kind` is optional. It returns the ids
++of the equipment of that kind, or of any kind when `kind` is not given, that is free for the whole period,
++sorted.
++
++## Choices made for this request
++
++- The period (`start`, `end`) is validated exactly as `quote` and `book` validate it: whole UTC days, not
++  empty or reversed, valid ISO-8601 UTC. An invalid period throws.
++- An unknown `kind` (anything other than `'board'` or `'sail'`) throws. An omitted or `undefined` `kind`
++  means any kind.
++- "Free" means no existing booking overlaps the period, using the same overlap rule as `book`, so
++  back-to-back periods do not conflict.
++- Ids are sorted with the default string order (`Array.prototype.sort()`).
++- When nothing is free, the result is an empty array; this is not an error.
++- `availability` does not reserve anything.
++
++## Acceptance criteria
++
++- AC9: `availability` is a method of the service returned by `createRentalService()`.
++- AC10: With no `kind`, it returns the ids of all registered equipment that are free for the whole period,
++  sorted.
++- AC11: With `kind`, it returns only the ids of equipment of that kind that are free, sorted.
++- AC12: An item booked for a period overlapping the query is excluded; an item whose booking ends where the
++  query starts (or starts where it ends) is included.
++- AC13: `availability` throws for an invalid period (same rules as AC4) and for an unknown `kind`.
++- AC14: Returns an empty array when no equipment is free, and does not change any booking.
++
++## School rules (apply)
++
++1. Money is an integer number of euro cents (not involved here).
++2. Times are UTC, written as ISO-8601 strings.
++3. A booking covers whole days: start and end are at midnight UTC.
++4. The same item cannot be booked for overlapping periods.
++
++## Traceability
++
++Feature: rental module (booking desk). Story: the desk sees what can still be rented.
++Requirements: school rules 2–4 above; extends task-001 (AC1–AC8). Tests cover AC9–AC14 with happy and
++error paths.
+diff --git a/src/index.ts b/src/index.ts
+index 13a4500b9add6ab0362f6c988132d9e4f93e73e3..98c760474c4eba8b265e911b5c0ec33a56e117bf 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -27,6 +27,15 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++export interface AvailabilityQuery {
++  /** Midnight UTC, ISO-8601. */
++  start: string;
++  /** Midnight UTC, ISO-8601: the start of the day after the last rented day. */
++  end: string;
++  /** Only consider equipment of this kind; any kind when omitted. */
++  kind?: EquipmentKind;
++}
++
+ export interface RentalService {
+   /** Registers an item that can be quoted and booked. Ids must be unique. */
+   addEquipment(item: Equipment): void;
+@@ -34,6 +43,8 @@ export interface RentalService {
+   quote(request: RentalRequest): Quote;
+   /** Reserves the item for the period; throws if it overlaps an existing booking. */
+   book(request: RentalRequest): Booking;
++  /** Ids of the equipment free for the whole period, sorted; reserves nothing. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ interface Period {
+@@ -57,7 +68,7 @@ function parseMidnightUtc(value: string, label: string): number {
+   return ms;
+ }
+ 
+-function toPeriod(request: RentalRequest): Period {
++function toPeriod(request: Pick<RentalRequest, 'start' | 'end'>): Period {
+   const startMs = parseMidnightUtc(request.start, 'start');
+   const endMs = parseMidnightUtc(request.end, 'end');
+   if (endMs <= startMs) {
+@@ -130,5 +141,17 @@ export function createRentalService(): RentalService {
+       bookingCount += 1;
+       return { id: `booking-${bookingCount}`, ...quote };
+     },
++
++    availability(query) {
++      const period = toPeriod(query);
++      if (query.kind !== undefined && !KINDS.includes(query.kind)) {
++        throw new Error(`kind must be 'board' or 'sail', got ${JSON.stringify(query.kind)}`);
++      }
++      return [...items.values()]
++        .filter((item) => query.kind === undefined || item.kind === query.kind)
++        .filter((item) => !(bookedPeriods.get(item.id) ?? []).some((booked) => overlaps(booked, period)))
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 62456a719f4b2869f6fdc76488e5b31c6dc35c6a..cd3c5bc80ed1969b268b84cd233ca9d38a4279de 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -185,3 +185,81 @@ describe('book', () => {
+     assert.equal(service.book({ itemId: 'board-1', start: '2026-06-03T00:00:00Z', end: '2026-06-04T00:00:00Z' }).total, 1500);
+   });
+ });
++
++describe('availability', () => {
++  const june = { start: '2026-06-01T00:00:00Z', end: '2026-06-03T00:00:00Z' };
++
++  function serviceWithFleet() {
++    const service = createRentalService();
++    service.addEquipment({ id: 'sail-2', kind: 'sail', dailyPrice: 2000 });
++    service.addEquipment({ id: 'board-2', kind: 'board', dailyPrice: 1500 });
++    service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 1500 });
++    service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 2000 });
++    return service;
++  }
++
++  it('is a method of the rental service (AC9)', () => {
++    assert.equal(typeof createRentalService().availability, 'function');
++  });
++
++  it('returns all free equipment, sorted, when no kind is given (AC10, happy path)', () => {
++    assert.deepEqual(serviceWithFleet().availability(june), ['board-1', 'board-2', 'sail-1', 'sail-2']);
++  });
++
++  it('returns only the free equipment of the given kind, sorted (AC11)', () => {
++    const service = serviceWithFleet();
++    assert.deepEqual(service.availability({ ...june, kind: 'board' }), ['board-1', 'board-2']);
++    assert.deepEqual(service.availability({ ...june, kind: 'sail' }), ['sail-1', 'sail-2']);
++  });
++
++  it('treats an explicit undefined kind as any kind (AC10)', () => {
++    assert.deepEqual(serviceWithFleet().availability({ ...june, kind: undefined }), ['board-1', 'board-2', 'sail-1', 'sail-2']);
++  });
++
++  it('excludes an item booked for an overlapping period (AC12)', () => {
++    const service = serviceWithFleet();
++    service.book({ itemId: 'board-1', start: '2026-06-02T00:00:00Z', end: '2026-06-04T00:00:00Z' });
++    assert.deepEqual(service.availability(june), ['board-2', 'sail-1', 'sail-2']);
++    assert.deepEqual(service.availability({ ...june, kind: 'board' }), ['board-2']);
++  });
++
++  it('includes an item whose booking ends where the query starts or starts where it ends (AC12)', () => {
++    const service = serviceWithFleet();
++    service.book({ itemId: 'board-1', start: '2026-05-30T00:00:00Z', end: '2026-06-01T00:00:00Z' });
++    service.book({ itemId: 'board-2', start: '2026-06-03T00:00:00Z', end: '2026-06-05T00:00:00Z' });
++    assert.deepEqual(service.availability({ ...june, kind: 'board' }), ['board-1', 'board-2']);
++  });
++
++  it('returns an empty array when nothing is free (AC14)', () => {
++    const service = serviceWithFleet();
++    service.book({ itemId: 'board-1', start: '2026-06-01T00:00:00Z', end: '2026-06-03T00:00:00Z' });
++    service.book({ itemId: 'board-2', start: '2026-06-01T00:00:00Z', end: '2026-06-03T00:00:00Z' });
++    assert.deepEqual(service.availability({ ...june, kind: 'board' }), []);
++  });
++
++  it('returns an empty array when there is no equipment at all (AC14)', () => {
++    assert.deepEqual(createRentalService().availability(june), []);
++  });
++
++  it('does not reserve anything (AC14)', () => {
++    const service = serviceWithFleet();
++    service.availability(june);
++    assert.equal(service.book({ itemId: 'board-1', start: '2026-06-01T00:00:00Z', end: '2026-06-03T00:00:00Z' }).total, 3000);
++  });
++
++  it('throws for a period that is not whole UTC days (AC13)', () => {
++    const service = serviceWithFleet();
++    assert.throws(() => service.availability({ start: '2026-06-01T09:00:00Z', end: '2026-06-03T00:00:00Z' }));
++  });
++
++  it('throws for an empty or reversed period (AC13)', () => {
++    const service = serviceWithFleet();
++    assert.throws(() => service.availability({ start: '2026-06-01T00:00:00Z', end: '2026-06-01T00:00:00Z' }));
++    assert.throws(() => service.availability({ start: '2026-06-03T00:00:00Z', end: '2026-06-01T00:00:00Z' }));
++  });
++
++  it('throws for an unknown kind (AC13)', () => {
++    const service = serviceWithFleet();
++    assert.throws(() => service.availability({ ...june, kind: 'kite' as 'board' }));
++  });
++});

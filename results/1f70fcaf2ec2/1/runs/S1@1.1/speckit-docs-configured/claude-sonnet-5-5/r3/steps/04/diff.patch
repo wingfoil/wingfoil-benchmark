@@ -1,0 +1,125 @@
+diff --git a/README.md b/README.md
+index 6fe25d54b61a3bea7f6dd6054ec15716ec3111c3..24694e1ce1bd1401055d51c248d4c8844340e95c 100644
+--- a/README.md
++++ b/README.md
+@@ -26,3 +26,12 @@ prefix of its path, or a `test` that does not match (JSON equality, section 4.6)
+ of an operation are ignored. Removing the whole document (`remove` with the empty path) is rejected,
+ as JSON has no value for "nothing". Keys such as `__proto__` are handled as ordinary own members and
+ never pollute prototypes.
++
++### `applyMergePatch(target, patch)`
++
++Implements JSON Merge Patch (RFC 7396, which obsoletes RFC 7386 with the same algorithm). Returns the
++merged document as a new value; neither argument is modified. A patch that is not an object replaces
++the target; an object patch is merged member by member, where `null` removes a member and any other
++value is merged recursively. Arrays are replaced whole, and a non-object target is treated as an empty
++object. As the format specifies, a `null` value cannot be set through a merge patch. Keys such as
++`__proto__` are handled as ordinary own members and never pollute prototypes. Never throws.
+diff --git a/src/index.ts b/src/index.ts
+index d4c81f1b33f45f30d9b9b3d49cd45a1ed74866e1..3789607ab20e58ba3482124d54d5d175027c0f33 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -239,3 +239,27 @@ export function applyPatch(document: unknown, patch: readonly PatchOperation[]):
+   }
+   return root;
+ }
++
++const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
++
++/**
++ * Applies a JSON Merge Patch, as specified in RFC 7396 (section 2; the algorithm is unchanged from
++ * RFC 7386, which it obsoletes), to a JSON document and returns the merged document.
++ *
++ * A non-object patch replaces the target; an object patch is merged member by member into the target
++ * (an empty object if the target is not an object): `null` removes a member, any other value is merged
++ * recursively. Arrays are replaced whole, never merged. Neither argument is modified and the result
++ * shares no structure with them. Keys such as `__proto__` are ordinary own members.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isObject(patch)) return clone(patch);
++  const result: Record<string, unknown> = {};
++  const base = isObject(target) ? target : {};
++  for (const key of Object.keys(base)) setOwn(result, key, clone(base[key]));
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) delete result[key];
++    else setOwn(result, key, applyMergePatch(hasOwn(result, key) ? result[key] : undefined, value));
++  }
++  return result;
++}
+diff --git a/test/merge.test.ts b/test/merge.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..f378ede504eabfbfa3912083d0913fbcba24dabe
+--- /dev/null
++++ b/test/merge.test.ts
+@@ -0,0 +1,70 @@
++import { test } from "node:test";
++import assert from "node:assert";
++import { applyMergePatch } from "../src/index.ts";
++
++const ok = (doc: unknown, patch: unknown, expected: unknown) =>
++  assert.deepStrictEqual(applyMergePatch(doc, patch), expected);
++
++// RFC 7396 section 3 example.
++test("section 3 example", () => {
++  ok(
++    { title: "Goodbye!", author: { givenName: "John", familyName: "Doe" }, tags: ["example", "sample"], content: "This will be unchanged" },
++    { title: "Hello!", phoneNumber: "+01-123-456-7890", author: { familyName: null }, tags: ["example"] },
++    { title: "Hello!", author: { givenName: "John" }, tags: ["example"], content: "This will be unchanged", phoneNumber: "+01-123-456-7890" },
++  );
++});
++
++// RFC 7396 Appendix A test cases.
++const cases: [unknown, unknown, unknown][] = [
++  [{ a: "b" }, { a: "c" }, { a: "c" }],
++  [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++  [{ a: "b" }, { a: null }, {}],
++  [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++  [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++  [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++  [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++  [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++  [["a", "b"], ["c", "d"], ["c", "d"]],
++  [{ a: "b" }, ["c"], ["c"]],
++  [{ a: "foo" }, null, null],
++  [{ a: "foo" }, "bar", "bar"],
++  [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++  [[1, 2], { a: "b", c: null }, { a: "b" }],
++  [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++];
++cases.forEach(([doc, patch, expected], i) => test(`Appendix A case ${i + 1}`, () => ok(doc, patch, expected)));
++
++test("non-object target is treated as empty object", () => {
++  ok(undefined, { a: 1 }, { a: 1 });
++  ok(5, { a: 1 }, { a: 1 });
++});
++
++test("inputs are not mutated and result does not share structure", () => {
++  const target = { a: { b: 1 }, c: [1] };
++  const patch = { a: { d: { e: 2 } }, f: [{ g: 1 }] };
++  const t = structuredClone(target);
++  const p = structuredClone(patch);
++  const r = applyMergePatch(target, patch) as any;
++  assert.deepStrictEqual(target, t);
++  assert.deepStrictEqual(patch, p);
++  assert.notStrictEqual(r.c, target.c);
++  assert.notStrictEqual(r.f, patch.f);
++  assert.notStrictEqual(r.f[0], patch.f[0]);
++});
++
++test("__proto__ is an ordinary member and does not pollute", () => {
++  const patch = JSON.parse('{"__proto__":{"polluted":true},"constructor":{"prototype":{"x":1}}}');
++  const r = applyMergePatch({}, patch) as any;
++  assert.strictEqual(({} as any).polluted, undefined);
++  assert.strictEqual(({} as any).x, undefined);
++  assert.strictEqual(Object.getPrototypeOf(r), Object.prototype);
++  assert.deepStrictEqual(Object.keys(r), ["__proto__", "constructor"]);
++  assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), patch);
++});
++
++test("null removes an own __proto__ member only", () => {
++  const target = JSON.parse('{"__proto__":1,"a":2}');
++  const r = applyMergePatch(target, JSON.parse('{"__proto__":null}')) as any;
++  assert.deepStrictEqual(Object.keys(r), ["a"]);
++  ok({}, JSON.parse('{"__proto__":null}'), {});
++});

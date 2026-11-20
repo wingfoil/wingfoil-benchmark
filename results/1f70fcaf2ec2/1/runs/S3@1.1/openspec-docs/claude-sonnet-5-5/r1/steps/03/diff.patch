@@ -1,0 +1,53 @@
+diff --git a/src/index.ts b/src/index.ts
+index e9af5c57cd51ed684661043ce796a27a8a89b107..b299f2a78e6b3dec48789021432754867525b61f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -45,6 +45,7 @@ export interface RentalService {
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
++const LONG_RENTAL_DAYS = 3;
+ const UTC_MIDNIGHT = /^\d{4}-\d{2}-\d{2}T00:00(?::00(?:\.0+)?)?(?:Z|[+-]00:00)$/;
+ 
+ function parseDay(value: unknown, name: string): number {
+@@ -69,8 +70,12 @@ export function createRentalService(): RentalService {
+     const start = parseDay(request.start, 'start');
+     const end = parseDay(request.end, 'end');
+     if (end <= start) throw new Error('end must be after start');
+-    const total = ((end - start) / DAY_MS) * item.dailyPrice;
+-    if (!Number.isSafeInteger(total)) throw new Error('total is too large');
++    const days = (end - start) / DAY_MS;
++    const fullPrice = days * item.dailyPrice;
++    if (!Number.isSafeInteger(fullPrice)) throw new Error('total is too large');
++    // Rentals of 3 days or more get 10% off, rounded to the nearest euro cent (halves up).
++    const total =
++      days >= LONG_RENTAL_DAYS ? Number((BigInt(fullPrice) * 9n + 5n) / 10n) : fullPrice;
+     return {
+       quote: {
+         itemId: item.id,
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 5a9b5c97ba1a986191f97fbdd7ba717133757de6..4162c8685fbe977c0bcea11a7422ea8d62510ca7 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -11,7 +11,20 @@ const r = (start: string, end: string) => ({ itemId: 'b1', start, end });
+ 
+ test('quote multiplies days by daily price', () => {
+   const q = setup().quote(r('2027-05-01T00:00:00Z', '2027-05-04T00:00:00Z'));
+-  assert.equal(q.total, 7500);
++  assert.equal(q.total, 6750);
++});
++
++test('rentals under 3 days pay full price, 3 days or more get 10% off', () => {
++  const s = setup();
++  assert.equal(s.quote(r('2027-05-01T00:00:00Z', '2027-05-03T00:00:00Z')).total, 5000);
++  assert.equal(s.quote(r('2027-05-01T00:00:00Z', '2027-05-04T00:00:00Z')).total, 6750);
++  assert.equal(s.book(r('2027-06-01T00:00:00Z', '2027-06-05T00:00:00Z')).total, 9000);
++});
++
++test('discounted total is rounded to the cent', () => {
++  const s = createRentalService();
++  s.addEquipment({ id: 'c', kind: 'sail', dailyPrice: 1001 });
++  assert.equal(s.quote({ itemId: 'c', start: '2027-05-01T00:00:00Z', end: '2027-05-04T00:00:00Z' }).total, 2703);
+ });
+ 
+ test('rejects unknown item and non-midnight or inverted periods', () => {

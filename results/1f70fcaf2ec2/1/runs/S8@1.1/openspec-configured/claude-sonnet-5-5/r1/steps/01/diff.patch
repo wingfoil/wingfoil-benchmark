@@ -1,0 +1,387 @@
+diff --git a/openspec/changes/archive/2026-11-20-add-task-id/.openspec.yaml b/openspec/changes/archive/2026-11-20-add-task-id/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..4ee7b3f00e155023b32f9805ab1b7ea631b7215e
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-task-id/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-11-20
+diff --git a/openspec/changes/archive/2026-11-20-add-task-id/design.md b/openspec/changes/archive/2026-11-20-add-task-id/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6453aa90da06102d49fa89dff730be5bd8980f46
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-task-id/design.md
+@@ -0,0 +1,20 @@
++## Context
++
++Tasks are stored in a `Map` keyed by title in `createTaskList`. See proposal.md - Why. The domain cannot use clock or randomness, so the id must be generated deterministically.
++
++## Goals / Non-Goals
++
++- Goals: stable unique ids, lookup by id, id-or-title in existing operations.
++- Non-Goals: persistence of ids, caller-supplied ids, changing title uniqueness.
++
++## Decisions
++
++- **Counter ids**: each list holds a counter; `add` assigns `task-<n>` (n from 1, never reused, even after remove). Alternatives: random/UUID (forbidden in the domain), caller-passed id (changes `add`'s input and the app's screens).
++- **`createTask` takes the id as a second parameter**, keeping `task.ts` pure.
++- **Id index**: a second `Map<string, string>` is unnecessary; keep tasks in a `Map` keyed by id and resolve titles by scanning, or keep the title map plus an id→title map. Chosen: keep title map and add an id→title map updated on rename/remove.
++- **Resolution order**: text matching an id wins, then title. A task titled like another task's id (e.g. "task-2") is therefore reachable by title only when no task has that id. Accepted trade-off.
++
++## Risks / Trade-offs
++
++- [Title that looks like an id is shadowed] → id match first; documented.
++- [Existing test comparing whole task] → update it to include the id.
+diff --git a/openspec/changes/archive/2026-11-20-add-task-id/proposal.md b/openspec/changes/archive/2026-11-20-add-task-id/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..062354fbafd9c71c83ccb7c561946ede804afded
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-task-id/proposal.md
+@@ -0,0 +1,32 @@
++## Why
++
++The app can only refer to a task by its title, and a title changes when the task is renamed. Each task needs a stable identifier that survives renames.
++
++## What Changes
++
++- Every task gets an `id`: a string no other task of the list has, kept when the task is renamed, completed, tagged, etc.
++- `add` returns the task with its `id`.
++- New `get(id)` on the list returns the task with that id as a `Result` (`not-found` when there is none).
++- `find`, `complete`, `reopen`, `rename`, `tag`, `untag` and `remove` accept a task's id as well as its title.
++
++## Capabilities
++
++### New Capabilities
++- `task-identity`: tasks have a stable unique id, lookup by id, and id accepted wherever a title identifies a task.
++
++### Modified Capabilities
++
++None (no accepted specs exist yet).
++
++## Impact
++
++- `src/domain/task.ts`: `Task` gains `id`; `createTask` takes the id from its caller.
++- `src/domain/list.ts`: id generation (a per-list counter), id index, `get`, id-or-title lookup.
++- `src/index.ts`: no new export; `Task` and `TaskList` are already exported and gain the field and method. The public API changes.
++- Tests in `test/list.test.ts`; the existing `add` test compares a whole task and must include the id.
++
++## Project rules
++
++- No wall clock or randomness in the domain: ids come from a deterministic counter held by the list, not from `Date.now()` or `Math.random()`.
++- Errors as `Result`: `get` and id lookups return `not-found`, never throw.
++- TSDoc on every exported function, including any new one; no new runtime dependency.
+diff --git a/openspec/changes/archive/2026-11-20-add-task-id/specs/task-identity/spec.md b/openspec/changes/archive/2026-11-20-add-task-id/specs/task-identity/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..59de3cb5d902bc2b469200b515db9b9e22788276
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-task-id/specs/task-identity/spec.md
+@@ -0,0 +1,46 @@
++## ADDED Requirements
++
++### Requirement: Every task has a unique id
++The task returned by `add` SHALL have an `id`, a string that no other task of the list has, including tasks removed earlier. The id SHALL NOT change when the task is renamed, completed, reopened, tagged or untagged.
++
++#### Scenario: Added tasks get different ids
++- **WHEN** two tasks are added
++- **THEN** their ids are different strings
++
++#### Scenario: Id survives a rename
++- **WHEN** a task is renamed
++- **THEN** the returned task has the same id as before
++
++#### Scenario: Id of a removed task is not reused
++- **WHEN** a task is removed and another is added
++- **THEN** the new task's id differs from the removed one's
++
++### Requirement: Get a task by id
++The list SHALL have `get(id)` returning the task with that id as a result. When no task has the id, it SHALL fail with the `not-found` error code.
++
++#### Scenario: Known id
++- **WHEN** `get` is called with the id of a task, even after the task was renamed
++- **THEN** the result is ok and holds that task as it now is
++
++#### Scenario: Unknown id
++- **WHEN** `get` is called with an id no task has
++- **THEN** the result fails with `not-found`
++
++### Requirement: Operations accept an id or a title
++`find`, `complete`, `reopen`, `rename`, `tag`, `untag` and `remove` SHALL accept a task's id in place of its title and act on that task. When the given text is the id of a task, that task is used; otherwise it is looked up as a title. When it is neither, the operation fails with `not-found`.
++
++#### Scenario: Complete by id after rename
++- **WHEN** a task is renamed and then completed using its id
++- **THEN** the task is done
++
++#### Scenario: Remove by id
++- **WHEN** `remove` is called with a task's id
++- **THEN** the task is returned and no longer in the list
++
++#### Scenario: Rename by id to an existing title
++- **WHEN** `rename` is called with a task's id and the title of another task
++- **THEN** it fails with `duplicate`
++
++#### Scenario: Unknown id or title
++- **WHEN** any of these operations is given text that is neither an id nor a title
++- **THEN** it fails with `not-found`
+diff --git a/openspec/changes/archive/2026-11-20-add-task-id/tasks.md b/openspec/changes/archive/2026-11-20-add-task-id/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7c298afb12128a1c7d8c080d2e0600c1685d85bd
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-task-id/tasks.md
+@@ -0,0 +1,14 @@
++## 1. Domain
++
++- [x] 1.1 Add `readonly id: string` to `Task` and an id parameter to `createTask` in `src/domain/task.ts` (TSDoc `@param` updated); `npm test` type-strips and passes.
++- [x] 1.2 In `src/domain/list.ts`, add a per-list counter assigning `task-<n>`, an id→title index kept in sync on add, rename and remove, `get(id)` on `TaskList` with a one-line comment, and id-or-title resolution (id first) in `find` so all operations accept both.
++- [x] 1.3 Confirm `src/index.ts` needs no new export (`Task`, `TaskList` already exported).
++
++## 2. Tests
++
++- [x] 2.1 Update the existing `add` test in `test/list.test.ts` for the `id` field.
++- [x] 2.2 Add tests: unique ids, id kept after rename, id not reused after remove, `get` ok and `not-found`, each of find/complete/reopen/rename/tag/untag/remove by id, `rename` by id to an existing title gives `duplicate`, unknown text gives `not-found`.
++
++## 3. Final
++
++- [x] 3.1 Run `npm test` and confirm it passes.
+diff --git a/openspec/specs/task-identity/spec.md b/openspec/specs/task-identity/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..19689c2c86dc19318de8feea0704d9d6089dbe59
+--- /dev/null
++++ b/openspec/specs/task-identity/spec.md
+@@ -0,0 +1,51 @@
++# task-identity Specification
++
++## Purpose
++TBD - created by archiving change add-task-id. Update Purpose after archive.
++
++## Requirements
++
++### Requirement: Every task has a unique id
++The task returned by `add` SHALL have an `id`, a string that no other task of the list has, including tasks removed earlier. The id SHALL NOT change when the task is renamed, completed, reopened, tagged or untagged.
++
++#### Scenario: Added tasks get different ids
++- **WHEN** two tasks are added
++- **THEN** their ids are different strings
++
++#### Scenario: Id survives a rename
++- **WHEN** a task is renamed
++- **THEN** the returned task has the same id as before
++
++#### Scenario: Id of a removed task is not reused
++- **WHEN** a task is removed and another is added
++- **THEN** the new task's id differs from the removed one's
++
++### Requirement: Get a task by id
++The list SHALL have `get(id)` returning the task with that id as a result. When no task has the id, it SHALL fail with the `not-found` error code.
++
++#### Scenario: Known id
++- **WHEN** `get` is called with the id of a task, even after the task was renamed
++- **THEN** the result is ok and holds that task as it now is
++
++#### Scenario: Unknown id
++- **WHEN** `get` is called with an id no task has
++- **THEN** the result fails with `not-found`
++
++### Requirement: Operations accept an id or a title
++`find`, `complete`, `reopen`, `rename`, `tag`, `untag` and `remove` SHALL accept a task's id in place of its title and act on that task. When the given text is the id of a task, that task is used; otherwise it is looked up as a title. When it is neither, the operation fails with `not-found`.
++
++#### Scenario: Complete by id after rename
++- **WHEN** a task is renamed and then completed using its id
++- **THEN** the task is done
++
++#### Scenario: Remove by id
++- **WHEN** `remove` is called with a task's id
++- **THEN** the task is returned and no longer in the list
++
++#### Scenario: Rename by id to an existing title
++- **WHEN** `rename` is called with a task's id and the title of another task
++- **THEN** it fails with `duplicate`
++
++#### Scenario: Unknown id or title
++- **WHEN** any of these operations is given text that is neither an id nor a title
++- **THEN** it fails with `not-found`
+diff --git a/src/domain/list.ts b/src/domain/list.ts
+index 6980678e86a5d177040cdbb52c7776fd5c8629ba..4fc38c50ebd80b72baaf10074e17a8f6f982799d 100644
+--- a/src/domain/list.ts
++++ b/src/domain/list.ts
+@@ -10,9 +10,10 @@ export interface TaskFilter {
+   readonly tag?: string;
+ }
+ 
+-/** The task list: tasks by title, each title once. Every change returns the task as it now is. */
++/** The task list: tasks by title, each title once, and by id. Title parameters also accept a task's id. Every change returns the task as it now is. */
+ export interface TaskList {
+   add(input: NewTask): Result<Task>;
++  get(id: string): Result<Task>;
+   find(title: string): Result<Task>;
+   complete(title: string): Result<Task>;
+   reopen(title: string): Result<Task>;
+@@ -27,15 +28,26 @@ export interface TaskList {
+ /** A new, empty task list, kept in memory. */
+ export function createTaskList(): TaskList {
+   const tasks = new Map<string, Task>();
++  const titles = new Map<string, string>();
++  let counter = 0;
+ 
+-  const find = (title: string): Result<Task> => {
+-    const task = tasks.get(title.trim());
+-    return task === undefined ? err('not-found', `there is no task "${title.trim()}"`) : ok(task);
++  const get = (id: string): Result<Task> => {
++    const title = titles.get(id);
++    const task = title === undefined ? undefined : tasks.get(title);
++    return task === undefined ? err('not-found', `there is no task with id "${id}"`) : ok(task);
++  };
++
++  const find = (key: string): Result<Task> => {
++    const byId = get(key);
++    if (byId.ok) return byId;
++    const task = tasks.get(key.trim());
++    return task === undefined ? err('not-found', `there is no task "${key.trim()}"`) : ok(task);
+   };
+ 
+   const store = (before: Task, after: Task): Result<Task> => {
+     tasks.delete(before.title);
+     tasks.set(after.title, after);
++    titles.set(after.id, after.title);
+     return ok(after);
+   };
+ 
+@@ -48,26 +60,35 @@ export function createTaskList(): TaskList {
+ 
+   return {
+     add(input) {
+-      const task = createTask(input);
+-      if (tasks.has(task.title)) return err('duplicate', `there is already a task "${task.title}"`);
++      const title = input.title.trim();
++      if (tasks.has(title)) return err('duplicate', `there is already a task "${title}"`);
++      counter += 1;
++      const task = createTask(input, `task-${counter}`);
+       tasks.set(task.title, task);
++      titles.set(task.id, task.title);
+       return ok(task);
+     },
++    get,
+     find,
+     complete: (title) => change(title, completeTask),
+     reopen: (title) => change(title, reopenTask),
+-    rename(title, newTitle) {
++    rename(key, newTitle) {
++      const found = find(key);
++      if (!found.ok) return found;
+       const target = newTitle.trim();
+-      if (target !== title.trim() && tasks.has(target)) {
++      if (target !== found.value.title && tasks.has(target)) {
+         return err('duplicate', `there is already a task "${target}"`);
+       }
+-      return change(title, (task) => ok(renameTask(task, target)));
++      return change(key, (task) => ok(renameTask(task, target)));
+     },
+     tag: (title, tag) => change(title, (task) => ok(addTag(task, tag))),
+     untag: (title, tag) => change(title, (task) => ok(removeTag(task, tag))),
+     remove(title) {
+       const found = find(title);
+-      if (found.ok) tasks.delete(found.value.title);
++      if (found.ok) {
++        tasks.delete(found.value.title);
++        titles.delete(found.value.id);
++      }
+       return found;
+     },
+     list(filter = {}) {
+diff --git a/src/domain/task.ts b/src/domain/task.ts
+index 27886b35c709105b3fc2d1f2aee56f91e4c46d39..ff014db541919376ffaa2031516f60cacd180ffb 100644
+--- a/src/domain/task.ts
++++ b/src/domain/task.ts
+@@ -12,6 +12,7 @@ export type Status = 'open' | 'done';
+ 
+ /** A task of the list. */
+ export interface Task {
++  readonly id: string;
+   readonly title: string;
+   readonly priority: Priority;
+   readonly tags: readonly string[];
+@@ -29,9 +30,11 @@ export interface NewTask {
+  * A new open task. Its priority is `normal` unless given; its tags keep the order given, each once.
+  *
+  * @param input - the task's title, priority and tags
++ * @param id - the task's unique id, chosen by the caller
+  */
+-export function createTask(input: NewTask): Task {
++export function createTask(input: NewTask, id: string): Task {
+   return {
++    id,
+     title: input.title.trim(),
+     priority: input.priority ?? 'normal',
+     tags: unique(input.tags ?? []),
+diff --git a/test/list.test.ts b/test/list.test.ts
+index ebc295e05b49efd10dcbc4231db28ee3c2593787..d7b17f558f4fd69317aac477c907adb88e9ef748 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -12,7 +12,7 @@ describe('task list', () => {
+   it('adds an open task with a normal priority by default', () => {
+     const list = createTodoList();
+     const task = valueOf(list.add({ title: '  Buy milk ' }));
+-    assert.deepEqual(task, { title: 'Buy milk', priority: 'normal', tags: [], status: 'open' });
++    assert.deepEqual(task, { id: task.id, title: 'Buy milk', priority: 'normal', tags: [], status: 'open' });
+     assert.equal(list.openCount(), 1);
+   });
+ 
+@@ -70,3 +70,59 @@ describe('task list', () => {
+     assert.deepEqual([summary.open, summary.done], [2, 1]);
+   });
+ });
++
++describe('task ids', () => {
++  it('gives each task a different id, kept on rename and not reused', () => {
++    const list = createTodoList();
++    const a = valueOf(list.add({ title: 'A' }));
++    const b = valueOf(list.add({ title: 'B' }));
++    assert.notEqual(a.id, b.id);
++    assert.equal(valueOf(list.rename('A', 'A2')).id, a.id);
++    list.remove(b.id);
++    assert.notEqual(valueOf(list.add({ title: 'C' })).id, b.id);
++  });
++
++  it('gets a task by id, also after a rename', () => {
++    const list = createTodoList();
++    const a = valueOf(list.add({ title: 'A' }));
++    list.rename('A', 'Z');
++    assert.equal(valueOf(list.get(a.id)).title, 'Z');
++  });
++
++  it('fails to get an unknown id', () => {
++    const result = createTodoList().get('nope');
++    assert.equal(result.ok, false);
++    if (!result.ok) assert.equal(result.error.code, 'not-found');
++  });
++
++  it('accepts an id in every operation', () => {
++    const list = createTodoList();
++    const { id } = valueOf(list.add({ title: 'A' }));
++    assert.equal(valueOf(list.find(id)).title, 'A');
++    assert.equal(valueOf(list.complete(id)).status, 'done');
++    assert.equal(valueOf(list.reopen(id)).status, 'open');
++    assert.deepEqual(valueOf(list.tag(id, 'x')).tags, ['x']);
++    assert.deepEqual(valueOf(list.untag(id, 'x')).tags, []);
++    assert.equal(valueOf(list.rename(id, 'B')).title, 'B');
++    assert.equal(valueOf(list.remove(id)).id, id);
++    assert.equal(list.get(id).ok, false);
++    assert.equal(list.list().length, 0);
++  });
++
++  it('refuses to rename by id to an existing title', () => {
++    const list = createTodoList();
++    const { id } = valueOf(list.add({ title: 'A' }));
++    list.add({ title: 'B' });
++    const result = list.rename(id, 'B');
++    assert.equal(result.ok, false);
++    if (!result.ok) assert.equal(result.error.code, 'duplicate');
++  });
++
++  it('fails with not-found for text that is neither id nor title', () => {
++    const list = createTodoList();
++    for (const result of [list.find('x'), list.complete('x'), list.remove('x'), list.rename('x', 'y')]) {
++      assert.equal(result.ok, false);
++      if (!result.ok) assert.equal(result.error.code, 'not-found');
++    }
++  });
++});

@@ -1,0 +1,54 @@
+diff --git a/src/rental.ts b/src/rental.ts
+index e19cd115149257a0da0b496389548877ee0d7c87..a6085db7bee1954c49565e029fcec9bab2392c15 100644
+--- a/src/rental.ts
++++ b/src/rental.ts
+@@ -56,13 +56,23 @@ const ON_THE_HOUR_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:00:00(\.0+)?Z$/;
+ const LONG_STAY_MIN_DAYS = 3;
+ const LONG_STAY_PERCENT_OFF = 10;
+ 
++/** Throws when a computed amount is no longer an exactly represented integer. */
++function assertSafeTotal(amount: number): void {
++  if (!Number.isSafeInteger(amount)) {
++    throw new Error('total is too large to be computed exactly');
++  }
++}
++
+ /** Total in cents; long stays get the discount on the whole price, rounded to the nearest cent, halves up. */
+ function rentalTotal(dailyPrice: number, days: number): number {
+   const full = dailyPrice * days;
+   if (days < LONG_STAY_MIN_DAYS) {
++    assertSafeTotal(full);
+     return full;
+   }
+-  return Math.floor((full * (100 - LONG_STAY_PERCENT_OFF) + 50) / 100);
++  const scaled = full * (100 - LONG_STAY_PERCENT_OFF) + 50;
++  assertSafeTotal(scaled);
++  return Math.floor(scaled / 100);
+ }
+ 
+ /** Parses an on-the-hour ISO-8601 UTC instant, throwing if it is anything else. */
+@@ -131,6 +141,7 @@ export function createRentalService(): RentalService {
+         throw new Error(`item ${item.id} cannot be rented by the hour`);
+       }
+       total = item.hourlyPrice * period.hours;
++      assertSafeTotal(total);
+     } else {
+       total = rentalTotal(item.dailyPrice, period.days ?? 0);
+     }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 32ba067d74240c4a9ae398d5047503d586e693c3..269b2cb7dc511319942d78b4a5156f7114ae39df 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -151,3 +151,12 @@ test('booking shows the same discounted total as the quote', () => {
+   assert.strictEqual(quoted, 9000);
+   assert.strictEqual(s.book(request).total, quoted);
+ });
++
++test('totals beyond the safe integer range are refused', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'big', kind: 'board', dailyPrice: Math.floor(Number.MAX_SAFE_INTEGER / 90) + 1 });
++  assert.throws(() => rentals.quote({ itemId: 'big', start: '2025-06-01T00:00:00Z', end: '2025-06-04T00:00:00Z' }));
++  const huge = Number.MAX_SAFE_INTEGER;
++  rentals.addEquipment({ id: 'huge', kind: 'sail', dailyPrice: huge });
++  assert.throws(() => rentals.quote({ itemId: 'huge', start: '2025-06-01T00:00:00Z', end: '2025-06-03T00:00:00Z' }), /too large/);
++});

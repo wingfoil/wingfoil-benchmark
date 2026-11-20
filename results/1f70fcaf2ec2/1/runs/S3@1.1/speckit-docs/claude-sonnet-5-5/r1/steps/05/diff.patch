@@ -1,0 +1,97 @@
+diff --git a/src/index.test.ts b/src/index.test.ts
+index f79a80e50480861fd4ff8de9071bb9978421a2f7..c5a25573d33bffee7fabc04b7f7c5b0b5adc0f59 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -72,3 +72,20 @@ test('hourly rentals need an hourly price and whole hours', () => {
+   assert.throws(() => s.quote(h('2026-07-01T10:00:00Z', '2026-07-02T10:00:00Z')));
+   assert.throws(() => s.addEquipment({ id: 'n', kind: 'sail', dailyPrice: 1, hourlyPrice: -1 }));
+ });
++
++test('cancelling refunds before start, frees the equipment, and works only once', () => {
++  const s = setup();
++  const b = s.book(req('2026-07-01T00:00:00Z', '2026-07-03T00:00:00Z'));
++  assert.deepEqual(s.cancel(b.id, '2026-06-30T12:00:00Z'), { bookingId: b.id, refund: 5000 });
++  assert.equal(s.book(req('2026-07-01T00:00:00Z', '2026-07-03T00:00:00Z')).total, 5000);
++  assert.throws(() => s.cancel(b.id, '2026-06-30T13:00:00Z'), /already cancelled/);
++  assert.throws(() => s.cancel('nope', '2026-06-30T13:00:00Z'));
++});
++
++test('cancelling after the start refunds nothing; after the end is rejected', () => {
++  const s = setup();
++  const b = s.book(req('2026-07-01T00:00:00Z', '2026-07-03T00:00:00Z'));
++  assert.throws(() => s.cancel(b.id, 'garbage'));
++  assert.throws(() => s.cancel(b.id, '2026-07-03T00:00:00Z'));
++  assert.equal(s.cancel(b.id, '2026-07-02T00:00:00Z').refund, 0);
++});
+diff --git a/src/index.ts b/src/index.ts
+index b60213c98d6224a9732c6984730e8f01733aedb3..b9820e50212cbf11ead9052d204a880bcf93262d 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -30,11 +30,17 @@ export interface AvailabilityQuery {
+   kind?: EquipmentKind;
+ }
+ 
++export interface Cancellation {
++  bookingId: string;
++  refund: number; // euro cents given back to the customer
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
+   availability(query: AvailabilityQuery): string[];
++  cancel(bookingId: string, at: string): Cancellation;
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+@@ -67,7 +73,8 @@ function parsePeriod(startValue: unknown, endValue: unknown): { start: number; e
+ 
+ export function createRentalService(): RentalService {
+   const items = new Map<string, Equipment>();
+-  const bookings: { itemId: string; start: number; end: number }[] = [];
++  const bookings = new Map<string, { itemId: string; start: number; end: number; total: number }>();
++  const cancelled = new Set<string>();
+   let nextBookingId = 1;
+ 
+   function price(request: RentalRequest) {
+@@ -121,10 +128,11 @@ export function createRentalService(): RentalService {
+ 
+     book(request) {
+       const { item, start, end, quote } = price(request);
+-      const clash = bookings.some((b) => b.itemId === item.id && start < b.end && b.start < end);
++      const clash = [...bookings.values()].some((b) => b.itemId === item.id && start < b.end && b.start < end);
+       if (clash) throw new Error(`Item ${item.id} is not free for the whole period`);
+-      bookings.push({ itemId: item.id, start, end });
+-      return { id: `booking-${nextBookingId++}`, ...quote };
++      const id = `booking-${nextBookingId++}`;
++      bookings.set(id, { itemId: item.id, start, end, total: quote.total });
++      return { id, ...quote };
+     },
+ 
+     availability(query) {
+@@ -133,9 +141,23 @@ export function createRentalService(): RentalService {
+       if (kind !== undefined && kind !== 'board' && kind !== 'sail') throw new Error(`Invalid kind: ${String(kind)}`);
+       return [...items.values()]
+         .filter((item) => kind === undefined || item.kind === kind)
+-        .filter((item) => !bookings.some((b) => b.itemId === item.id && start < b.end && b.start < end))
++        .filter((item) => ![...bookings.values()].some((b) => b.itemId === item.id && start < b.end && b.start < end))
+         .map((item) => item.id)
+         .sort();
+     },
++
++    // Assumed policy (not specified by the school): full refund if cancelled before the rental starts,
++    // nothing once it has started; a rental that has ended cannot be cancelled.
++    cancel(bookingId, at) {
++      if (cancelled.has(bookingId)) throw new Error(`Booking ${bookingId} is already cancelled`);
++      const booking = bookings.get(bookingId);
++      if (!booking) throw new Error(`Unknown booking: ${String(bookingId)}`);
++      const atMs = typeof at === 'string' ? Date.parse(at) : NaN;
++      if (Number.isNaN(atMs)) throw new Error(`at must be an ISO-8601 time, got ${String(at)}`);
++      if (atMs >= booking.end) throw new Error(`Booking ${bookingId} has already ended`);
++      bookings.delete(bookingId);
++      cancelled.add(bookingId);
++      return { bookingId, refund: atMs < booking.start ? booking.total : 0 };
++    },
+   };
+ }

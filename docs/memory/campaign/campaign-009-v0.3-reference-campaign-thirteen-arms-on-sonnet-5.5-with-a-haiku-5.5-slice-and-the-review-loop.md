@@ -72,13 +72,20 @@ budget guard: 0.0000 + 50.8545 = 50.8545 EUR (warn 65 EUR, ceiling 80 EUR)
   one should-fix (`createPatch`'s LCS table grows as n × m on large, mostly different arrays), so that finding was
   never handed to a fixer. The run stays `completed`; the loop's outcome is `failed`. A note, not a rerun, as for [campaign-008](campaign-008-claude-code-step-a-campaign-on-haiku-5.5-and-sonnet-5.5-every-scenario-on-approver-policy-v5.md);
   whether the findings parser should accept a trailing object is a question for a bug.
-- **Cost:** 52.3942 USD, 46.7199 EUR at 0.8917 EUR/USD, API-equivalent (steps 38.2213 €, review loops 8.4987 €; the
-  failed attempt 0.0165 USD), against the estimate's mean 51.3623 and high 57.0310 USD; under the 65 € warning.
+- **Cost:** 52.4510 USD, 46.7706 EUR at 0.8917 EUR/USD, API-equivalent (steps 38.2719 €, review loops 8.4987 €),
+  against the estimate's mean 51.3623 and high 57.0310 USD; under the 65 € warning. It includes the two earlier
+  attempts: S3 baseline on Haiku 5.5's failed one (0.0165 USD) and S1 baseline on Haiku 5.5's, killed during its
+  step 5 with no `run.json` (its four finished steps' `usage.json`, 0.0568 USD; the step it was in left nothing, so
+  its cost is unrecorded). A ledger line per run in `docs/calibration/v0.3-ledger.md`.
 - **Secret scan** of `results/1f70fcaf2ec2/1/` and `runs/1f70fcaf2ec2/1/` (the credential's value by `grep -rlFf`,
   Anthropic and OpenAI key shapes, JWTs, `access_token`/`refresh_token`/`id_token` values, in plain files and in
   every git object of the 198 workspace repositories): clean.
 - **Scored** (`bench score 1f70fcaf2ec2/1 --holdout ../WingFoil2-Benchmark-HoldOut`): `aggregate.json`, 52 groups and
   4 slices; determinism measured in 13, n = 1 in 43. The hold-out checkout was unchanged by the scoring.
+- **Transcripts** (`bench transcripts pack 1f70fcaf2ec2/1`, with the credential file for the leak check):
+  `releases/1f70fcaf2ec2-1/transcripts.tar.gz`, 540 transcripts (378 of the steps, 150 of the review loops, 12 of the
+  configuring sessions), nothing missing, `sha256:8d7479f1c444f410caf73b0df77ec8c4f12fb2ec06591d782186e5693b934d99`;
+  the digest is in each `run.json`. The release that carries it is step 6's.
 
 ## Results review
 

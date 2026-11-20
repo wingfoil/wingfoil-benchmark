@@ -1,0 +1,170 @@
+diff --git a/src/index.ts b/src/index.ts
+index c7659ca620490401301e040e3061f9a4d3f6cf3a..fb25338fc3e26e5c6f5142fea3266e497d015d4a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -34,6 +34,12 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++export interface Cancellation {
++  bookingId: string;
++  /** Amount given back to the customer, in euro cents. */
++  refund: number;
++}
++
+ export interface AvailabilityQuery {
+   /** Whole hour UTC, ISO-8601. */
+   start: string;
+@@ -47,6 +53,11 @@ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  /**
++   * Cancels a booking at the instant `at`, freeing its equipment. A booking can be cancelled only once.
++   * The whole total is refunded when `at` is before the rental starts; nothing is refunded from the start on.
++   */
++  cancel(bookingId: string, at: string): Cancellation;
+   /** Ids of the equipment free for the whole period, sorted. */
+   availability(query: AvailabilityQuery): string[];
+ }
+@@ -67,7 +78,7 @@ interface Period {
+   endMs: number;
+ }
+ 
+-function parseWholeHour(value: unknown, name: string): number {
++function parseInstant(value: unknown, name: string): number {
+   if (typeof value !== 'string' || !ISO_UTC_PATTERN.test(value)) {
+     throw new Error(`${name} must be an ISO-8601 UTC time, got ${String(value)}`);
+   }
+@@ -76,6 +87,11 @@ function parseWholeHour(value: unknown, name: string): number {
+   if (Number.isNaN(ms) || new Date(ms).toISOString().slice(0, 10) !== value.slice(0, 10)) {
+     throw new Error(`${name} is not a valid date: ${value}`);
+   }
++  return ms;
++}
++
++function parseWholeHour(value: unknown, name: string): number {
++  const ms = parseInstant(value, name);
+   if (ms % HOUR_MS !== 0) {
+     throw new Error(`${name} must be on the hour UTC: ${value}`);
+   }
+@@ -98,7 +114,7 @@ function parsePeriod(request: Pick<RentalRequest, 'start' | 'end'>): Period {
+ 
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+-  const bookings: (Booking & { startMs: number; endMs: number })[] = [];
++  const bookings: (Booking & { startMs: number; endMs: number; cancelled: boolean })[] = [];
+ 
+   function findItem(itemId: unknown): Equipment {
+     const item = typeof itemId === 'string' ? equipment.get(itemId) : undefined;
+@@ -130,7 +146,9 @@ export function createRentalService(): RentalService {
+   }
+ 
+   function isBooked(itemId: string, period: Period): boolean {
+-    return bookings.some((b) => b.itemId === itemId && b.startMs < period.endMs && period.startMs < b.endMs);
++    return bookings.some(
++      (b) => !b.cancelled && b.itemId === itemId && b.startMs < period.endMs && period.startMs < b.endMs,
++    );
+   }
+ 
+   return {
+@@ -171,11 +189,25 @@ export function createRentalService(): RentalService {
+         total,
+         startMs: period.startMs,
+         endMs: period.endMs,
++        cancelled: false,
+       };
+       bookings.push(booking);
+       return { id: booking.id, itemId: booking.itemId, start: booking.start, end: booking.end, total: booking.total };
+     },
+ 
++    cancel(bookingId, at) {
++      const booking = bookings.find((b) => b.id === bookingId);
++      if (!booking) {
++        throw new Error(`unknown booking: ${String(bookingId)}`);
++      }
++      if (booking.cancelled) {
++        throw new Error(`booking already cancelled: ${bookingId}`);
++      }
++      const atMs = parseInstant(at, 'at');
++      booking.cancelled = true;
++      return { bookingId, refund: atMs < booking.startMs ? booking.total : 0 };
++    },
++
+     availability(query) {
+       const period = parsePeriod(query);
+       if (query.kind !== undefined && !EQUIPMENT_KINDS.includes(query.kind)) {
+diff --git a/test/rental.test.js b/test/rental.test.js
+index 93f1661c1d44fe3930755ccae1a02f54c59607e5..3e0fb2a2bbf226da78bc5d4cd670e0bc2540c09c 100644
+--- a/test/rental.test.js
++++ b/test/rental.test.js
+@@ -312,3 +312,69 @@ test('addEquipment rejects an hourly price that is not a non-negative integer nu
+   assert.throws(() => service.addEquipment({ id: 'x', kind: 'board', dailyPrice: 100, hourlyPrice: -1 }), /hourly price/);
+   service.addEquipment({ id: 'x', kind: 'board', dailyPrice: 100, hourlyPrice: 0 });
+ });
++
++test('cancel before the rental starts refunds the whole total', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' });
++  assert.deepEqual(service.cancel(booking.id, '2026-06-30T09:00:00Z'), { bookingId: booking.id, refund: 6750 });
++});
++
++test('cancel at or after the start of the rental refunds nothing', () => {
++  const service = serviceWithBoard();
++  const atStart = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
++  const during = service.book({ itemId: 'board-1', start: '2026-07-10T00:00:00Z', end: '2026-07-11T00:00:00Z' });
++  assert.equal(service.cancel(atStart.id, '2026-07-01T00:00:00Z').refund, 0);
++  assert.equal(service.cancel(during.id, '2026-07-10T12:30:00.500Z').refund, 0);
++});
++
++test('cancel frees the equipment for the cancelled period', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' });
++  const period = { start: '2026-07-02T00:00:00Z', end: '2026-07-03T00:00:00Z' };
++  assert.deepEqual(service.availability(period), []);
++  service.cancel(booking.id, '2026-06-30T00:00:00Z');
++  assert.deepEqual(service.availability(period), ['board-1']);
++  assert.doesNotThrow(() => service.book({ itemId: 'board-1', ...period }));
++});
++
++test('cancel frees only the cancelled booking, not the others on the same item', () => {
++  const service = serviceWithBoard();
++  const first = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
++  service.book({ itemId: 'board-1', start: '2026-07-05T00:00:00Z', end: '2026-07-06T00:00:00Z' });
++  service.cancel(first.id, '2026-06-30T00:00:00Z');
++  assert.deepEqual(
++    service.availability({ start: '2026-07-05T00:00:00Z', end: '2026-07-06T00:00:00Z' }),
++    [],
++  );
++});
++
++test('a booking can only be cancelled once', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
++  service.cancel(booking.id, '2026-06-30T00:00:00Z');
++  assert.throws(() => service.cancel(booking.id, '2026-06-29T00:00:00Z'), /already cancelled/);
++});
++
++test('cancel rejects an unknown booking', () => {
++  const service = serviceWithBoard();
++  assert.throws(() => service.cancel('nope', '2026-06-30T00:00:00Z'), /unknown booking/);
++});
++
++test('cancel rejects an invalid time and leaves the booking active', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
++  assert.throws(() => service.cancel(booking.id, '2026-07-01'), /at must be an ISO-8601 UTC time/);
++  assert.throws(() => service.cancel(booking.id, '2026-02-30T00:00:00Z'), /not a valid date/);
++  assert.deepEqual(
++    service.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' }),
++    [],
++  );
++  assert.equal(service.cancel(booking.id, '2026-06-30T00:00:00Z').refund, 2500);
++});
++
++test('cancel of an hourly booking frees its hours', () => {
++  const service = serviceWithHourlyBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T14:00:00Z', end: '2026-07-01T17:00:00Z' });
++  assert.equal(service.cancel(booking.id, '2026-07-01T13:00:00Z').refund, 2400);
++  assert.equal(service.book({ itemId: 'board-1', start: '2026-07-01T15:00:00Z', end: '2026-07-01T16:00:00Z' }).total, 800);
++});

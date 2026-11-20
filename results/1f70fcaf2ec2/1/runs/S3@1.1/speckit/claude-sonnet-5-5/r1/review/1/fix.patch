@@ -1,0 +1,56 @@
+diff --git a/specs/005-cancel-booking/spec.md b/specs/005-cancel-booking/spec.md
+index 0e134cc1d6166aad1cf1a40de5583ce9ad879c01..637832076f36932c9da3768b33a3d4a0d2c2cd46 100644
+--- a/specs/005-cancel-booking/spec.md
++++ b/specs/005-cancel-booking/spec.md
+@@ -9,9 +9,9 @@
+ - **FR-001**: `cancel(bookingId, at)` takes a booking id returned by `book` and an ISO-8601 UTC instant `at`; returns `{ bookingId, refund }` (euro cents).
+ - **FR-002**: Unknown ids and already-cancelled bookings are rejected. An invalid `at` is rejected.
+ - **FR-003**: After cancelling, the item is free again for that period (`book`, `availability`).
+-- **FR-004**: Refund policy (**assumed, not specified by the request — to be confirmed**): `at` at or before the start of the booking -> full `total`; `at` after the start -> 0; `at` at or after the end -> rejected.
++- **FR-004**: Refund policy (**follows the 24h rule of spec 001**): `at` at least 24h before the start of the booking -> full `total` (per spec 001); `at` less than 24h before the start, or after it -> 0; `at` at or after the end -> rejected.
+ 
+ ## Acceptance
+ 
+-1. Cancel before start -> refund = total, period can be booked again, second cancel rejected.
++1. Cancel at least 24h before start -> refund = total, period can be booked again, second cancel rejected.
+ 2. Cancel mid-rental -> refund 0; cancel at/after end, bad `at`, unknown id -> rejected.
+diff --git a/src/index.ts b/src/index.ts
+index 782f3a1c5f51268793eeaa772bf178888c1a8b30..624afe5929ae5d8b1e943095b1906f7af3d07076 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -154,8 +154,8 @@ export function createRentalService(): RentalService {
+       if (!entry) throw new Error(`unknown or already cancelled booking: ${String(bookingId)}`);
+       const atMs = parseInstant(at, 'at');
+       if (atMs >= entry.endMs) throw new Error('booking has already ended');
+-      // Full refund up to the start of the rental; nothing once it has started.
+-      const refund = atMs <= entry.startMs ? entry.total : 0;
++      // Full refund when cancelled at least 24h before the start; nothing less than 24h before.
++      const refund = entry.startMs - atMs >= 24 * 60 * 60 * 1000 ? entry.total : 0;
+       entry.stored.bookings.splice(entry.stored.bookings.indexOf(entry.period), 1);
+       booked.delete(bookingId);
+       return { bookingId, refund };
+diff --git a/src/rental.test.ts b/src/rental.test.ts
+index 173ca17b9a2448c1aecafe1f3aad71e4ee20e6bd..af4c9b127880aa6b18b079be576c03b471609b5f 100644
+--- a/src/rental.test.ts
++++ b/src/rental.test.ts
+@@ -86,13 +86,18 @@ test('hourlyPrice is validated; availability by the hour skips items without one
+   assert.deepEqual(s.availability({ start: '2026-05-01T00:00:00Z', end: '2026-05-02T00:00:00Z' }), ['b1', 'b2']);
+ });
+ 
+-test('cancel refunds in full before start, frees the item, and only works once', () => {
++test('cancel refunds in full at least 24h before start, frees the item, and only works once', () => {
+   const s = mk();
+   const b = s.book(r('2026-05-04T00:00:00Z', '2026-05-06T00:00:00Z'));
+-  assert.deepEqual(s.cancel(b.id, '2026-05-03T10:00:00Z'), { bookingId: b.id, refund: b.total });
++  assert.deepEqual(s.cancel(b.id, '2026-05-03T00:00:00Z'), { bookingId: b.id, refund: b.total });
+   assert.doesNotThrow(() => s.book(r('2026-05-04T00:00:00Z', '2026-05-06T00:00:00Z')));
+   assert.throws(() => s.cancel(b.id, '2026-05-03T11:00:00Z'));
+ });
++test('cancel less than 24h before start refunds nothing', () => {
++  const s = mk();
++  const b = s.book(r('2026-05-04T00:00:00Z', '2026-05-06T00:00:00Z'));
++  assert.equal(s.cancel(b.id, '2026-05-03T00:00:01Z').refund, 0);
++});
+ test('cancel after start refunds nothing; after end or bad input is rejected', () => {
+   const s = mk();
+   const b = s.book(r('2026-05-04T00:00:00Z', '2026-05-06T00:00:00Z'));

@@ -1,0 +1,180 @@
+diff --git a/src/index.ts b/src/index.ts
+index aa7b19e5fe04a786e3f93f52039eb5d93825051f..28806b6b1a9f33319854817fff79d4d03f62f681 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -58,8 +58,8 @@ export type JsonPatch = JsonPatchOperation[];
+  *
+  * The input is not mutated: the patch is applied to a copy of `document`, and the copy is returned.
+  *
+- * Throws when `patch` is not a valid JSON Patch, or when one of its operations fails. In that case no
+- * part of `document` has been changed.
++ * Throws when `patch` is not a valid JSON Patch (including when a value in it is not a JSON value), or when
++ * one of its operations fails. In that case no part of `document` has been changed.
+  */
+ export function applyPatch(document: JsonValue, patch: JsonPatch): JsonValue {
+   if (!Array.isArray(patch)) {
+@@ -82,34 +82,81 @@ function validateOperation(operation: unknown, index: number): JsonPatchOperatio
+   if (typeof operation !== 'object' || operation === null || Array.isArray(operation)) {
+     throw new TypeError(`Invalid JSON Patch: ${at} must be an object`);
+   }
++  // Only own members are members of a JSON object, so inherited ones are never read.
+   const members = operation as Record<string, unknown>;
+   const has = (name: string) => Object.prototype.hasOwnProperty.call(members, name);
+-  if (typeof members.path !== 'string') {
++  const op = has('op') ? members.op : undefined;
++  const path = has('path') ? members.path : undefined;
++  if (typeof path !== 'string') {
+     throw new TypeError(`Invalid JSON Patch: ${at} must have a string "path"`);
+   }
+-  parsePointer(members.path);
+-  switch (members.op) {
++  parsePointer(path);
++  switch (op) {
+     case 'add':
+     case 'replace':
+     case 'test':
+       if (!has('value')) {
+-        throw new TypeError(`Invalid JSON Patch: ${at} ("${members.op}") must have a "value"`);
++        throw new TypeError(`Invalid JSON Patch: ${at} ("${op}") must have a "value"`);
+       }
+-      return operation as JsonPatchOperation;
++      if (!isJsonValue(members.value)) {
++        throw new TypeError(`Invalid JSON Patch: the "value" of ${at} ("${op}") is not a JSON value`);
++      }
++      return { op, path, value: members.value };
+     case 'remove':
+-      return operation as JsonPatchOperation;
++      return { op, path };
+     case 'move':
+-    case 'copy':
+-      if (typeof members.from !== 'string') {
+-        throw new TypeError(`Invalid JSON Patch: ${at} ("${members.op}") must have a string "from"`);
++    case 'copy': {
++      const from = has('from') ? members.from : undefined;
++      if (typeof from !== 'string') {
++        throw new TypeError(`Invalid JSON Patch: ${at} ("${op}") must have a string "from"`);
+       }
+-      parsePointer(members.from);
+-      return operation as JsonPatchOperation;
++      parsePointer(from);
++      return { op, path, from };
++    }
+     default:
+-      throw new TypeError(`Invalid JSON Patch: ${at} has an unknown "op" ${JSON.stringify(members.op)}`);
++      throw new TypeError(`Invalid JSON Patch: ${at} has an unknown "op" ${JSON.stringify(op)}`);
+   }
+ }
+ 
++/**
++ * Tells whether `value` is a JSON value (RFC 8259): null, a boolean, a finite number, a string, an array of
++ * JSON values, or an object whose members are JSON values. Values that JSON cannot express, such as
++ * `undefined`, `NaN`, functions, dates, class instances, sparse arrays and cycles, are not JSON values.
++ */
++function isJsonValue(value: unknown, ancestors: Set<object> = new Set()): value is JsonValue {
++  switch (typeof value) {
++    case 'boolean':
++    case 'string':
++      return true;
++    case 'number':
++      return Number.isFinite(value);
++    case 'object':
++      break;
++    default:
++      return false;
++  }
++  if (value === null) {
++    return true;
++  }
++  if (ancestors.has(value)) {
++    return false;
++  }
++  // An array, or an object literal (or one with no prototype). Checking the prototype's prototype rather
++  // than comparing against this realm's Object.prototype also accepts objects from other realms.
++  const isArray = Array.isArray(value);
++  if (!isArray) {
++    const prototype = Object.getPrototypeOf(value);
++    if (prototype !== null && Object.getPrototypeOf(prototype) !== null) {
++      return false;
++    }
++  }
++  ancestors.add(value);
++  const children = isArray ? Array.from({ length: value.length }, (_, i) => value[i]) : Object.values(value);
++  const result = children.every((child) => isJsonValue(child, ancestors));
++  ancestors.delete(value);
++  return result;
++}
++
+ /**
+  * Applies one validated operation to `document`, which it may modify, and returns the resulting document.
+  */
+diff --git a/test/apply-patch.test.ts b/test/apply-patch.test.ts
+index ac521033a2230ef3595ed527a423642c06befd7e..14da4aec780454c0e1620adf6999fec35e5bffb6 100644
+--- a/test/apply-patch.test.ts
++++ b/test/apply-patch.test.ts
+@@ -1,6 +1,6 @@
+ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
+-import { applyPatch, type JsonPatch, type JsonValue } from '../src/index.ts';
++import { applyPatch, type JsonPatch, type JsonPatchOperation, type JsonValue } from '../src/index.ts';
+ 
+ // The examples of RFC 6902, appendix A.
+ test('add adds an object member', () => {
+@@ -192,6 +192,58 @@ test('accepts a "value" of null', () => {
+   assert.deepEqual(applyPatch({}, [{ op: 'add', path: '/a', value: null }]), { a: null });
+ });
+ 
++test('accepts a "value" that is a JSON value, however deeply nested', () => {
++  const value = { list: [null, true, 1.5, 'x', [{}], { y: [] }] };
++  assert.deepEqual(applyPatch({}, [{ op: 'add', path: '/a', value }]), { a: value });
++  assert.doesNotThrow(() => applyPatch({}, [{ op: 'add', path: '/a', value: Object.assign(Object.create(null), { y: 1 }) }]));
++});
++
++test('rejects add, replace and test with a "value" that is not a JSON value', () => {
++  const cyclic: Record<string, unknown> = {};
++  cyclic.self = cyclic;
++  const values: unknown[] = [
++    undefined,
++    NaN,
++    Infinity,
++    -Infinity,
++    1n,
++    () => 1,
++    Symbol('s'),
++    new Date(0),
++    new Map(),
++    new (class Point {
++      x = 1;
++    })(),
++    { a: undefined },
++    [undefined],
++    [, 1],
++    cyclic,
++  ];
++  for (const value of values) {
++    for (const op of ['add', 'replace', 'test']) {
++      assert.throws(() => applyPatch({ a: 1 }, [{ op, path: '/a', value }] as unknown as JsonPatch), TypeError, op);
++    }
++  }
++});
++
++test('rejects a non-JSON "value" in any operation, before applying any', () => {
++  assert.throws(
++    () =>
++      applyPatch({ a: 1 }, [
++        { op: 'remove', path: '/a' },
++        { op: 'add', path: '/b', value: undefined },
++      ] as unknown as JsonPatch),
++    TypeError,
++  );
++});
++
++test('reads only the own members of an operation', () => {
++  const inherited = Object.create({ op: 'remove', path: '/a' }) as unknown as JsonPatchOperation;
++  assert.throws(() => applyPatch({ a: 1 }, [inherited]), TypeError);
++  const ownPath = Object.create({ op: 'remove' }, { path: { value: '/a', enumerable: true } }) as unknown as JsonPatchOperation;
++  assert.throws(() => applyPatch({ a: 1 }, [ownPath]), TypeError);
++});
++
+ test('rejects move and copy without a string "from"', () => {
+   assert.throws(() => applyPatch({ a: 1 }, [{ op: 'move', path: '/b' }] as unknown as JsonPatch), TypeError);
+   assert.throws(() => applyPatch({ a: 1 }, [{ op: 'copy', path: '/b', from: 1 }] as unknown as JsonPatch), TypeError);

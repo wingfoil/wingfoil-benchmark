@@ -1,0 +1,82 @@
+diff --git a/README.md b/README.md
+index f4854c2721cf8e53a3148246f655f35a8c07e816..9cb8f92784fb2fc9d4d3f9563eee46f2f0e0c0d8 100644
+--- a/README.md
++++ b/README.md
+@@ -6,7 +6,7 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ 
+ ## Rental module (`src/index.ts`)
+ 
+-`createRentalService()` returns an in-memory service: `addEquipment`, `quote`, `book`. Run tests with
++`createRentalService()` returns an in-memory service: `addEquipment`, `quote`, `book`, `availability`. Run tests with
+ `npm test`.
+ 
+ School rules, which apply to everything the module does:
+diff --git a/src/index.ts b/src/index.ts
+index db03db9fbee73b3d5c9a56b21cc5526dd06ab381..5f19b9ec62bef953c286265590bdfaa67a534016 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -27,10 +27,21 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++export interface AvailabilityQuery {
++  /** ISO-8601, midnight UTC. */
++  start: string;
++  /** ISO-8601, midnight UTC: the start of the day after the last day. */
++  end: string;
++  /** Restrict to one kind of equipment; any kind when omitted. */
++  kind?: EquipmentKind;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  /** Sorted ids of the equipment free for the whole period. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+@@ -99,5 +110,23 @@ export function createRentalService(): RentalService {
+       bookings.push({ ...booking, startMs, endMs });
+       return { ...booking };
+     },
++
++    availability(query) {
++      const startMs = parseMidnightUtc(query?.start, 'start');
++      const endMs = parseMidnightUtc(query.end, 'end');
++      if (endMs <= startMs) throw new Error('end must be after start');
++      const { kind } = query;
++      if (kind !== undefined && kind !== 'board' && kind !== 'sail') {
++        throw new Error("Equipment kind must be 'board' or 'sail'");
++      }
++      return [...equipment.values()]
++        .filter((item) => kind === undefined || item.kind === kind)
++        .filter(
++          (item) =>
++            !bookings.some((b) => b.itemId === item.id && startMs < b.endMs && b.startMs < endMs),
++        )
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index c671ddf4523866c85eb7c385eee53df604128518..bbba8d495a0c326aa15040fa4cbe3ce2ac23489c 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -30,3 +30,14 @@ test('book prevents overlaps but allows back-to-back', () => {
+   assert.notEqual(a.id, b.id);
+   assert.equal(a.total, 5100);
+ });
++
++test('availability lists free items of a kind, sorted', () => {
++  const s = setup();
++  s.addEquipment({ id: 'a1', kind: 'sail', dailyPrice: 1000 });
++  s.addEquipment({ id: 'b0', kind: 'board', dailyPrice: 1000 });
++  s.book({ itemId: 'b1', start: d(1), end: d(3) });
++  assert.deepEqual(s.availability({ start: d(2), end: d(4) }), ['a1', 'b0']);
++  assert.deepEqual(s.availability({ start: d(2), end: d(4), kind: 'board' }), ['b0']);
++  assert.deepEqual(s.availability({ start: d(3), end: d(4), kind: 'board' }), ['b0', 'b1']);
++  assert.throws(() => s.availability({ start: d(3), end: d(3) }));
++});

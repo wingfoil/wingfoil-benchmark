@@ -1,0 +1,159 @@
+diff --git a/README.md b/README.md
+index 613e7feeceed9f2da70e4d8a9f99b8dc7bc91343..cbb0433d211b87f630b967a9cdc72e441186f77b 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ - `addEquipment({ id, kind: 'board' | 'sail', dailyPrice })`
+ - `quote({ itemId, start, end })` returns `{ itemId, start, end, total }`
+ - `book({ itemId, start, end })` returns `{ id, itemId, start, end, total }`
++- `availability({ start, end, kind? })` returns the sorted ids of the equipment of that `kind` (any kind when
++  omitted) that is free for the whole period; it throws for a disallowed period or an unknown kind
+ 
+ Money is an integer number of euro cents. `start` and `end` are ISO-8601 UTC strings at midnight, and
+ `end` is the start of the day after the last rented day, so a booking covers whole days. `quote` and
+diff --git a/src/index.ts b/src/index.ts
+index 090279c6880396b27a16ef61f70ac1290654c072..fd09364fea38c0e3c32caf0b851908b8a28d6ce8 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -28,6 +28,13 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++/** A period to search for free equipment, optionally restricted to one kind. */
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: EquipmentKind;
++}
++
+ /** The in-memory rental service of the booking desk. */
+ export interface RentalService {
+   /** Registers an item for rental; throws on an invalid item or a duplicate id. */
+@@ -36,6 +43,8 @@ export interface RentalService {
+   quote(request: RentalRequest): Quote;
+   /** Books an item; throws like `quote`, and when the item is not free for the whole period. */
+   book(request: RentalRequest): Booking;
++  /** Returns the sorted ids of the items (of `kind` when given) free for the whole period; throws on a disallowed period or an unknown kind. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ function parseMidnightUtc(value: unknown, label: string): number {
+@@ -49,11 +58,24 @@ function parseMidnightUtc(value: unknown, label: string): number {
+   return time;
+ }
+ 
++function parsePeriod(startValue: unknown, endValue: unknown): { start: number; end: number } {
++  const start = parseMidnightUtc(startValue, 'start');
++  const end = parseMidnightUtc(endValue, 'end');
++  if (end <= start) {
++    throw new Error('end must be after start');
++  }
++  return { start, end };
++}
++
++function isKind(value: unknown): value is EquipmentKind {
++  return value === 'board' || value === 'sail';
++}
++
+ function validateEquipment(item: Equipment): void {
+   if (typeof item?.id !== 'string' || item.id === '') {
+     throw new Error('Equipment id must be a non-empty string');
+   }
+-  if (item.kind !== 'board' && item.kind !== 'sail') {
++  if (!isKind(item.kind)) {
+     throw new Error("Equipment kind must be 'board' or 'sail'");
+   }
+   if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
+@@ -71,11 +93,7 @@ export function createRentalService(): RentalService {
+     if (!item) {
+       throw new Error(`Unknown item: ${String(request?.itemId)}`);
+     }
+-    const start = parseMidnightUtc(request.start, 'start');
+-    const end = parseMidnightUtc(request.end, 'end');
+-    if (end <= start) {
+-      throw new Error('end must be after start');
+-    }
++    const { start, end } = parsePeriod(request.start, request.end);
+     const days = (end - start) / DAY_MS;
+     const total = item.dailyPrice * days;
+     if (!Number.isSafeInteger(total)) {
+@@ -84,6 +102,12 @@ export function createRentalService(): RentalService {
+     return { quote: { itemId: item.id, start: request.start, end: request.end, total }, start, end };
+   }
+ 
++  function isFree(itemId: string, start: number, end: number): boolean {
++    return !bookings.some(
++      (b) => b.itemId === itemId && Date.parse(b.start) < end && start < Date.parse(b.end),
++    );
++  }
++
+   return {
+     addEquipment(item) {
+       validateEquipment(item);
+@@ -99,15 +123,23 @@ export function createRentalService(): RentalService {
+ 
+     book(request) {
+       const { quote, start, end } = price(request);
+-      const taken = bookings.some(
+-        (b) => b.itemId === quote.itemId && Date.parse(b.start) < end && start < Date.parse(b.end),
+-      );
+-      if (taken) {
++      if (!isFree(quote.itemId, start, end)) {
+         throw new Error(`Item ${quote.itemId} is not free for the whole period`);
+       }
+       const booking: Booking = { id: `booking-${bookings.length + 1}`, ...quote };
+       bookings.push(booking);
+       return { ...booking };
+     },
++
++    availability(query) {
++      const { start, end } = parsePeriod(query?.start, query?.end);
++      if (query.kind !== undefined && !isKind(query.kind)) {
++        throw new Error("kind must be 'board' or 'sail'");
++      }
++      return [...equipment.values()]
++        .filter((item) => (query.kind === undefined || item.kind === query.kind) && isFree(item.id, start, end))
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index c401fcd1b3cece15f3a119a74758b22e67172075..f1e4a90ec35070ae5bdaa3fe3c0ea87c7f682cb4 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -67,3 +67,34 @@ test('addEquipment validates items', () => {
+   assert.throws(() => s.addEquipment({ id: 'x', kind: 'board', dailyPrice: 10.5 }));
+   assert.throws(() => s.addEquipment({ id: '', kind: 'board', dailyPrice: 10 }));
+ });
++
++test('availability lists the sorted ids free for the whole period', () => {
++  const s = setup();
++  s.addEquipment({ id: 'board-0', kind: 'board', dailyPrice: 3000 });
++  s.book({ itemId: 'board-1', start: d(2), end: d(4) });
++  assert.deepEqual(s.availability({ start: d(1), end: d(3) }), ['board-0', 'sail-1']);
++  assert.deepEqual(s.availability({ start: d(5), end: d(6) }), ['board-0', 'board-1', 'sail-1']);
++});
++
++test('availability filters by kind', () => {
++  const s = setup();
++  assert.deepEqual(s.availability({ start: d(1), end: d(2), kind: 'sail' }), ['sail-1']);
++  assert.deepEqual(s.availability({ start: d(1), end: d(2), kind: 'board' }), ['board-1']);
++});
++
++test('availability treats bookings as half-open periods', () => {
++  const s = setup();
++  s.book({ itemId: 'board-1', start: d(2), end: d(4) });
++  assert.deepEqual(s.availability({ start: d(1), end: d(2), kind: 'board' }), ['board-1']);
++  assert.deepEqual(s.availability({ start: d(4), end: d(5), kind: 'board' }), ['board-1']);
++  assert.deepEqual(s.availability({ start: d(3), end: d(5), kind: 'board' }), []);
++  assert.deepEqual(s.availability({ start: d(1), end: d(9), kind: 'board' }), []);
++});
++
++test('availability rejects disallowed periods and unknown kinds', () => {
++  const s = setup();
++  assert.throws(() => s.availability({ start: d(2), end: d(2) }));
++  assert.throws(() => s.availability({ start: d(3), end: d(2) }));
++  assert.throws(() => s.availability({ start: 'garbage', end: d(2) }));
++  assert.throws(() => s.availability({ start: d(1), end: d(2), kind: 'kayak' as 'board' }));
++});

@@ -1,0 +1,356 @@
+diff --git a/README.md b/README.md
+index 4d465115f06fd7ee2ab950a1e65cbb7fba1723c6..c9503fc079aaf1727b76e0bc647b2fa3f0e0f8fa 100644
+--- a/README.md
++++ b/README.md
+@@ -37,4 +37,12 @@ any part of it. `availability({ start, end, kind })` returns the sorted ids of t
+ rentals.availability({ start: '2026-07-01T00:00:00.000Z', end: '2026-07-03T00:00:00.000Z', kind: 'board' }); // ['b2']
+ ```
+ 
+-Cancellation is not implemented yet.
++A booking can be cancelled once with `cancel(bookingId, at)`, where `at` is an ISO-8601 UTC time. It returns
++`{ bookingId, refund }` and the booking stops holding its equipment. The refund is the full booking total if
++`at` is 24 hours or more before the start of the booking, and 0 otherwise. `cancel` throws for an unknown or
++already cancelled booking and for an invalid `at`:
++
++```ts
++const booking = rentals.book(request);
++rentals.cancel(booking.id, '2026-06-20T09:30:00.000Z'); // { bookingId: booking.id, refund: 5000 }
++```
+diff --git a/openspec/changes/archive/2026-11-20-add-booking-cancellation/.openspec.yaml b/openspec/changes/archive/2026-11-20-add-booking-cancellation/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..4ee7b3f00e155023b32f9805ab1b7ea631b7215e
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-booking-cancellation/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-11-20
+diff --git a/openspec/changes/archive/2026-11-20-add-booking-cancellation/design.md b/openspec/changes/archive/2026-11-20-add-booking-cancellation/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..20e10367c682323659cb12790c450a22a8c99644
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-booking-cancellation/design.md
+@@ -0,0 +1,14 @@
++## Context
++
++Bookings are kept per item in `createRentalService` (`src/rental.ts`) as `{ id, itemId, start, end, total, startMs, endMs }`; `book` and `availability` both test overlap against that list. The refund rule is in `rental-cancellation-policy`.
++
++## Decisions
++
++- **Release by removal.** Cancelling removes the booking from its item's list, so overlap checks in `book` and `availability` need no change. Cancelled ids are kept in a separate set so a second `cancel` throws "already cancelled" rather than "unknown"; both throw.
++- **Booking lookup by id.** Add a `Map<id, booking>` alongside the per-item lists, since `cancel` receives only the id.
++- **`at` validation.** Must be an ISO-8601 UTC string (`...Z`, any instant, millisecond precision optional). Parsed strictly like period bounds, but without the on-the-hour restriction; offsets and non-dates throw.
++- **Refund rule.** `refund = start - at >= 24h ? total : 0`, compared in epoch milliseconds. Cancelling after the start is allowed and refunds 0 (assumption: the policy says "less than 24 hours", which includes past times).
++
++## Risks / Trade-offs
++
++- Removing bookings loses history of cancelled ones → acceptable, the service is in-memory and has no booking listing; revisit if reporting is added.
+diff --git a/openspec/changes/archive/2026-11-20-add-booking-cancellation/proposal.md b/openspec/changes/archive/2026-11-20-add-booking-cancellation/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..26628e044766d39ed3d4c1ceca7e8c94a487ab4a
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-booking-cancellation/proposal.md
+@@ -0,0 +1,24 @@
++## Why
++
++Customers ask to cancel bookings, and the desk has no way to do it. The refund rule is already agreed in `rental-cancellation-policy`; the operation that applies it does not exist yet.
++
++## What Changes
++
++- Add `cancel(bookingId, at)` to the rental service. It cancels the booking at time `at` and returns `{ bookingId, refund }`.
++- The refund follows the existing policy: zero when `at` is less than 24 hours before the booking's start, otherwise the full booking total.
++- A cancelled booking stops holding its equipment, so `book` and `availability` treat the item as free for that period again.
++- A booking can be cancelled only once; unknown booking ids, repeat cancellations and invalid `at` throw and change nothing.
++- Update the README, which says cancellation is not implemented.
++
++## Capabilities
++
++### New Capabilities
++
++### Modified Capabilities
++- `rental-booking`: adds the cancellation operation and releases the equipment of a cancelled booking.
++- `rental-cancellation-policy`: the policy now applies to the cancellation operation (drops the "not yet offered" note).
++
++## Impact
++
++- `src/rental.ts` (service interface and implementation), `src/rental.test.ts` (replaces the test asserting no `cancel` is exposed), `README.md`.
++- No new dependencies.
+diff --git a/openspec/changes/archive/2026-11-20-add-booking-cancellation/specs/rental-booking/spec.md b/openspec/changes/archive/2026-11-20-add-booking-cancellation/specs/rental-booking/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..15e7e3901d34bf9a3da328571a2e0457d432ccd4
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-booking-cancellation/specs/rental-booking/spec.md
+@@ -0,0 +1,31 @@
++## ADDED Requirements
++
++### Requirement: Booking cancellation
++`cancel(bookingId, at)` SHALL cancel the booking with that id at the instant `at`, an ISO-8601 UTC string, and return `{ bookingId, refund }`, where `refund` is an integer number of euro cents determined by the cancellation policy. It SHALL throw for an unknown booking id, an invalid `at`, or a booking that is already cancelled, and a throwing call SHALL NOT change any booking.
++
++#### Scenario: Cancel returns the refund
++- **WHEN** a booking with total 5000 starting 2 July is cancelled on 1 June
++- **THEN** the result is `{ bookingId, refund: 5000 }`
++
++#### Scenario: Cancel only once
++- **WHEN** a booking is cancelled and then cancelled again
++- **THEN** the second call throws
++
++#### Scenario: Unknown booking
++- **WHEN** an id that was never returned by `book` is cancelled
++- **THEN** an error is thrown
++
++#### Scenario: Invalid time
++- **WHEN** `at` is `not a date` or has a non-UTC offset
++- **THEN** an error is thrown and the booking remains active
++
++### Requirement: Cancelled bookings release equipment
++A cancelled booking SHALL NOT hold its equipment: `book` SHALL accept a period that overlaps only cancelled bookings, and `availability` SHALL treat such equipment as free.
++
++#### Scenario: Rebook after cancellation
++- **WHEN** `b1` is booked 1–4 July, the booking is cancelled, and `b1` is booked 2–3 July
++- **THEN** the second booking succeeds
++
++#### Scenario: Availability after cancellation
++- **WHEN** `b1` is booked 1–4 July and then cancelled
++- **THEN** availability for 2–3 July includes `b1`
+diff --git a/openspec/changes/archive/2026-11-20-add-booking-cancellation/specs/rental-cancellation-policy/spec.md b/openspec/changes/archive/2026-11-20-add-booking-cancellation/specs/rental-cancellation-policy/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fdb6de30c7b31cbbf4340942f49cafde0330dc0e
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-booking-cancellation/specs/rental-cancellation-policy/spec.md
+@@ -0,0 +1,20 @@
++## MODIFIED Requirements
++
++### Requirement: Cancellation refund policy
++When a booking is cancelled less than 24 hours before its start, the refund SHALL be zero. When it is cancelled 24 hours or more before its start, the refund SHALL be the full booking total. Refunds are integer euro cents and times are compared in UTC. This requirement applies to the `cancel` operation of the rental service.
++
++#### Scenario: Late cancellation
++- **WHEN** a booking starting at `2026-07-02T00:00:00.000Z` is cancelled at `2026-07-01T12:00:00.000Z`
++- **THEN** the refund is 0
++
++#### Scenario: Early cancellation
++- **WHEN** a booking starting at `2026-07-02T00:00:00.000Z` is cancelled at `2026-06-30T00:00:00.000Z`
++- **THEN** the refund equals the full booking total
++
++#### Scenario: Exactly 24 hours before
++- **WHEN** a booking is cancelled exactly 24 hours before its start
++- **THEN** the refund equals the full booking total
++
++#### Scenario: Cancelled after the start
++- **WHEN** a booking is cancelled at or after its start
++- **THEN** the refund is 0
+diff --git a/openspec/changes/archive/2026-11-20-add-booking-cancellation/tasks.md b/openspec/changes/archive/2026-11-20-add-booking-cancellation/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1ff47f66eb2d0cbb1ee58192e73e58de202c9c0c
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-booking-cancellation/tasks.md
+@@ -0,0 +1,7 @@
++# Tasks
++
++## 1. Cancellation
++
++- [x] 1.1 Add `cancel` to the `RentalService` interface and implement it in `src/rental.ts` (id lookup, strict UTC `at` parsing, refund rule, once-only, release of the equipment); verify with `npm test` and new tests covering early, exactly-24h, late, post-start refunds, unknown id, invalid `at`, double cancel, and failed calls leaving the booking active
++- [x] 1.2 Add tests that a cancelled period can be rebooked and that `availability` lists the item again; replace the "no cancellation operation is exposed" test in `src/rental.test.ts`; verify `npm test` passes
++- [x] 1.3 Replace "Cancellation is not implemented yet." in `README.md` with a description and example of `cancel`; verify the README example matches tested behavior
+diff --git a/openspec/specs/rental-booking/spec.md b/openspec/specs/rental-booking/spec.md
+index 86a284e9fac779a8abe4632d6f644c702018c773..85b78c582864ae1d9885d4dd46d6758a427c8861 100644
+--- a/openspec/specs/rental-booking/spec.md
++++ b/openspec/specs/rental-booking/spec.md
+@@ -200,3 +200,33 @@ For an hourly period, `quote` and `book` SHALL price the rental at the item's `h
+ #### Scenario: Hourly booking blocks the day
+ - **WHEN** an item is booked 14:00–17:00 on 1 July
+ - **THEN** booking it for the whole day 1 July throws, and availability for that day does not return it
++
++### Requirement: Booking cancellation
++`cancel(bookingId, at)` SHALL cancel the booking with that id at the instant `at`, an ISO-8601 UTC string, and return `{ bookingId, refund }`, where `refund` is an integer number of euro cents determined by the cancellation policy. It SHALL throw for an unknown booking id, an invalid `at`, or a booking that is already cancelled, and a throwing call SHALL NOT change any booking.
++
++#### Scenario: Cancel returns the refund
++- **WHEN** a booking with total 5000 starting 2 July is cancelled on 1 June
++- **THEN** the result is `{ bookingId, refund: 5000 }`
++
++#### Scenario: Cancel only once
++- **WHEN** a booking is cancelled and then cancelled again
++- **THEN** the second call throws
++
++#### Scenario: Unknown booking
++- **WHEN** an id that was never returned by `book` is cancelled
++- **THEN** an error is thrown
++
++#### Scenario: Invalid time
++- **WHEN** `at` is `not a date` or has a non-UTC offset
++- **THEN** an error is thrown and the booking remains active
++
++### Requirement: Cancelled bookings release equipment
++A cancelled booking SHALL NOT hold its equipment: `book` SHALL accept a period that overlaps only cancelled bookings, and `availability` SHALL treat such equipment as free.
++
++#### Scenario: Rebook after cancellation
++- **WHEN** `b1` is booked 1–4 July, the booking is cancelled, and `b1` is booked 2–3 July
++- **THEN** the second booking succeeds
++
++#### Scenario: Availability after cancellation
++- **WHEN** `b1` is booked 1–4 July and then cancelled
++- **THEN** availability for 2–3 July includes `b1`
+diff --git a/openspec/specs/rental-cancellation-policy/spec.md b/openspec/specs/rental-cancellation-policy/spec.md
+index fbfd1171d96a834097ebd74a199d06ce127d28c7..b092710a07edbcc4504c8e57201a34a8e7b69c68 100644
+--- a/openspec/specs/rental-cancellation-policy/spec.md
++++ b/openspec/specs/rental-cancellation-policy/spec.md
+@@ -6,7 +6,7 @@ Records the school's refund rule for cancelled rental bookings so that cancellat
+ ## Requirements
+ 
+ ### Requirement: Cancellation refund policy
+-When a booking is cancelled less than 24 hours before its start, the refund SHALL be zero. When it is cancelled 24 hours or more before its start, the refund SHALL be the full booking total. Refunds are integer euro cents and times are compared in UTC. The service does not yet offer a cancellation operation; this requirement applies once it does.
++When a booking is cancelled less than 24 hours before its start, the refund SHALL be zero. When it is cancelled 24 hours or more before its start, the refund SHALL be the full booking total. Refunds are integer euro cents and times are compared in UTC. This requirement applies to the `cancel` operation of the rental service.
+ 
+ #### Scenario: Late cancellation
+ - **WHEN** a booking starting at `2026-07-02T00:00:00.000Z` is cancelled at `2026-07-01T12:00:00.000Z`
+@@ -19,3 +19,7 @@ When a booking is cancelled less than 24 hours before its start, the refund SHAL
+ #### Scenario: Exactly 24 hours before
+ - **WHEN** a booking is cancelled exactly 24 hours before its start
+ - **THEN** the refund equals the full booking total
++
++#### Scenario: Cancelled after the start
++- **WHEN** a booking is cancelled at or after its start
++- **THEN** the refund is 0
+diff --git a/src/index.ts b/src/index.ts
+index 7ed4aeddc3c666c4a123b7931964fbb345a97d99..67d9186a822fe6e91e06312575bfcaca04c8a56a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,2 +1,2 @@
+ export { createRentalService } from './rental.ts';
+-export type { AvailabilityQuery, Booking, Equipment, EquipmentKind, Quote, RentalRequest, RentalService } from './rental.ts';
++export type { AvailabilityQuery, Booking, Cancellation, Equipment, EquipmentKind, Quote, RentalRequest, RentalService } from './rental.ts';
+diff --git a/src/rental.test.ts b/src/rental.test.ts
+index 963b1ad8b388be5cabd9aa3f686f020d8eca0f8c..163fbd141be43f3239973a0f15cdfe4e9782074f 100644
+--- a/src/rental.test.ts
++++ b/src/rental.test.ts
+@@ -53,8 +53,49 @@ test('overlaps rejected, touching allowed, failure changes nothing', () => {
+   s.book({ itemId: 'b2', start: d('01'), end: d('04') });
+ });
+ 
+-test('no cancellation operation is exposed', () => {
+-  assert.equal('cancel' in createRentalService(), false);
++test('cancel refunds in full 24 hours or more before the start, else nothing', () => {
++  const s = setup();
++  const b = (n: string) => s.book({ itemId: 'b1', start: d(n), end: d(String(Number(n) + 1).padStart(2, '0')) });
++  const early = b('02');
++  assert.deepEqual(s.cancel(early.id, '2026-06-30T00:00:00.000Z'), { bookingId: early.id, refund: 2500 });
++  const exact = b('04');
++  assert.equal(s.cancel(exact.id, '2026-07-03T00:00:00.000Z').refund, 2500);
++  const late = b('06');
++  assert.equal(s.cancel(late.id, '2026-07-05T00:00:00.001Z').refund, 0);
++  const started = b('08');
++  assert.equal(s.cancel(started.id, '2026-07-08T10:00:00Z').refund, 0);
++  const after = b('10');
++  assert.equal(s.cancel(after.id, '2026-07-12T00:00:00.000Z').refund, 0);
++});
++
++test('cancel refunds the discounted total', () => {
++  const s = setup();
++  const b = s.book({ itemId: 'b1', start: d('10'), end: d('13') });
++  assert.equal(s.cancel(b.id, '2026-06-01T00:00:00.000Z').refund, 6750);
++});
++
++test('cancel only once, and rejects unknown ids and invalid times', () => {
++  const s = setup();
++  const b = s.book({ itemId: 'b1', start: d('02'), end: d('03') });
++  for (const at of ['not a date', '2026-06-01T00:00:00+02:00', '2026-06-01', '2026-02-30T00:00:00.000Z', undefined, 5]) {
++    assert.throws(() => s.cancel(b.id, at as any), String(at));
++  }
++  assert.throws(() => s.cancel('nope', '2026-06-01T00:00:00.000Z'));
++  assert.throws(() => s.book({ itemId: 'b1', start: d('02'), end: d('03') }));
++  assert.equal(s.cancel(b.id, '2026-06-01T00:00:00.000Z').refund, 2500);
++  assert.throws(() => s.cancel(b.id, '2026-06-01T00:00:00.000Z'));
++  assert.throws(() => s.cancel(b.id, '2026-06-02T00:00:00.000Z'));
++});
++
++test('a cancelled booking releases its equipment', () => {
++  const s = setup();
++  const b = s.book({ itemId: 'b1', start: d('01'), end: d('04') });
++  assert.ok(!s.availability({ start: d('02'), end: d('03') }).includes('b1'));
++  s.cancel(b.id, '2026-06-01T00:00:00.000Z');
++  assert.ok(s.availability({ start: d('02'), end: d('03') }).includes('b1'));
++  const again = s.book({ itemId: 'b1', start: d('02'), end: d('03') });
++  assert.throws(() => s.book({ itemId: 'b1', start: d('01'), end: d('03') }));
++  assert.notEqual(again.id, b.id);
+ });
+ 
+ function availabilitySetup() {
+diff --git a/src/rental.ts b/src/rental.ts
+index 40128343a3235d7fdefdbf267ca9019c6dc9e42c..bae184aa70f21de85cd9e25b5f3ba0456f8d78ff 100644
+--- a/src/rental.ts
++++ b/src/rental.ts
+@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
+ import { overlaps, parsePeriod } from './period.ts';
+ 
+ const LONG_RENTAL_DAYS = 3;
++const FULL_REFUND_NOTICE_MS = 24 * 60 * 60 * 1000;
++const UTC_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+ 
+ export type EquipmentKind = 'board' | 'sail';
+ 
+@@ -35,17 +37,37 @@ export interface AvailabilityQuery {
+   kind?: EquipmentKind;
+ }
+ 
++export interface Cancellation {
++  bookingId: string;
++  refund: number;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
+   availability(query: AvailabilityQuery): string[];
++  cancel(bookingId: string, at: string): Cancellation;
+ }
+ 
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+   const bookings = new Map<string, Array<Booking & { startMs: number; endMs: number }>>();
+ 
++  const bookingsById = new Map<string, Booking & { startMs: number; endMs: number }>();
++  const cancelled = new Set<string>();
++
++  function parseInstant(value: unknown): number {
++    if (typeof value !== 'string' || !UTC_INSTANT.test(value)) {
++      throw new Error('at must be an ISO-8601 UTC string');
++    }
++    const ms = Date.parse(value);
++    if (Number.isNaN(ms) || new Date(ms).toISOString().slice(0, 10) !== value.slice(0, 10)) {
++      throw new Error('at is not a valid date');
++    }
++    return ms;
++  }
++
+   function price(request: RentalRequest) {
+     const item = equipment.get(request?.itemId);
+     if (!item) {
+@@ -103,7 +125,9 @@ export function createRentalService(): RentalService {
+         throw new Error(`${item.id} is not free for the whole period`);
+       }
+       const booking = { id: randomUUID(), itemId: item.id, start: period.start, end: period.end, total };
+-      existing.push({ ...booking, startMs: period.startMs, endMs: period.endMs });
++      const stored = { ...booking, startMs: period.startMs, endMs: period.endMs };
++      existing.push(stored);
++      bookingsById.set(booking.id, stored);
+       bookings.set(item.id, existing);
+       return booking;
+     },
+@@ -119,5 +143,18 @@ export function createRentalService(): RentalService {
+         .map((item) => item.id)
+         .sort();
+     },
++
++    cancel(bookingId, at) {
++      const atMs = parseInstant(at);
++      const booking = bookingsById.get(bookingId);
++      if (!booking) {
++        throw new Error(cancelled.has(bookingId) ? `booking already cancelled: ${bookingId}` : `unknown booking: ${bookingId}`);
++      }
++      const remaining = (bookings.get(booking.itemId) ?? []).filter((b) => b.id !== bookingId);
++      bookings.set(booking.itemId, remaining);
++      bookingsById.delete(bookingId);
++      cancelled.add(bookingId);
++      return { bookingId, refund: booking.startMs - atMs >= FULL_REFUND_NOTICE_MS ? booking.total : 0 };
++    },
+   };
+ }

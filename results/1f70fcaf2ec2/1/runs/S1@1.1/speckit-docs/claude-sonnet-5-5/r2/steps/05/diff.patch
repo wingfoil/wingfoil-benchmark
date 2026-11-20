@@ -1,0 +1,125 @@
+diff --git a/src/index.ts b/src/index.ts
+index 4e16ee45319b639b9030e785f33c8d1475d2be78..ec99fc94df0f3c288291068abc55955cb4f298e2 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -243,3 +243,93 @@ function mergePatch(target: unknown, patch: unknown): unknown {
+ export function applyMergePatch(target: unknown, patch: unknown): unknown {
+   return mergePatch(structuredClone(target), patch);
+ }
++
++export type PatchOperation =
++  | { op: "add" | "replace"; path: string; value: unknown }
++  | { op: "remove"; path: string };
++
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++function diffArrays(from: unknown[], to: unknown[], path: string, ops: PatchOperation[]): void {
++  let start = 0;
++  while (start < from.length && start < to.length && jsonEqual(from[start], to[start])) start++;
++  let endFrom = from.length;
++  let endTo = to.length;
++  while (endFrom > start && endTo > start && jsonEqual(from[endFrom - 1], to[endTo - 1])) {
++    endFrom--;
++    endTo--;
++  }
++
++  // longest common subsequence of the differing middle part
++  const n = endFrom - start;
++  const m = endTo - start;
++  const width = m + 1;
++  const table = new Uint32Array((n + 1) * width);
++  for (let i = n - 1; i >= 0; i--) {
++    for (let j = m - 1; j >= 0; j--) {
++      table[i * width + j] = jsonEqual(from[start + i], to[start + j])
++        ? table[(i + 1) * width + j + 1] + 1
++        : Math.max(table[(i + 1) * width + j], table[i * width + j + 1]);
++    }
++  }
++
++  let i = 0;
++  let j = 0;
++  let index = start; // position in the array as it is after the operations so far
++  while (i < n || j < m) {
++    if (i < n && j < m && jsonEqual(from[start + i], to[start + j])) {
++      i++;
++      j++;
++      index++;
++      continue;
++    }
++    // collect one hunk of removed and added items
++    const removed: unknown[] = [];
++    const added: unknown[] = [];
++    while (i < n || j < m) {
++      if (i < n && j < m && jsonEqual(from[start + i], to[start + j])) break;
++      if (j >= m || (i < n && table[(i + 1) * width + j] >= table[i * width + j + 1])) {
++        removed.push(from[start + i++]);
++      } else {
++        added.push(to[start + j++]);
++      }
++    }
++    const paired = Math.min(removed.length, added.length);
++    for (let k = 0; k < paired; k++) diffValues(removed[k], added[k], `${path}/${index + k}`, ops);
++    for (let k = paired; k < removed.length; k++) ops.push({ op: "remove", path: `${path}/${index + paired}` });
++    for (let k = paired; k < added.length; k++) {
++      ops.push({ op: "add", path: `${path}/${index + k}`, value: structuredClone(added[k]) });
++    }
++    index += added.length;
++  }
++}
++
++function diffValues(from: unknown, to: unknown, path: string, ops: PatchOperation[]): void {
++  if (jsonEqual(from, to)) return;
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArrays(from, to, path, ops);
++  } else if (isPlainObject(from) && isPlainObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!hasOwn(to, key)) ops.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++    for (const key of Object.keys(to)) {
++      const child = `${path}/${escapeToken(key)}`;
++      if (!hasOwn(from, key)) ops.push({ op: "add", path: child, value: structuredClone(to[key]) });
++      else diffValues(from[key], to[key], child, ops);
++    }
++  } else {
++    ops.push({ op: "replace", path, value: structuredClone(to) });
++  }
++}
++
++/**
++ * Create a JSON Patch (RFC 6902) that turns `from` into `to` when applied.
++ * Only the parts that differ are described. Neither input is mutated.
++ */
++export function createPatch(from: unknown, to: unknown): PatchOperation[] {
++  const ops: PatchOperation[] = [];
++  diffValues(from, to, "", ops);
++  return ops;
++}
+diff --git a/test/create-patch.test.ts b/test/create-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..e813fa2fdd7cfa82371d322a669219e1eeed6102
+--- /dev/null
++++ b/test/create-patch.test.ts
+@@ -0,0 +1,21 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++test("createPatch round-trips and stays minimal", () => {
++  const cases: [unknown, unknown, number][] = [
++    [{ a: 1 }, { a: 1 }, 0],
++    [{ a: 1, "b/c": { x: [1, 2, 3] } }, { a: 2, "b/c": { x: [1, 3] } }, 2],
++    [[1, 2, 3, 4, 5], [1, 2, 9, 3, 4, 5], 1],
++    [[1, 2, 3, 4, 5], [2, 3, 4, 5, 1], 2],
++    [[{ a: 1 }, { b: 2 }], [{ a: 1, c: 3 }, { b: 2 }], 1],
++    [1, [2], 1],
++  ];
++  for (const [from, to, size] of cases) {
++    const before = structuredClone(from);
++    const patch = createPatch(from, to);
++    assert.deepEqual(from, before);
++    assert.deepEqual(applyPatch(from, patch), to);
++    assert.equal(patch.length, size);
++  }
++});

@@ -1,0 +1,263 @@
+diff --git a/README.md b/README.md
+index 573fbc1823d1e4dce34afbbfee790085d587d5df..0cc7880bba0e170b1616d73bab054ee617e1033c 100644
+--- a/README.md
++++ b/README.md
+@@ -6,3 +6,9 @@ urgent first. This package holds the list itself, in TypeScript; the app's scree
+ from `src/index.ts`.
+ 
+ Run its tests with `npm test`.
++
++## Task ids
++
++Every task has an `id`, a unique string that stays the same when the task is renamed. `list.get(id)` returns
++the task with that id. `find`, `complete`, `reopen`, `rename`, `tag`, `untag` and `remove` accept either a
++title or an id; an id wins if it is also some task's title.
+diff --git a/docs/memory/task/task-001-unique-task-ids.md b/docs/memory/task/task-001-unique-task-ids.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..16d90d276f0495b7002510e1589126952511dd22
+--- /dev/null
++++ b/docs/memory/task/task-001-unique-task-ids.md
+@@ -0,0 +1,23 @@
++---
++id: task-001-unique-task-ids
++type: task
++title: "Unique task ids"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++## Request
++
++Give each task a unique `id` (a string) that survives renaming. `add` returns it; `list.get(id)` returns the
++task as a result; `find`, `complete`, `reopen`, `rename`, `tag`, `untag` and `remove` accept a title or an id.
++
++## Done
++
++Ids are `task-N` from a per-list counter that never reuses a number (no randomness in the domain); the list indexes tasks by id and title. Tests in `test/list.test.ts`;
++documented in `README.md`.
+diff --git a/src/domain/list.ts b/src/domain/list.ts
+index 6980678e86a5d177040cdbb52c7776fd5c8629ba..74f047ebb34a81d1f8b90176d62349ff8606ecad 100644
+--- a/src/domain/list.ts
++++ b/src/domain/list.ts
+@@ -10,37 +10,56 @@ export interface TaskFilter {
+   readonly tag?: string;
+ }
+ 
+-/** The task list: tasks by title, each title once. Every change returns the task as it now is. */
++/**
++ * The task list: tasks by title, each title once. Every task also has an id, unique and kept when the
++ * task is renamed. Wherever a method takes a title it takes an id as well; an id wins over a title.
++ * Every change returns the task as it now is.
++ */
+ export interface TaskList {
+   add(input: NewTask): Result<Task>;
+-  find(title: string): Result<Task>;
+-  complete(title: string): Result<Task>;
+-  reopen(title: string): Result<Task>;
+-  rename(title: string, newTitle: string): Result<Task>;
+-  tag(title: string, tag: string): Result<Task>;
+-  untag(title: string, tag: string): Result<Task>;
+-  remove(title: string): Result<Task>;
++  find(titleOrId: string): Result<Task>;
++  /** The task with exactly this id; unlike `find`, it never matches a title. */
++  get(id: string): Result<Task>;
++  complete(titleOrId: string): Result<Task>;
++  reopen(titleOrId: string): Result<Task>;
++  rename(titleOrId: string, newTitle: string): Result<Task>;
++  tag(titleOrId: string, tag: string): Result<Task>;
++  untag(titleOrId: string, tag: string): Result<Task>;
++  remove(titleOrId: string): Result<Task>;
+   list(filter?: TaskFilter): readonly Task[];
+   openCount(): number;
+ }
+ 
+ /** A new, empty task list, kept in memory. */
+ export function createTaskList(): TaskList {
+-  const tasks = new Map<string, Task>();
++  const byId = new Map<string, Task>();
++  let issued = 0;
++  const idByTitle = new Map<string, string>();
+ 
+-  const find = (title: string): Result<Task> => {
+-    const task = tasks.get(title.trim());
+-    return task === undefined ? err('not-found', `there is no task "${title.trim()}"`) : ok(task);
++  const lookup = (key: string): Task | undefined => {
++    const id = byId.has(key) ? key : idByTitle.get(key.trim());
++    return id === undefined ? undefined : byId.get(id);
++  };
++
++  const find = (key: string): Result<Task> => {
++    const task = lookup(key);
++    return task === undefined ? err('not-found', `there is no task "${key.trim()}"`) : ok(task);
++  };
++
++  const get = (id: string): Result<Task> => {
++    const task = byId.get(id);
++    return task === undefined ? err('not-found', `there is no task with id "${id}"`) : ok(task);
+   };
+ 
+   const store = (before: Task, after: Task): Result<Task> => {
+-    tasks.delete(before.title);
+-    tasks.set(after.title, after);
++    idByTitle.delete(before.title);
++    idByTitle.set(after.title, after.id);
++    byId.set(after.id, after);
+     return ok(after);
+   };
+ 
+-  const change = (title: string, update: (task: Task) => Result<Task>): Result<Task> => {
+-    const found = find(title);
++  const change = (key: string, update: (task: Task) => Result<Task>): Result<Task> => {
++    const found = find(key);
+     if (!found.ok) return found;
+     const updated = update(found.value);
+     return updated.ok ? store(found.value, updated.value) : updated;
+@@ -48,37 +67,43 @@ export function createTaskList(): TaskList {
+ 
+   return {
+     add(input) {
+-      const task = createTask(input);
+-      if (tasks.has(task.title)) return err('duplicate', `there is already a task "${task.title}"`);
+-      tasks.set(task.title, task);
++      const task = createTask(input, `task-${++issued}`);
++      if (idByTitle.has(task.title)) return err('duplicate', `there is already a task "${task.title}"`);
++      byId.set(task.id, task);
++      idByTitle.set(task.title, task.id);
+       return ok(task);
+     },
+     find,
+-    complete: (title) => change(title, completeTask),
+-    reopen: (title) => change(title, reopenTask),
+-    rename(title, newTitle) {
++    get,
++    complete: (key) => change(key, completeTask),
++    reopen: (key) => change(key, reopenTask),
++    rename(key, newTitle) {
+       const target = newTitle.trim();
+-      if (target !== title.trim() && tasks.has(target)) {
++      const current = lookup(key);
++      if (current !== undefined && target !== current.title && idByTitle.has(target)) {
+         return err('duplicate', `there is already a task "${target}"`);
+       }
+-      return change(title, (task) => ok(renameTask(task, target)));
++      return change(key, (task) => ok(renameTask(task, target)));
+     },
+-    tag: (title, tag) => change(title, (task) => ok(addTag(task, tag))),
+-    untag: (title, tag) => change(title, (task) => ok(removeTag(task, tag))),
+-    remove(title) {
+-      const found = find(title);
+-      if (found.ok) tasks.delete(found.value.title);
++    tag: (key, tag) => change(key, (task) => ok(addTag(task, tag))),
++    untag: (key, tag) => change(key, (task) => ok(removeTag(task, tag))),
++    remove(key) {
++      const found = find(key);
++      if (found.ok) {
++        byId.delete(found.value.id);
++        idByTitle.delete(found.value.title);
++      }
+       return found;
+     },
+     list(filter = {}) {
+-      return [...tasks.values()]
++      return [...byId.values()]
+         .filter((task) => filter.status === undefined || task.status === filter.status)
+         .filter((task) => filter.priority === undefined || task.priority === filter.priority)
+         .filter((task) => filter.tag === undefined || task.tags.includes(filter.tag))
+         .sort(compareTasks);
+     },
+     openCount() {
+-      return [...tasks.values()].filter((task) => task.status === 'open').length;
++      return [...byId.values()].filter((task) => task.status === 'open').length;
+     },
+   };
+ }
+diff --git a/src/domain/task.ts b/src/domain/task.ts
+index 27886b35c709105b3fc2d1f2aee56f91e4c46d39..033a7c5f486614ea0785e7507ecdf8fecf0b511d 100644
+--- a/src/domain/task.ts
++++ b/src/domain/task.ts
+@@ -12,6 +12,8 @@ export type Status = 'open' | 'done';
+ 
+ /** A task of the list. */
+ export interface Task {
++  /** Unique in the list and unchanged by renaming: the stable way to refer to the task. */
++  readonly id: string;
+   readonly title: string;
+   readonly priority: Priority;
+   readonly tags: readonly string[];
+@@ -29,9 +31,11 @@ export interface NewTask {
+  * A new open task. Its priority is `normal` unless given; its tags keep the order given, each once.
+  *
+  * @param input - the task's title, priority and tags
++ * @param id - the task's unique id
+  */
+-export function createTask(input: NewTask): Task {
++export function createTask(input: NewTask, id: string): Task {
+   return {
++    id,
+     title: input.title.trim(),
+     priority: input.priority ?? 'normal',
+     tags: unique(input.tags ?? []),
+diff --git a/test/list.test.ts b/test/list.test.ts
+index ebc295e05b49efd10dcbc4231db28ee3c2593787..9b89305bd19ee102fe4bf42b815dd2d8f28ada7e 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -12,7 +12,8 @@ describe('task list', () => {
+   it('adds an open task with a normal priority by default', () => {
+     const list = createTodoList();
+     const task = valueOf(list.add({ title: '  Buy milk ' }));
+-    assert.deepEqual(task, { title: 'Buy milk', priority: 'normal', tags: [], status: 'open' });
++    assert.equal(typeof task.id, 'string');
++    assert.deepEqual(task, { id: task.id, title: 'Buy milk', priority: 'normal', tags: [], status: 'open' });
+     assert.equal(list.openCount(), 1);
+   });
+ 
+@@ -70,3 +71,43 @@ describe('task list', () => {
+     assert.deepEqual([summary.open, summary.done], [2, 1]);
+   });
+ });
++
++describe('task ids', () => {
++  it('gives each task a unique id that get returns', () => {
++    const list = createTodoList();
++    const a = valueOf(list.add({ title: 'a' }));
++    const b = valueOf(list.add({ title: 'b' }));
++    assert.notEqual(a.id, b.id);
++    assert.deepEqual(valueOf(list.get(a.id)), a);
++    const missing = list.get('nope');
++    assert.equal(missing.ok, false);
++    if (!missing.ok) assert.equal(missing.error.code, 'not-found');
++  });
++
++  it('keeps the id through a rename and accepts it in place of a title', () => {
++    const list = createTodoList();
++    const { id } = valueOf(list.add({ title: 'old' }));
++    assert.equal(valueOf(list.rename(id, 'new')).id, id);
++    assert.equal(valueOf(list.find(id)).title, 'new');
++    assert.equal(list.find('old').ok, false);
++    assert.equal(valueOf(list.rename(id, 'new')).title, 'new');
++    assert.deepEqual(valueOf(list.tag(id, 'x')).tags, ['x']);
++    assert.deepEqual(valueOf(list.untag(id, 'x')).tags, []);
++    assert.equal(valueOf(list.complete(id)).status, 'done');
++    assert.equal(valueOf(list.reopen(id)).status, 'open');
++    list.add({ title: 'other' });
++    assert.equal(list.rename(id, 'other').ok, false);
++    assert.equal(valueOf(list.remove(id)).title, 'new');
++    assert.equal(list.get(id).ok, false);
++    assert.equal(list.find('new').ok, false);
++  });
++});
++
++describe('task id reuse', () => {
++  it('never gives a removed task id to a new task', () => {
++    const list = createTodoList();
++    const { id } = valueOf(list.add({ title: 'a' }));
++    list.remove(id);
++    assert.notEqual(valueOf(list.add({ title: 'a' })).id, id);
++  });
++});

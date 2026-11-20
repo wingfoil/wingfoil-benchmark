@@ -1,0 +1,514 @@
+diff --git a/README.md b/README.md
+index 2fcbee85d183e309227564d96bb0772f042c35e5..ca26820d6ce1d1d0e0ae0bc33abc95548d262a50 100644
+--- a/README.md
++++ b/README.md
+@@ -14,6 +14,15 @@ not a valid JSON Pointer or does not resolve to a value (missing member, array i
+ with a leading zero, or descending into a primitive). `null` is a value, not a missing one. Only own members are
+ followed, and the document is not modified. The URI fragment form (section 6) is not supported.
+ 
++### `applyPatch(document, patch)`
++
++Applies a JSON Patch ([RFC 6902](https://www.rfc-editor.org/rfc/rfc6902)) — an array of `add`, `remove`, `replace`,
++`move`, `copy` and `test` operations, with JSON Pointer paths — to a JSON document and returns the resulting document as
++a new value. Neither argument is modified and the result shares no structure with them. Operations apply in order and the
++patch is atomic: it throws a `PatchError` if the patch is invalid or an operation fails (including a failed `test`), and
++a `PointerError` for a malformed `path`/`from`. `remove` of the whole document (`""`) is rejected, as no document would
++remain. Keys such as `__proto__` are ordinary members and never affect prototypes.
++
+ ## Development
+ 
+ `npm test` type-checks and builds with `tsc`, then runs the tests with `node --test`.
+diff --git a/specs/002-json-patch/plan.md b/specs/002-json-patch/plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c61a9d2bdc0a15d15e4b72c36a4ebdb793b1fcc4
+--- /dev/null
++++ b/specs/002-json-patch/plan.md
+@@ -0,0 +1,12 @@
++# Plan: JSON Patch
++
++**Spec**: [spec.md](spec.md) — RFC 6902 §3–§5, RFC 6901.
++
++## Approach
++- `src/pointer.ts`: factor out and export `parsePointer(pointer): string[]` (internal, not from index); `resolvePointer` uses it.
++- `src/patch.ts`: `PatchError`, `applyPatch`. Deep-clone the document up front (own clone preserving own `__proto__` keys), mutate the clone, so failures leave inputs untouched. Values from the patch are cloned on insertion. `test` uses a structural deep-equal.
++- Export `applyPatch`, `PatchError` from `src/index.ts`. Tests in `test/patch.test.js` (against `dist`). README updated.
++
++## Constitution Check
++- I: RFC 6902 sections named; rules (atomicity, move prefix rule, `-`, test equality) implemented exactly. Root `remove` choice documented.
++- II: no dependencies. III: tests first, seen failing. IV: no mutation, atomic, `Object.defineProperty` for member writes, own-property checks, typed errors. V: strict TS, doc comments, exported. VI: two small files.
+diff --git a/specs/002-json-patch/spec.md b/specs/002-json-patch/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8dea03df2d3e248e508cc8b60f122b34b1f3e6e8
+--- /dev/null
++++ b/specs/002-json-patch/spec.md
+@@ -0,0 +1,52 @@
++# Feature Specification: JSON Patch
++
++**Created**: 2026-11-20 | **Status**: Draft
++**Standard**: JSON Patch, RFC 6902 — §3 (document structure), §4 (operations: add §4.1, remove §4.2, replace §4.3, move §4.4, copy §4.5, test §4.6), §5 (error handling). Paths are JSON Pointers, RFC 6901 (reused from feature 001).
++**Input**: Export `applyPatch(document, patch)` from `src/index.ts`; apply an array of operations and return the new document; never mutate input; throw when the patch is invalid or an operation fails.
++
++## User Scenarios & Testing
++
++### User Story 1 - Apply a patch (Priority: P1)
++A service author applies a patch to a document and gets the updated document back, the original unchanged.
++**Independent Test**: run the RFC 6902 Appendix A examples (A.1–A.16).
++**Acceptance Scenarios**:
++1. **Given** each of the six operations, **When** applied per §4, **Then** the result matches the RFC examples.
++2. **Given** a patch, **When** applied, **Then** the input document and patch are not modified and the result shares no mutable structure with them.
++3. **Given** operations in sequence, **Then** each sees the result of the previous one (§5).
++
++### User Story 2 - Reject invalid patches and failed operations (Priority: P1)
++1. **Given** a patch that is not an array, an operation that is not an object, a missing/unknown `op`, a missing or non-string `path`/`from`, or a missing `value` where required, **Then** a typed error is thrown.
++2. **Given** any operation that fails (missing target, bad index, failed `test`, invalid pointer), **Then** a typed error is thrown and nothing is returned; the input is unchanged (atomic, §5).
++
++### Edge Cases
++- `add` with `-` appends; index equal to length appends; index > length fails; leading-zero index fails (§4.1).
++- `add` to an existing object member replaces it; parent must exist.
++- `remove`/`replace` of a nonexistent target fails (§4.2, §4.3). `"value": null` is a valid value.
++- `move`: `from` must exist; `from` being a proper prefix of `path` fails (§4.4); `from == path` is a no-op.
++- `copy` deep-copies; later edits to one copy do not affect the other.
++- `test`: objects equal regardless of member order, arrays ordered, numbers by value, strings by code points, types must match (§4.6); `1` ≠ `"1"`, `null` ≠ missing.
++- Whole-document path `""`: `add`/`replace`/`test`/`copy`/`move` target replace/compare the document; `remove` of the whole document fails (no document would remain).
++- `__proto__`, `constructor`, `prototype` as keys are ordinary members and never alter prototypes.
++- Extra members in an operation are ignored (§4).
++
++## Requirements
++- **FR-001**: `patch` must be an array; each element an object with string `op` in {add, remove, replace, move, copy, test} and string `path` (§3, §4).
++- **FR-002**: `add`, `replace`, `test` require a `value` member (any JSON value including `null`); `move`, `copy` require string `from` (§4).
++- **FR-003**: Operations apply in order, each to the previous result (§5).
++- **FR-004**: Semantics of each operation exactly as §4.1–§4.6 (see Edge Cases).
++- **FR-005**: Any error throws `PatchError` (invalid pointers surface as `PointerError`); no partial result (§5).
++- **FR-006**: Inputs never mutated; result is independent of inputs.
++- **FR-007**: Own members only; prototype pollution impossible.
++- **FR-008**: Doc-commented strictly typed export from `src/index.ts`; no runtime deps; README updated.
++
++### Key Entities
++- **Operation**: `{op, path, value?, from?}`. **PatchError**: exported typed error.
++
++## Success Criteria
++- **SC-001**: All RFC 6902 Appendix A examples produce the specified results/errors.
++- **SC-002**: Every failure case above throws and leaves inputs unchanged.
++- **SC-003**: Tests pass and type-check is clean.
++
++## Assumptions
++- Removing the root throws since RFC 6902 does not define an empty result.
++- Reuses pointer parsing from feature 001 (RFC 6901).
+diff --git a/specs/002-json-patch/tasks.md b/specs/002-json-patch/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..2b257a49bc84dc99ab534918c0bbce2f378329a6
+--- /dev/null
++++ b/specs/002-json-patch/tasks.md
+@@ -0,0 +1,6 @@
++# Tasks
++- [x] T001 Write `test/patch.test.js` (RFC 6902 Appendix A, errors, edge cases, no-mutation, atomicity); see it fail.
++- [x] T002 Export `parsePointer` from `src/pointer.ts`.
++- [x] T003 Implement `src/patch.ts`; export from `src/index.ts`.
++- [x] T004 Pass tests, clean `tsc`.
++- [x] T005 Update README.
+diff --git a/src/index.ts b/src/index.ts
+index 26d5a9c04bd788ef05e7b1239e95a26b114322f9..669f2425b5e3e9eaefd8b08ce9214e6187833a47 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1 +1,2 @@
+ export { resolvePointer, PointerError } from "./pointer.js";
++export { applyPatch, PatchError } from "./patch.js";
+diff --git a/src/patch.ts b/src/patch.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..2ca4f6e50a2ef42078f45733cddde990665468f7
+--- /dev/null
++++ b/src/patch.ts
+@@ -0,0 +1,192 @@
++import { ARRAY_INDEX, parsePointer } from "./pointer.js";
++
++/** Error thrown when a JSON Patch is invalid or one of its operations fails. */
++export class PatchError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "PatchError";
++  }
++}
++
++type Container = Record<string, unknown> | unknown[];
++
++const OPS = ["add", "remove", "replace", "move", "copy", "test"];
++
++function isObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++function setMember(object: Record<string, unknown>, key: string, value: unknown): void {
++  // defineProperty creates an own member even for "__proto__", which plain assignment would not.
++  Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
++}
++
++function clone(value: unknown): unknown {
++  if (Array.isArray(value)) {
++    return value.map(clone);
++  }
++  if (isObject(value)) {
++    const copy: Record<string, unknown> = {};
++    for (const key of Object.keys(value)) {
++      setMember(copy, key, clone(value[key]));
++    }
++    return copy;
++  }
++  return value;
++}
++
++/** Structural equality of JSON values (RFC 6902 section 4.6). */
++function equal(a: unknown, b: unknown): boolean {
++  if (Array.isArray(a)) {
++    return Array.isArray(b) && a.length === b.length && a.every((item, i) => equal(item, b[i]));
++  }
++  if (isObject(a)) {
++    if (!isObject(b)) return false;
++    const keys = Object.keys(a);
++    return keys.length === Object.keys(b).length && keys.every((k) => Object.hasOwn(b, k) && equal(a[k], b[k]));
++  }
++  return a === b;
++}
++
++function container(root: unknown, tokens: string[], pointer: string): Container {
++  let current = root;
++  for (const token of tokens) {
++    current = child(current, token, pointer);
++  }
++  if (typeof current !== "object" || current === null) {
++    throw new PatchError(`The parent of "${pointer}" is not an object or an array`);
++  }
++  return current as Container;
++}
++
++function child(parent: unknown, token: string, pointer: string): unknown {
++  if (Array.isArray(parent)) {
++    if (!ARRAY_INDEX.test(token) || Number(token) >= parent.length) {
++      throw new PatchError(`"${token}" in "${pointer}" is not an existing index of the array`);
++    }
++    return parent[Number(token)];
++  }
++  if (isObject(parent) && Object.hasOwn(parent, token)) {
++    return parent[token];
++  }
++  throw new PatchError(`"${pointer}" does not exist in the document`);
++}
++
++function get(root: unknown, pointer: string): unknown {
++  let current = root;
++  for (const token of parsePointer(pointer)) {
++    current = child(current, token, pointer);
++  }
++  return current;
++}
++
++function add(root: unknown, pointer: string, value: unknown): unknown {
++  const tokens = parsePointer(pointer);
++  if (tokens.length === 0) {
++    return value;
++  }
++  const key = tokens[tokens.length - 1];
++  const parent = container(root, tokens.slice(0, -1), pointer);
++  if (Array.isArray(parent)) {
++    if (key === "-") {
++      parent.push(value);
++    } else if (ARRAY_INDEX.test(key) && Number(key) <= parent.length) {
++      parent.splice(Number(key), 0, value);
++    } else {
++      throw new PatchError(`"${key}" in "${pointer}" is not a valid index to add to the array`);
++    }
++  } else {
++    setMember(parent, key, value);
++  }
++  return root;
++}
++
++function remove(root: unknown, pointer: string): { root: unknown; removed: unknown } {
++  const tokens = parsePointer(pointer);
++  if (tokens.length === 0) {
++    throw new PatchError("The whole document cannot be removed");
++  }
++  const key = tokens[tokens.length - 1];
++  const parent = container(root, tokens.slice(0, -1), pointer);
++  const removed = child(parent, key, pointer);
++  if (Array.isArray(parent)) {
++    parent.splice(Number(key), 1);
++  } else {
++    delete parent[key];
++  }
++  return { root, removed };
++}
++
++/**
++ * Applies a JSON Patch to a JSON document and returns the resulting document.
++ *
++ * Implements JSON Patch, RFC 6902: the operations `add`, `remove`, `replace`, `move`, `copy` and `test`
++ * (section 4), applied in order, each to the result of the previous one (section 5). Paths are JSON
++ * Pointers (RFC 6901). Neither `document` nor `patch` is modified and the result shares no structure
++ * with them. The patch is atomic: if it is invalid or any operation fails, nothing is returned.
++ * Removing the whole document (`remove` with path `""`) is rejected, since no document would remain.
++ *
++ * @throws {PatchError} if the patch is invalid or an operation fails (including a failed `test`).
++ * @throws {PointerError} if a `path` or `from` is not a valid JSON Pointer.
++ */
++export function applyPatch(document: unknown, patch: unknown): unknown {
++  if (!Array.isArray(patch)) {
++    throw new PatchError("A JSON Patch must be an array of operations");
++  }
++  let result = clone(document);
++  patch.forEach((operation: unknown, index: number) => {
++    if (!isObject(operation)) {
++      throw new PatchError(`Operation ${index} is not an object`);
++    }
++    const { op, path, from } = operation;
++    if (typeof op !== "string" || !OPS.includes(op)) {
++      throw new PatchError(`Operation ${index} has a missing or unknown "op"`);
++    }
++    if (typeof path !== "string") {
++      throw new PatchError(`Operation ${index} ("${op}") needs a string "path"`);
++    }
++    const needsValue = op === "add" || op === "replace" || op === "test";
++    if (needsValue && !Object.hasOwn(operation, "value")) {
++      throw new PatchError(`Operation ${index} ("${op}") needs a "value"`);
++    }
++    if ((op === "move" || op === "copy") && typeof from !== "string") {
++      throw new PatchError(`Operation ${index} ("${op}") needs a string "from"`);
++    }
++    const value = operation.value;
++    switch (op) {
++      case "add":
++        result = add(result, path, clone(value));
++        break;
++      case "remove":
++        result = remove(result, path).root;
++        break;
++      case "replace":
++        get(result, path);
++        result = parsePointer(path).length === 0 ? clone(value) : add(remove(result, path).root, path, clone(value));
++        break;
++      case "move": {
++        const source = parsePointer(from as string);
++        const target = parsePointer(path);
++        if (source.length < target.length && source.every((t, i) => t === target[i])) {
++          throw new PatchError(`Cannot move "${from}" into one of its own children "${path}"`);
++        }
++        if (from === path) {
++          get(result, path);
++          break;
++        }
++        const moved = remove(result, from as string);
++        result = add(moved.root, path, moved.removed);
++        break;
++      }
++      case "copy":
++        result = add(result, path, clone(get(result, from as string)));
++        break;
++      case "test":
++        if (!equal(get(result, path), value)) {
++          throw new PatchError(`Test failed: the value at "${path}" differs from the expected value`);
++        }
++        break;
++    }
++  });
++  return result;
++}
+diff --git a/src/pointer.ts b/src/pointer.ts
+index f3b68f20a902844866b24966aa9ab7b77a4f7df3..424c3fcddac531f4424bb2e3f2387e78a0797845 100644
+--- a/src/pointer.ts
++++ b/src/pointer.ts
+@@ -6,7 +6,7 @@ export class PointerError extends Error {
+   }
+ }
+ 
+-const ARRAY_INDEX = /^(0|[1-9][0-9]*)$/;
++export const ARRAY_INDEX = /^(0|[1-9][0-9]*)$/;
+ 
+ function decodeToken(token: string): string {
+   if (/~(?![01])/.test(token)) {
+@@ -15,6 +15,20 @@ function decodeToken(token: string): string {
+   return token.replace(/~1/g, "/").replace(/~0/g, "~");
+ }
+ 
++/** Splits a JSON Pointer (RFC 6901 sections 3 and 4) into its decoded reference tokens. */
++export function parsePointer(pointer: string): string[] {
++  if (typeof pointer !== "string") {
++    throw new PointerError("A JSON Pointer must be a string");
++  }
++  if (pointer === "") {
++    return [];
++  }
++  if (pointer[0] !== "/") {
++    throw new PointerError(`Invalid JSON Pointer "${pointer}": a non-empty pointer must start with "/"`);
++  }
++  return pointer.slice(1).split("/").map(decodeToken);
++}
++
+ /**
+  * Resolves a JSON Pointer against a JSON document and returns the referenced value.
+  *
+@@ -26,16 +40,7 @@ function decodeToken(token: string): string {
+  * @throws {PointerError} if `pointer` is not a valid JSON Pointer, or does not resolve to a value.
+  */
+ export function resolvePointer(document: unknown, pointer: string): unknown {
+-  if (typeof pointer !== "string") {
+-    throw new PointerError("A JSON Pointer must be a string");
+-  }
+-  if (pointer === "") {
+-    return document;
+-  }
+-  if (pointer[0] !== "/") {
+-    throw new PointerError(`Invalid JSON Pointer "${pointer}": a non-empty pointer must start with "/"`);
+-  }
+-  const tokens = pointer.slice(1).split("/").map(decodeToken);
++  const tokens = parsePointer(pointer);
+ 
+   let current: unknown = document;
+   for (const token of tokens) {
+diff --git a/test/patch.test.js b/test/patch.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..0d5009d42189595cf72f4449ec92f9ad96ddb1a3
+--- /dev/null
++++ b/test/patch.test.js
+@@ -0,0 +1,143 @@
++import { test } from "node:test";
++import assert from "node:assert";
++import { applyPatch, PatchError, PointerError } from "../dist/index.js";
++
++const ap = (doc, patch) => applyPatch(doc, patch);
++const badPointer = (doc, patch) => assert.throws(() => applyPatch(doc, patch), PointerError);
++const bad = (doc, patch) => assert.throws(() => applyPatch(doc, patch), PatchError);
++
++test("RFC 6902 Appendix A examples", () => {
++  assert.deepStrictEqual(ap({ foo: "bar" }, [{ op: "add", path: "/baz", value: "qux" }]), { foo: "bar", baz: "qux" });
++  assert.deepStrictEqual(ap({ foo: ["bar", "baz"] }, [{ op: "add", path: "/foo/1", value: "qux" }]), { foo: ["bar", "qux", "baz"] });
++  assert.deepStrictEqual(ap({ baz: "qux", foo: "bar" }, [{ op: "remove", path: "/baz" }]), { foo: "bar" });
++  assert.deepStrictEqual(ap({ foo: ["bar", "qux", "baz"] }, [{ op: "remove", path: "/foo/1" }]), { foo: ["bar", "baz"] });
++  assert.deepStrictEqual(ap({ baz: "qux", foo: "bar" }, [{ op: "replace", path: "/baz", value: "boo" }]), { baz: "boo", foo: "bar" });
++  assert.deepStrictEqual(
++    ap({ foo: { bar: "baz", waldo: "fred" }, qux: { corge: "grault" } }, [{ op: "move", from: "/foo/waldo", path: "/qux/thud" }]),
++    { foo: { bar: "baz" }, qux: { corge: "grault", thud: "fred" } });
++  assert.deepStrictEqual(ap({ foo: ["all", "grass", "cows", "eat"] }, [{ op: "move", from: "/foo/1", path: "/foo/3" }]), { foo: ["all", "cows", "eat", "grass"] });
++  assert.deepStrictEqual(ap({ baz: "qux", foo: ["a", 2, "c"] }, [{ op: "test", path: "/baz", value: "qux" }, { op: "test", path: "/foo/1", value: 2 }]), { baz: "qux", foo: ["a", 2, "c"] });
++  bad({ baz: "qux" }, [{ op: "test", path: "/baz", value: "bar" }]);
++  assert.deepStrictEqual(ap({ foo: "bar" }, [{ op: "add", path: "/child", value: { grandchild: {} } }]), { foo: "bar", child: { grandchild: {} } });
++  assert.deepStrictEqual(ap({ foo: "bar" }, [{ op: "add", path: "/baz", value: "qux", xyz: 123 }]), { foo: "bar", baz: "qux" });
++  bad({ foo: "bar" }, [{ op: "add", path: "/baz/bat", value: "qux" }]);
++  assert.deepStrictEqual(ap({ foo: "bar", baz: ["qux"] }, [{ op: "copy", from: "/foo", path: "/x" }]).x, "bar");
++  assert.deepStrictEqual(ap({ "/": 9, "~1": 10 }, [{ op: "test", path: "/~01", value: 10 }]), { "/": 9, "~1": 10 });
++  bad({ "/": 9, "~1": 10 }, [{ op: "test", path: "/~01", value: "10" }]);
++  assert.deepStrictEqual(ap({ foo: ["bar"] }, [{ op: "add", path: "/foo/-", value: ["abc", "def"] }]), { foo: ["bar", ["abc", "def"]] });
++});
++
++test("root path", () => {
++  assert.deepStrictEqual(ap({ a: 1 }, [{ op: "add", path: "", value: [1] }]), [1]);
++  assert.deepStrictEqual(ap({ a: 1 }, [{ op: "replace", path: "", value: null }]), null);
++  assert.deepStrictEqual(ap({ a: { b: 1 } }, [{ op: "copy", from: "/a", path: "" }]), { b: 1 });
++  assert.deepStrictEqual(ap({ a: { b: 1 } }, [{ op: "move", from: "/a", path: "" }]), { b: 1 });
++  assert.deepStrictEqual(ap({ a: 1 }, [{ op: "test", path: "", value: { a: 1 } }]), { a: 1 });
++  bad({ a: 1 }, [{ op: "remove", path: "" }]);
++  assert.deepStrictEqual(ap({ a: 1 }, []), { a: 1 });
++});
++
++test("add edge cases", () => {
++  assert.deepStrictEqual(ap([1], [{ op: "add", path: "/1", value: 2 }]), [1, 2]);
++  assert.deepStrictEqual(ap([1], [{ op: "add", path: "/0", value: 0 }]), [0, 1]);
++  bad([1], [{ op: "add", path: "/2", value: 2 }]);
++  bad([1], [{ op: "add", path: "/01", value: 2 }]);
++  bad([1], [{ op: "add", path: "/x", value: 2 }]);
++  assert.deepStrictEqual(ap({ a: 1 }, [{ op: "add", path: "/a", value: 2 }]), { a: 2 });
++  assert.deepStrictEqual(ap({}, [{ op: "add", path: "/a", value: null }]), { a: null });
++  bad(5, [{ op: "add", path: "/a", value: 1 }]);
++  bad({ a: null }, [{ op: "add", path: "/a/b", value: 1 }]);
++});
++
++test("remove/replace edge cases", () => {
++  bad({}, [{ op: "remove", path: "/a" }]);
++  bad([1], [{ op: "remove", path: "/1" }]);
++  bad([1], [{ op: "remove", path: "/-" }]);
++  bad({}, [{ op: "replace", path: "/a", value: 1 }]);
++  bad([1], [{ op: "replace", path: "/1", value: 1 }]);
++  assert.deepStrictEqual(ap({ a: 1 }, [{ op: "replace", path: "/a", value: null }]), { a: null });
++});
++
++test("move/copy edge cases", () => {
++  bad({ a: { b: 1 } }, [{ op: "move", from: "/a", path: "/a/b" }]);
++  assert.deepStrictEqual(ap({ a: 1 }, [{ op: "move", from: "/a", path: "/a" }]), { a: 1 });
++  bad({ a: 1 }, [{ op: "move", from: "/b", path: "/c" }]);
++  bad({ a: 1 }, [{ op: "copy", from: "/b", path: "/c" }]);
++  const r = ap({ a: { x: 1 } }, [{ op: "copy", from: "/a", path: "/b" }, { op: "add", path: "/b/y", value: 2 }]);
++  assert.deepStrictEqual(r, { a: { x: 1 }, b: { x: 1, y: 2 } });
++});
++
++test("test operation equality", () => {
++  const eq = (a, b) => ap(null, [{ op: "replace", path: "", value: a }, { op: "test", path: "", value: b }]);
++  eq({ a: 1, b: [1, 2] }, { b: [1, 2], a: 1 });
++  eq(1.0, 1);
++  bad(null, [{ op: "test", path: "", value: 1 }]);
++  assert.throws(() => eq([1, 2], [2, 1]), PatchError);
++  assert.throws(() => eq(1, "1"), PatchError);
++  assert.throws(() => eq(null, {}), PatchError);
++  assert.throws(() => eq({ a: 1 }, { a: 1, b: 2 }), PatchError);
++  assert.throws(() => eq({ a: 1, b: 2 }, { a: 1 }), PatchError);
++  bad({}, [{ op: "test", path: "/a", value: null }]);
++  assert.deepStrictEqual(ap({ a: null }, [{ op: "test", path: "/a", value: null }]), { a: null });
++});
++
++test("invalid patches", () => {
++  bad({}, {});
++  bad({}, null);
++  bad({}, "x");
++  bad({}, [null]);
++  bad({}, [[]]);
++  bad({}, [{ path: "/a", value: 1 }]);
++  bad({}, [{ op: "bogus", path: "/a" }]);
++  bad({}, [{ op: 1, path: "/a" }]);
++  bad({}, [{ op: "add", value: 1 }]);
++  bad({}, [{ op: "add", path: 1, value: 1 }]);
++  bad({}, [{ op: "add", path: "/a" }]);
++  bad({}, [{ op: "replace", path: "/a" }]);
++  bad({}, [{ op: "test", path: "/a" }]);
++  bad({}, [{ op: "remove" }]);
++  bad({ a: 1 }, [{ op: "move", path: "/b" }]);
++  bad({ a: 1 }, [{ op: "copy", path: "/b" }]);
++  bad({ a: 1 }, [{ op: "move", from: 1, path: "/b" }]);
++  badPointer({ a: 1 }, [{ op: "add", path: "a", value: 1 }]);
++  badPointer({ a: 1 }, [{ op: "add", path: "/a~2", value: 1 }]);
++  badPointer({ a: 1 }, [{ op: "move", from: "a", path: "/b" }]);
++});
++
++test("does not mutate inputs and is atomic", () => {
++  const doc = { a: [1, 2], b: { c: 1 } };
++  const patch = [{ op: "add", path: "/a/-", value: { z: 1 } }, { op: "remove", path: "/b/c" }, { op: "test", path: "/a/0", value: 99 }];
++  const docCopy = structuredClone(doc);
++  const patchCopy = structuredClone(patch);
++  bad(doc, patch);
++  assert.deepStrictEqual(doc, docCopy);
++  assert.deepStrictEqual(patch, patchCopy);
++  const ok = ap(doc, patch.slice(0, 2));
++  assert.deepStrictEqual(doc, docCopy);
++  assert.deepStrictEqual(patch, patchCopy);
++  ok.a[2].z = 5;
++  assert.strictEqual(patch[0].value.z, 1);
++  assert.notStrictEqual(ok.a, doc.a);
++});
++
++test("sequential operations", () => {
++  assert.deepStrictEqual(ap({}, [{ op: "add", path: "/a", value: [] }, { op: "add", path: "/a/-", value: 1 }, { op: "copy", from: "/a/0", path: "/b" }]), { a: [1], b: 1 });
++});
++
++test("prototype pollution", () => {
++  const r = ap({}, [{ op: "add", path: "/__proto__", value: { polluted: true } }]);
++  assert.strictEqual({}.polluted, undefined);
++  assert.strictEqual(Object.getPrototypeOf(r), Object.prototype);
++  assert.strictEqual(Object.hasOwn(r, "__proto__"), true);
++  assert.strictEqual(Object.getPrototypeOf(r.__proto__), Object.prototype);
++  bad({}, [{ op: "add", path: "/__proto__/x", value: 1 }]);
++  bad({}, [{ op: "add", path: "/constructor/prototype/x", value: 1 }]);
++  bad({}, [{ op: "remove", path: "/toString" }]);
++  assert.strictEqual({}.x, undefined);
++  const parsed = JSON.parse('{"__proto__": {"a": 1}}');
++  const out = ap(parsed, [{ op: "add", path: "/__proto__/b", value: 2 }]);
++  assert.deepStrictEqual(Object.getOwnPropertyDescriptor(out, "__proto__").value, { a: 1, b: 2 });
++  assert.strictEqual(Object.getPrototypeOf(out), Object.prototype);
++  const t = ap({}, [{ op: "add", path: "/a", value: JSON.parse('{"__proto__": 1}') }]);
++  assert.strictEqual(Object.getPrototypeOf(t.a), Object.prototype);
++});

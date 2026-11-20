@@ -1,0 +1,131 @@
+diff --git a/README.md b/README.md
+index 576d17b59db9e61e4aeb2c2b00bbf4a3811e9a11..a2f9369d3b9612d5c45f6824f59fdbfff623af32 100644
+--- a/README.md
++++ b/README.md
+@@ -12,3 +12,13 @@ Run its tests with `npm test`.
+ `add`, `rename` and `tag` reject invalid input with an `invalid-input` error whose message says what is
+ wrong, and leave the list unchanged: a title that is empty or only spaces, or longer than 120 characters
+ (after trimming); a priority other than `low`, `normal` or `high`; a tag that is empty or contains a space.
++
++## Bulk import
++
++`importTasks(list, text)` adds tasks from text, one per line as `title;priority;tags`, for example
++`Renew the insurance;high;admin money`. The priority may be empty for a normal one, tags are separated by
++spaces, and trailing fields may be left out. Blank lines are skipped. It returns `{ imported, rejected }`:
++`imported` counts the tasks added, and `rejected` lists each line that could not be added as
++`{ line, reason }`, with `line` counting from 1 (blank lines count). A line is rejected for the reasons
++under "Input rules", for a title already in the list (or earlier in the text), or for more than three
++fields. Rejected lines do not stop the others from being added.
+diff --git a/src/domain/import.ts b/src/domain/import.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..c9ae75a75ef9b9ca766b36dcddb4d59689a81b94
+--- /dev/null
++++ b/src/domain/import.ts
+@@ -0,0 +1,55 @@
++import type { TaskList } from './list.ts';
++import type { Priority } from './task.ts';
++import { validatePriority } from './validate.ts';
++
++/** A line of the text that could not be imported, and why. */
++export interface RejectedLine {
++  /** The line's number in the text, counting from 1 and counting blank lines. */
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** What a bulk import did: how many tasks it added, and the lines it could not add. */
++export interface ImportReport {
++  readonly imported: number;
++  readonly rejected: readonly RejectedLine[];
++}
++
++const FIELD_COUNT = 3;
++
++/**
++ * Adds the tasks written in `text` to `list`, one per line as `title;priority;tags`. The priority may
++ * be empty for a normal one, the tags are separated by spaces, and the last fields may be left out.
++ * Blank lines are skipped; a line that cannot be added is reported and the others are still added.
++ *
++ * @param list - the task list to add the tasks to
++ * @param text - the lines to import
++ */
++export function importTasks(list: TaskList, text: string): ImportReport {
++  const rejected: RejectedLine[] = [];
++  let imported = 0;
++  text.split(/\r\n|\r|\n/).forEach((raw, index) => {
++    if (raw.trim() === '') return;
++    const reason = importLine(list, raw);
++    if (reason === undefined) imported += 1;
++    else rejected.push({ line: index + 1, reason });
++  });
++  return { imported, rejected };
++}
++
++function importLine(list: TaskList, raw: string): string | undefined {
++  const fields = raw.split(';');
++  if (fields.length > FIELD_COUNT) {
++    return `expected at most ${FIELD_COUNT} fields (title;priority;tags) but found ${fields.length}`;
++  }
++  const [title = '', priorityText = '', tagsText = ''] = fields.map((field) => field.trim());
++  let priority: Priority | undefined;
++  if (priorityText !== '') {
++    const valid = validatePriority(priorityText);
++    if (!valid.ok) return valid.error.message;
++    priority = valid.value as Priority;
++  }
++  const tags = tagsText === '' ? [] : tagsText.split(/\s+/);
++  const added = list.add({ title, priority, tags });
++  return added.ok ? undefined : added.error.message;
++}
+diff --git a/src/index.ts b/src/index.ts
+index 588806ff1aefc639ad21e9ad4811e7e24ad09905..b9225b374678d8690362d5807c42eac2a1807542 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -3,6 +3,8 @@ import type { Clock, TaskList } from './domain/list.ts';
+ 
+ export type { Clock, TaskFilter, TaskList } from './domain/list.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
++export { importTasks } from './domain/import.ts';
++export type { ImportReport, RejectedLine } from './domain/import.ts';
+ export { summarize } from './domain/summary.ts';
+ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+diff --git a/test/list.test.ts b/test/list.test.ts
+index 161402d5cdda400a87e15a3a379cacf84ba869b9..31e2bc15dafb2ec9b82f8d95b14f195ec086e962 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createTodoList, summarize } from '../src/index.ts';
++import { createTodoList, importTasks, summarize } from '../src/index.ts';
+ 
+ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T {
+   if (!result.ok) assert.fail(JSON.stringify(result.error));
+@@ -196,3 +196,25 @@ describe('input validation', () => {
+     rejected(list.tag('Keep', 'a b'), /space/, list, before);
+   });
+ });
++
++describe('bulk import', () => {
++  it('adds every valid line, with priority and tags', () => {
++    const list = createTodoList();
++    const report = importTasks(list, 'Renew the insurance;high;admin money\nBuy milk;;\n\nWalk the dog');
++    assert.deepEqual(report, { imported: 3, rejected: [] });
++    const insurance = valueOf(list.find('Renew the insurance'));
++    assert.equal(insurance.priority, 'high');
++    assert.deepEqual(insurance.tags, ['admin', 'money']);
++    assert.equal(valueOf(list.find('Buy milk')).priority, 'normal');
++  });
++
++  it('rejects bad lines by their number, counting blank lines, and imports the rest', () => {
++    const list = createTodoList();
++    list.add({ title: 'Existing' });
++    const report = importTasks(list, 'Good;low;a\r\n\n;high;x\nBad prio;urgent;\nExisting;;\nToo;many;a;b\nFine');
++    assert.equal(report.imported, 2);
++    assert.deepEqual(report.rejected.map((r) => r.line), [3, 4, 5, 6]);
++    assert.ok(report.rejected.every((r) => r.reason.length > 0));
++    assert.equal(list.list().length, 3);
++  });
++});

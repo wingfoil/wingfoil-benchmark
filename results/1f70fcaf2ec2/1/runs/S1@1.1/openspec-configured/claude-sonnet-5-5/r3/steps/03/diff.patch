@@ -1,0 +1,127 @@
+diff --git a/openspec/changes/harden-json-patch-values/.openspec.yaml b/openspec/changes/harden-json-patch-values/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..4ee7b3f00e155023b32f9805ab1b7ea631b7215e
+--- /dev/null
++++ b/openspec/changes/harden-json-patch-values/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-11-20
+diff --git a/openspec/changes/harden-json-patch-values/design.md b/openspec/changes/harden-json-patch-values/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b26704ee97a8a4646ccd9a91026b3336c25246eb
+--- /dev/null
++++ b/openspec/changes/harden-json-patch-values/design.md
+@@ -0,0 +1,18 @@
++## Context
++
++`requireValue` only checks that the `value` member exists. Nested non-JSON content passes through `cloneJson` unchanged or degraded.
++
++## Goals / Non-Goals
++
++**Goals:** reject non-JSON `value`s per RFC 6902 §3/§4 and RFC 8259.
++**Non-Goals:** validating the document; changing other operations.
++
++## Decisions
++
++- Add an `isJsonValue` check inside `requireValue`, so `add`, `replace` and `test` share it. It accepts `null`, booleans, strings, finite numbers, arrays, and plain objects (prototype `Object.prototype` or `null`) recursively. Rejecting non-plain objects follows the standard: a `Date` is not a JSON value, and the standard wins over convenience.
++- Errors are `JsonPatchError`. No runtime dependencies.
++- Sparse array holes read as `undefined` and are rejected.
++
++## Risks / Trade-offs
++
++- Callers passing `Date` or `undefined`-valued members relied on lenient behaviour; they must now convert (e.g. `toISOString`). Valid JSON input is unaffected.
+diff --git a/openspec/changes/harden-json-patch-values/proposal.md b/openspec/changes/harden-json-patch-values/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9bc6a91712d37467b7d6b49ed5c4fd90e9a793a9
+--- /dev/null
++++ b/openspec/changes/harden-json-patch-values/proposal.md
+@@ -0,0 +1,29 @@
++# Proposal
++
++## Why
++
++`applyPatch` validates the shape of a patch but not the `value` members it carries. Values that are not JSON (`undefined`, `NaN`, `Infinity`, functions, `bigint`, symbols, `Date`/`Map`-like objects) are accepted and silently copied or coerced into the result, so callers get documents that cannot be serialised as JSON. RFC 6902 values are JSON values (RFC 8259).
++
++## What Changes
++
++- `add`, `replace` and `test` reject a `value` that is not a JSON value, with `JsonPatchError`.
++- Not breaking for valid input: only patches that carry non-JSON values change behaviour, and those were already outside the standard. Calling this out for importers that may have relied on it.
++- Audit result: `add`, `remove`, `replace`, `move`, `copy`, `test`, pointer escaping, hostile keys and atomicity already conform to RFC 6902 §4 and §5; no change.
++
++**Governing standards:** RFC 6902 §3 and §4.1, §4.3, §4.6 (value members); RFC 8259 §3 (JSON values).
++
++**Out of scope:** validating the `document` argument, other operations, and any change to error types.
++
++## Capabilities
++
++### New Capabilities
++<!-- None -->
++
++### Modified Capabilities
++- `json-patch`: the "Patch document structure" requirement gains a rule on `value` being a JSON value.
++
++## Impact
++
++- `src/index.ts`: `requireValue` validates the value.
++- `test/patch.test.ts`: new tests.
++- No new dependencies; no `package.json` change.
+diff --git a/openspec/changes/harden-json-patch-values/specs/json-patch/spec.md b/openspec/changes/harden-json-patch-values/specs/json-patch/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..705db3a1dff749a94b9c257cdfd784154e312d6a
+--- /dev/null
++++ b/openspec/changes/harden-json-patch-values/specs/json-patch/spec.md
+@@ -0,0 +1,40 @@
++## MODIFIED Requirements
++
++### Requirement: Patch document structure
++Per RFC 6902 §3, a patch SHALL be an array of operation objects. Each operation SHALL have a string `op` that is one of `add`, `remove`, `replace`, `move`, `copy`, `test` and a string `path` that is a valid JSON Pointer (RFC 6901). The `value` of `add`, `replace` and `test` SHALL be a JSON value (RFC 8259 §3): an object or array of JSON values, a string, a finite number, a boolean or `null`. Members not defined for the operation SHALL be ignored. Operations are applied in order. Any violation SHALL cause an error.
++
++#### Scenario: Empty patch
++- **WHEN** the patch is `[]`
++- **THEN** the result equals the document
++
++#### Scenario: Patch is not an array
++- **WHEN** the patch is an object, `null`, a string or `undefined`
++- **THEN** an error is thrown
++
++#### Scenario: Operation is not an object
++- **WHEN** an element is `null`, an array or a scalar
++- **THEN** an error is thrown
++
++#### Scenario: Unknown or missing op
++- **WHEN** `op` is missing, not a string, or not one of the six names (e.g. `"merge"`, `"ADD"`)
++- **THEN** an error is thrown
++
++#### Scenario: Missing or invalid path
++- **WHEN** `path` is missing, not a string, or not a valid JSON Pointer (e.g. `"a"`, `"/a~2"`)
++- **THEN** an error is thrown
++
++#### Scenario: Missing value
++- **WHEN** an `add`, `replace` or `test` operation has no `value` member (RFC 6902 §4.1, §4.3, §4.6)
++- **THEN** an error is thrown, whereas `"value": null` is a valid value
++
++#### Scenario: Value is not JSON
++- **WHEN** an `add`, `replace` or `test` `value` is, or contains at any depth, `undefined`, `NaN`, `Infinity`, a function, a `bigint`, a symbol, or a non-plain object such as a `Date` or `Map`
++- **THEN** an error is thrown
++
++#### Scenario: Missing or invalid from
++- **WHEN** a `move` or `copy` operation has no `from` member, or it is not a valid JSON Pointer (§4.4, §4.5)
++- **THEN** an error is thrown
++
++#### Scenario: Unrecognised members
++- **WHEN** an operation carries extra members such as `"comment"`
++- **THEN** they are ignored
+diff --git a/openspec/changes/harden-json-patch-values/tasks.md b/openspec/changes/harden-json-patch-values/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b84bb824db985ad3b7f5a5970e70ae3f156a517c
+--- /dev/null
++++ b/openspec/changes/harden-json-patch-values/tasks.md
+@@ -0,0 +1,8 @@
++## 1. Implementation
++
++- [ ] 1.1 Add a recursive `isJsonValue` helper in `src/index.ts` and use it in `requireValue`
++
++## 2. Tests
++
++- [ ] 2.1 Test scenario "Value is not JSON" for `add`, `replace` and `test`, including nested values, and that `null` and valid values still pass
++- [ ] 2.2 Run `npm test` and confirm all tests pass

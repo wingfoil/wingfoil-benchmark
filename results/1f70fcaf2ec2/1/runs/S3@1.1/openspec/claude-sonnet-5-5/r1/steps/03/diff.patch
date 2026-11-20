@@ -1,0 +1,248 @@
+diff --git a/README.md b/README.md
+index 965050703fd14fa631125b2b24ecabcdb889112d..50044c059c871f2e7309b60bbc1a043d783ee0a1 100644
+--- a/README.md
++++ b/README.md
+@@ -16,6 +16,9 @@ rentals.quote(request); // { itemId, start, end, total: 5000 }
+ rentals.book(request);  // { id, itemId, start, end, total: 5000 }
+ ```
+ 
++A rental of 3 days or more costs 10% less than its full price (rounded to the nearest cent); `quote` and
++`book` both return the reduced total.
++
+ Periods are whole days at midnight UTC; `end` is the start of the day after the last day. `quote` and
+ `book` throw for an unknown item or invalid period, and `book` throws if the item is already booked for
+ any part of it. `availability({ start, end, kind })` returns the sorted ids of the equipment free for the whole period;
+diff --git a/openspec/changes/archive/2026-11-20-add-long-rental-discount/.openspec.yaml b/openspec/changes/archive/2026-11-20-add-long-rental-discount/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..4ee7b3f00e155023b32f9805ab1b7ea631b7215e
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-long-rental-discount/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-11-20
+diff --git a/openspec/changes/archive/2026-11-20-add-long-rental-discount/design.md b/openspec/changes/archive/2026-11-20-add-long-rental-discount/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5311b03b319f916421e5bb9996d3aa46ed706403
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-long-rental-discount/design.md
+@@ -0,0 +1,18 @@
++## Context
++
++`quote` and `book` both call the private `price()` in `src/rental.ts`, which computes `dailyPrice * period.days` and checks it is a safe integer.
++
++## Goals / Non-Goals
++
++**Goals:** 10% off for periods of 3+ days in one place, so quote and booking cannot disagree; totals stay integer cents.
++**Non-Goals:** other tiers, configurable rates, changes to cancellation.
++
++## Decisions
++
++- Apply the discount inside `price()` after the full price is computed and validated safe. Both `quote` and `book` then reflect it automatically.
++- Integer arithmetic: `discounted = Math.floor((full * 9 + 5) / 10)`, i.e. nearest cent with halves rounding up. Assumption: the request did not state rounding; nearest cent is the least surprising. `full` is checked as a safe integer first, and `full * 9` is checked too before use.
++- Threshold as named constants (`LONG_RENTAL_DAYS = 3`) in `rental.ts`.
++
++## Risks / Trade-offs
++
++- Rounding choice affects totals by at most half a cent; documented in the spec.
+diff --git a/openspec/changes/archive/2026-11-20-add-long-rental-discount/proposal.md b/openspec/changes/archive/2026-11-20-add-long-rental-discount/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3cf41328b2b47ab78fec3b9f808f71a4f90306ec
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-long-rental-discount/proposal.md
+@@ -0,0 +1,23 @@
++## Why
++
++The school wants to reward customers who rent for longer. Rentals of 3 or more days should cost 10% less than the full price.
++
++## What Changes
++
++- A rental period of 3 or more days is priced at 90% of `dailyPrice × days`, rounded to the nearest euro cent (halves round up).
++- Periods of 1 or 2 days keep the full price.
++- `quote` and `book` both return the reduced total (they share one pricing path).
++- README example/notes mention the discount.
++
++## Capabilities
++
++### New Capabilities
++None.
++
++### Modified Capabilities
++- `rental-booking`: the Quote and Booking requirements change so that `total` includes the long-rental discount.
++
++## Impact
++
++- `src/rental.ts` (pricing in `price()`), `src/rental.test.ts`, `README.md`.
++- Out of scope: discounts for other durations, per-item discounts, cancellation refunds (the refund policy still refers to the booking total as booked).
+diff --git a/openspec/changes/archive/2026-11-20-add-long-rental-discount/specs/rental-booking/spec.md b/openspec/changes/archive/2026-11-20-add-long-rental-discount/specs/rental-booking/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..10276a58ac4dffa57bc9003a6a24c527111c5f08
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-long-rental-discount/specs/rental-booking/spec.md
+@@ -0,0 +1,47 @@
++## MODIFIED Requirements
++
++### Requirement: Quote
++`quote` SHALL return `{ itemId, start, end, total }` where `total` is the item's `dailyPrice` multiplied by the number of days in the period, as an integer number of euro cents, reduced by 10% when the period is 3 days or more. The reduced total SHALL be rounded to the nearest euro cent, with halves rounded up. Periods of fewer than 3 days SHALL be charged the full price. Quoting SHALL NOT change any booking. It SHALL throw for an unknown item or a disallowed period.
++
++#### Scenario: Two-day quote has no discount
++- **WHEN** an item priced 2500 is quoted for 2 days
++- **THEN** `total` is 5000
++
++#### Scenario: Three-day quote
++- **WHEN** an item priced 2500 is quoted for 3 days
++- **THEN** `total` is 6750
++
++#### Scenario: Longer quote is discounted
++- **WHEN** an item priced 2500 is quoted for 10 days
++- **THEN** `total` is 22500
++
++#### Scenario: Discount rounds to the nearest cent
++- **WHEN** an item priced 1001 is quoted for 3 days (full price 3003, discounted 2702.7)
++- **THEN** `total` is 2703
++
++#### Scenario: Unknown item
++- **WHEN** an unregistered item id is quoted
++- **THEN** an error is thrown
++
++#### Scenario: Quote does not reserve
++- **WHEN** a period is quoted and then booked
++- **THEN** the booking succeeds
++
++### Requirement: Booking
++`book` SHALL create a booking for the item over the period and return `{ id, itemId, start, end, total }`, where `id` is unique among bookings and `total` equals what `quote` returns for the same request, including the long-rental discount. It SHALL throw for an unknown item or a disallowed period.
++
++#### Scenario: Successful booking
++- **WHEN** a free item is booked for a valid period
++- **THEN** the result has a unique `id` and the quoted `total`
++
++#### Scenario: Discounted booking
++- **WHEN** an item priced 2500 is booked for 3 days
++- **THEN** the booking `total` is 6750
++
++#### Scenario: Distinct ids
++- **WHEN** two bookings are made
++- **THEN** their ids differ
++
++#### Scenario: Invalid booking creates nothing
++- **WHEN** `book` throws
++- **THEN** the item's availability is unchanged
+diff --git a/openspec/changes/archive/2026-11-20-add-long-rental-discount/tasks.md b/openspec/changes/archive/2026-11-20-add-long-rental-discount/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..70b6e63e16bf2c694650a23a394ff7c73d688998
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-20-add-long-rental-discount/tasks.md
+@@ -0,0 +1,11 @@
++## 1. Pricing
++
++- [x] 1.1 In `src/rental.ts`, add constants for the 3-day threshold and apply the 10% reduction in `price()` (nearest cent, halves up), keeping the safe-integer check
++- [x] 1.2 Confirm `quote` and `book` both return the reduced total
++
++## 2. Tests and docs
++
++- [x] 2.1 Update/add tests in `src/rental.test.ts`: 2 days full price, 3 days and 10 days discounted, rounding case (1001 × 3 = 2703), booking total equals quote
++- [x] 2.2 Fix any existing tests that assumed full price for 3+ days
++- [x] 2.3 Update `README.md` to describe the discount and its example
++- [x] 2.4 Run the test suite
+diff --git a/openspec/specs/rental-booking/spec.md b/openspec/specs/rental-booking/spec.md
+index cad05dafcc3ea6eec2daf1d746a4e54fbd667887..7f1f46e7e7102d2884b4830350f1b14640e784af 100644
+--- a/openspec/specs/rental-booking/spec.md
++++ b/openspec/specs/rental-booking/spec.md
+@@ -40,11 +40,23 @@ A rental period SHALL be given as ISO-8601 UTC strings `start` and `end`, both a
+ - **THEN** an error is thrown
+ 
+ ### Requirement: Quote
+-`quote` SHALL return `{ itemId, start, end, total }` where `total` is the item's `dailyPrice` multiplied by the number of days in the period, as an integer number of euro cents. Quoting SHALL NOT change any booking. It SHALL throw for an unknown item or a disallowed period.
++`quote` SHALL return `{ itemId, start, end, total }` where `total` is the item's `dailyPrice` multiplied by the number of days in the period, as an integer number of euro cents, reduced by 10% when the period is 3 days or more. The reduced total SHALL be rounded to the nearest euro cent, with halves rounded up. Periods of fewer than 3 days SHALL be charged the full price. Quoting SHALL NOT change any booking. It SHALL throw for an unknown item or a disallowed period.
++
++#### Scenario: Two-day quote has no discount
++- **WHEN** an item priced 2500 is quoted for 2 days
++- **THEN** `total` is 5000
+ 
+ #### Scenario: Three-day quote
+ - **WHEN** an item priced 2500 is quoted for 3 days
+-- **THEN** `total` is 7500
++- **THEN** `total` is 6750
++
++#### Scenario: Longer quote is discounted
++- **WHEN** an item priced 2500 is quoted for 10 days
++- **THEN** `total` is 22500
++
++#### Scenario: Discount rounds to the nearest cent
++- **WHEN** an item priced 1001 is quoted for 3 days (full price 3003, discounted 2702.7)
++- **THEN** `total` is 2703
+ 
+ #### Scenario: Unknown item
+ - **WHEN** an unregistered item id is quoted
+@@ -55,12 +67,16 @@ A rental period SHALL be given as ISO-8601 UTC strings `start` and `end`, both a
+ - **THEN** the booking succeeds
+ 
+ ### Requirement: Booking
+-`book` SHALL create a booking for the item over the period and return `{ id, itemId, start, end, total }`, where `id` is unique among bookings and `total` equals what `quote` returns for the same request. It SHALL throw for an unknown item or a disallowed period.
++`book` SHALL create a booking for the item over the period and return `{ id, itemId, start, end, total }`, where `id` is unique among bookings and `total` equals what `quote` returns for the same request, including the long-rental discount. It SHALL throw for an unknown item or a disallowed period.
+ 
+ #### Scenario: Successful booking
+ - **WHEN** a free item is booked for a valid period
+ - **THEN** the result has a unique `id` and the quoted `total`
+ 
++#### Scenario: Discounted booking
++- **WHEN** an item priced 2500 is booked for 3 days
++- **THEN** the booking `total` is 6750
++
+ #### Scenario: Distinct ids
+ - **WHEN** two bookings are made
+ - **THEN** their ids differ
+diff --git a/src/rental.test.ts b/src/rental.test.ts
+index 8ca5dd6ebfb8f5ffcb2c74bb93b4c029a6092d50..9f9913967aa1fbafd3c11051ea8afe072b0649e3 100644
+--- a/src/rental.test.ts
++++ b/src/rental.test.ts
+@@ -22,7 +22,7 @@ test('addEquipment validates', () => {
+ 
+ test('quote totals in cents and does not reserve', () => {
+   const s = setup();
+-  assert.deepEqual(s.quote({ itemId: 'b1', start: d('01'), end: d('04') }), { itemId: 'b1', start: d('01'), end: d('04'), total: 7500 });
++  assert.deepEqual(s.quote({ itemId: 'b1', start: d('01'), end: d('04') }), { itemId: 'b1', start: d('01'), end: d('04'), total: 6750 });
+   assert.ok(s.book({ itemId: 'b1', start: d('01'), end: d('04') }));
+ });
+ 
+@@ -99,3 +99,13 @@ test('availability rejects invalid period or kind and does not reserve', () => {
+   s.availability({ start: d('05'), end: d('06') });
+   assert.ok(s.book({ itemId: 's1', start: d('05'), end: d('06') }));
+ });
++
++test('rentals of 3 days or more get 10% off, rounded to the nearest cent', () => {
++  const s = setup();
++  s.addEquipment({ id: 'odd', kind: 'sail', dailyPrice: 1001 });
++  assert.equal(s.quote({ itemId: 'b1', start: d('01'), end: d('03') }).total, 5000);
++  assert.equal(s.quote({ itemId: 'b1', start: d('01'), end: d('04') }).total, 6750);
++  assert.equal(s.quote({ itemId: 'b1', start: d('01'), end: d('11') }).total, 22500);
++  assert.equal(s.quote({ itemId: 'odd', start: d('01'), end: d('04') }).total, 2703);
++  assert.equal(s.book({ itemId: 'b1', start: d('01'), end: d('04') }).total, 6750);
++});
+diff --git a/src/rental.ts b/src/rental.ts
+index 28f48ceb2237fb8c450c33a48cd981534d549bb3..27e365ec6b512e9a1d38e09bdc88610bf56c2b9c 100644
+--- a/src/rental.ts
++++ b/src/rental.ts
+@@ -1,6 +1,8 @@
+ import { randomUUID } from 'node:crypto';
+ import { overlaps, parsePeriod } from './period.ts';
+ 
++const LONG_RENTAL_DAYS = 3;
++
+ export type EquipmentKind = 'board' | 'sail';
+ 
+ export interface Equipment {
+@@ -49,10 +51,12 @@ export function createRentalService(): RentalService {
+       throw new Error(`unknown item: ${request?.itemId}`);
+     }
+     const period = parsePeriod(request);
+-    const total = item.dailyPrice * period.days;
+-    if (!Number.isSafeInteger(total)) {
++    const fullPrice = item.dailyPrice * period.days;
++    if (!Number.isSafeInteger(fullPrice * 9)) {
+       throw new Error('total is too large');
+     }
++    // 10% off for long rentals, to the nearest cent (halves round up)
++    const total = period.days >= LONG_RENTAL_DAYS ? Math.floor((fullPrice * 9 + 5) / 10) : fullPrice;
+     return { item, period, total };
+   }
+ 

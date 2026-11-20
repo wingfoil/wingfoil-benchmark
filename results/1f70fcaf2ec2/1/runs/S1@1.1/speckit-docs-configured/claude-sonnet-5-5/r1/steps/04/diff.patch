@@ -1,0 +1,121 @@
+diff --git a/README.md b/README.md
+index ad0d3f5137435620ea1ca310eb956876b859ac5f..3d13683b4185e43bdd5f623368ba5892d848616b 100644
+--- a/README.md
++++ b/README.md
+@@ -24,3 +24,12 @@ patch is atomic (section 5): if any operation fails, the error is thrown and not
+ failed `test`, `move` from a proper prefix of its path, removing the document root). A malformed or
+ unresolvable pointer throws `JsonPointerError`. `-` is only valid as the final token of an `add` path.
+ Members named `__proto__`, `constructor` etc. are ordinary keys and never touch prototypes.
++
++### `applyMergePatch(target, patch)`
++
++Implements JSON Merge Patch (RFC 7396, which obsoletes RFC 7386; section 2). A non-object `patch` (including an
++array or `null`) replaces `target`; an object `patch` is merged member by member into `target` (treated as `{}` if
++it is not an object): a `null` member removes that member, any other value is merged recursively, so `null`s
++nested in new object values are dropped. Arrays are replaced, never merged. Returns a new value; neither
++argument is modified. Members named `__proto__`, `constructor` etc. are ordinary keys. Note that a merge patch
++cannot set a member to `null`.
+diff --git a/src/index.ts b/src/index.ts
+index a6334ba8a246744c498b807a784c73de9fcdb626..7e007418f8636c958349e4a1effe3738343351d1 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -251,3 +251,29 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   for (const operation of patch) result = applyOperation(result, operation);
+   return result;
+ }
++
++/**
++ * Applies a JSON Merge Patch to a JSON document, as specified by RFC 7396 section 2
++ * (which obsoletes RFC 7386).
++ *
++ * If `patch` is not an object it replaces the target wholesale (so arrays are replaced,
++ * not merged). Otherwise the target is treated as an empty object if it is not an
++ * object, and each member of `patch` is merged in: `null` removes the member, any other
++ * value is merged recursively. Consequently `null` members inside object patch values
++ * are never stored. Neither argument is modified and the result shares no structure
++ * with them. Prototype keys such as `__proto__` are treated as ordinary member names.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isObject(patch)) return clone(patch);
++  const result = isObject(target) ? (clone(target) as Record<string, unknown>) : {};
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      const current = Object.prototype.hasOwnProperty.call(result, key) ? result[key] : undefined;
++      setMember(result, key, applyMergePatch(current, value));
++    }
++  }
++  return result;
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ca94ef2335982158496ebd8abea1959df15fc329
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,64 @@
++import { test } from "node:test";
++import assert from "node:assert";
++import { applyMergePatch } from "../src/index.ts";
++
++const ok = (doc: unknown, patch: unknown, expected: unknown) =>
++  assert.deepStrictEqual(applyMergePatch(doc, patch), expected);
++
++test("RFC 7396 section 3 example", () => {
++  ok(
++    { title: "Goodbye!", author: { givenName: "John", familyName: "Doe" }, tags: ["example", "sample"], content: "x" },
++    { title: "Hello!", phoneNumber: "+01-123-456-7890", author: { familyName: null }, tags: ["example"] },
++    { title: "Hello!", author: { givenName: "John" }, tags: ["example"], content: "x", phoneNumber: "+01-123-456-7890" },
++  );
++});
++
++test("RFC 7396 appendix A test cases", () => {
++  ok({ a: "b" }, { a: "c" }, { a: "c" });
++  ok({ a: "b" }, { b: "c" }, { a: "b", b: "c" });
++  ok({ a: "b" }, { a: null }, {});
++  ok({ a: "b", b: "c" }, { a: null }, { b: "c" });
++  ok({ a: ["b"] }, { a: "c" }, { a: "c" });
++  ok({ a: "c" }, { a: ["b"] }, { a: ["b"] });
++  ok({ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } });
++  ok({ a: [{ b: "c" }] }, { a: [1] }, { a: [1] });
++  ok(["a", "b"], ["c", "d"], ["c", "d"]);
++  ok({ a: "b" }, ["c"], ["c"]);
++  ok({ a: "foo" }, null, null);
++  ok({ a: "foo" }, "bar", "bar");
++  ok({ e: null }, { a: 1 }, { e: null, a: 1 });
++  ok([1, 2], { a: "b", c: null }, { a: "b" });
++  ok({}, { a: { bb: { ccc: null } } }, { a: { bb: {} } });
++});
++
++test("null stripping, empty patch, non-object targets", () => {
++  ok({ a: 1 }, {}, { a: 1 });
++  ok(5, {}, {});
++  ok(undefined, { a: null, b: 1 }, { b: 1 });
++  ok({ a: 1 }, { b: { c: null } }, { a: 1, b: {} });
++  ok({ a: 1 }, { a: { c: null } }, { a: {} });
++});
++
++test("does not mutate arguments, result does not alias them", () => {
++  const target = { a: { b: 1 }, l: [1] };
++  const patch = { a: { c: 2 }, n: { m: [1] } };
++  const result = applyMergePatch(target, patch) as any;
++  assert.deepStrictEqual(target, { a: { b: 1 }, l: [1] });
++  assert.deepStrictEqual(patch, { a: { c: 2 }, n: { m: [1] } });
++  result.n.m.push(2);
++  result.l.push(2);
++  assert.deepStrictEqual(patch.n.m, [1]);
++  assert.deepStrictEqual(target.l, [1]);
++});
++
++test("prototype keys are ordinary members", () => {
++  const patch = JSON.parse('{"__proto__":{"polluted":true},"constructor":{"prototype":{"x":1}}}');
++  const result = applyMergePatch({}, patch) as any;
++  assert.strictEqual(({} as any).polluted, undefined);
++  assert.strictEqual(({} as any).x, undefined);
++  assert.strictEqual(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepStrictEqual(Object.keys(result), ["__proto__", "constructor"]);
++  assert.deepStrictEqual(Object.getOwnPropertyDescriptor(result, "__proto__")?.value, { polluted: true });
++  const removed = applyMergePatch(result, JSON.parse('{"__proto__":null}')) as any;
++  assert.deepStrictEqual(Object.keys(removed), ["constructor"]);
++});

@@ -1,0 +1,241 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c06655d6b5db77b6d968279714126b1bd8e5a97a
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "RFC 6902 conformance for applyPatch"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-in-every-case-errors-included.md b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-in-every-case-errors-included.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a1e8d9f6d37f7042de845cd3ccf6d1fa25c4a526
+--- /dev/null
++++ b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-in-every-case-errors-included.md
+@@ -0,0 +1,55 @@
++---
++id: task-003-make-applypatch-conform-to-rfc-6902-in-every-case-errors-included
++type: task
++title: "Make applyPatch conform to RFC 6902 in every case, errors included"
++status: approved
++format: 1
++---
++
++# Make applyPatch conform to RFC 6902 in every case, errors included
++
++Users of `applyPatch` report surprising results: some patches they consider invalid are accepted, some
++edge cases give results they did not expect, and a patch that fails does not always behave the way they
++read the standard. Review how patches are checked and applied, and make the behaviour conform to RFC 6902
++in every case, errors included. It follows task-002.
++
++## Requirements
++
++- An invalid patch is rejected as an invalid patch before any operation is applied, so that a later
++  invalid entry is not reported as a failed operation of an earlier one.
++- Every operation of the patch is checked, including holes in a sparse patch array, which must not be
++  skipped.
++- `value` of `add`, `replace` and `test` must be a JSON value: `undefined`, non-finite numbers, bigints,
++  functions, symbols, non-plain objects (Date, Map, class instances) and cyclic values are rejected.
++- The input document must be a JSON value too, so that a non-JSON document is not silently cloned.
++- `move` from a location to itself, including the whole document to itself, is a no-op when the
++  `from` location exists (RFC 6902 section 4.4: the `from` location must not be a proper prefix of
++  `path`, and an identical location is not a proper prefix).
++- The failure behaviour is unchanged: a failing patch throws and leaves the input unmodified.
++
++## Acceptance criteria
++
++- Tests cover each item above, and the existing tests keep passing with `node --test`.
++- No runtime dependency is added; `src/index.ts` keeps its public types.
++
++## Notes
++
++- Reuse `parsePointer` from task-001.
++
++## Outcome
++
++Gaps found by probing the task-002 implementation, and what changed in `src/index.ts`:
++
++- Non-JSON values were accepted as `value` of `add`, `replace` and `test` (`undefined`, `NaN`, `Infinity`,
++  `Date`, `Map`, bigints, cyclic objects) and as document members. They are now rejected, by
++  `isJsonValue`, as an invalid patch or an invalid document.
++- A hole in the patch array was skipped by `forEach`. It is now an invalid operation.
++- The patch was checked one operation at a time, so an invalid operation after a failing one was reported
++  as the failure. The whole patch is now checked before the first operation is applied.
++- `move` from a location to the same location, including `""` to `""`, threw. It is now a no-op once the
++  `from` location is shown to exist. A `move` into a child of its `from` still throws.
++
++`remove` of the whole document still throws: RFC 6902 does not define a document with no value.
++
++Tests: `npm test` runs 50 tests, all passing. No TypeScript compiler is installed in this environment, so
++the strict type check of `tsconfig.json` was not run.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index d0fa0195a43a49f5b2136eca6345456dac9b7f10..b573c5666f2fb809fe8c0d12a5354e262a5606be 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -299,7 +299,13 @@ describe("applyPatch", () => {
+ 
+   test("move throws when the target is inside the source", () => {
+     assert.throws(() => applyPatch({ a: { b: 1 } }, [{ op: "move", from: "/a", path: "/a/c" }]), /own children/);
+-    assert.throws(() => applyPatch({ a: 1 }, [{ op: "move", from: "", path: "/a" }]), /own children|whole document/);
++    assert.throws(() => applyPatch({ a: 1 }, [{ op: "move", from: "", path: "/a" }]), /own children/);
++  });
++
++  test("move onto its own location changes nothing, and still needs the location to exist", () => {
++    assert.deepEqual(applyPatch({ a: 1 }, [{ op: "move", from: "", path: "" }]), { a: 1 });
++    assert.deepEqual(applyPatch([1, 2], [{ op: "move", from: "/1", path: "/1" }]), [1, 2]);
++    assert.throws(() => applyPatch({ a: 1 }, [{ op: "move", from: "/b", path: "/b" }]), /does not resolve/);
+   });
+ 
+   test("copy throws when the source is missing", () => {
+@@ -311,4 +317,40 @@ describe("applyPatch", () => {
+     assert.throws(() => applyPatch(document, [{ op: "add", path: "/b", value: 2 }, { op: "remove", path: "/missing" }]), /no value there/);
+     assert.deepEqual(document, { a: 1 });
+   });
++
++  test("an invalid operation is reported as invalid, even after an operation that would fail", () => {
++    assert.throws(
++      () => applyPatch({}, [{ op: "remove", path: "/missing" }, { op: "set", path: "/a", value: 1 } as unknown as never]),
++      /unknown "op"/,
++    );
++  });
++
++  test("a hole in the patch array is an invalid operation, not skipped", () => {
++    const patch = [, { op: "add", path: "/a", value: 1 }] as unknown as never[];
++    assert.throws(() => applyPatch({}, patch), /operation 0 is not an object/);
++  });
++
++  test("a value that is not JSON is rejected", () => {
++    const cyclic: Record<string, unknown> = {};
++    cyclic["self"] = cyclic;
++    const values: unknown[] = [undefined, NaN, Infinity, 1n, () => 1, new Date(0), new Map(), cyclic, [undefined]];
++    for (const value of values) {
++      assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value } as never]), /not a JSON value/);
++      assert.throws(() => applyPatch({ a: 1 }, [{ op: "test", path: "/a", value } as never]), /not a JSON value/);
++    }
++    assert.throws(() => applyPatch({ a: 1 }, [{ op: "replace", path: "/a", value: undefined } as never]), /not a JSON value/);
++  });
++
++  test("a value that is JSON is accepted, including null, empty containers and null-prototype objects", () => {
++    const nullPrototype = Object.assign(Object.create(null), { x: [] }) as unknown;
++    assert.deepEqual(applyPatch({}, [{ op: "add", path: "/a", value: null }]), { a: null });
++    assert.deepEqual(applyPatch({}, [{ op: "add", path: "/a", value: { b: [[], {}, false, ""] } }]), { a: { b: [[], {}, false, ""] } });
++    assert.deepEqual(applyPatch({}, [{ op: "add", path: "/a", value: nullPrototype as never }]), { a: { x: [] } });
++  });
++
++  test("a document that is not JSON is rejected", () => {
++    assert.throws(() => applyPatch({ a: undefined } as never, []), /invalid JSON document/);
++    assert.throws(() => applyPatch({ a: [NaN] } as never, []), /invalid JSON document/);
++    assert.throws(() => applyPatch(new Date(0) as never, []), /invalid JSON document/);
++  });
+ });
+diff --git a/src/index.ts b/src/index.ts
+index 1f9a143be3e917fb9b296d17987681d03b62480e..43d06c51b809c35358e13b7274a4a8c8c0086b28 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -76,6 +76,35 @@ export type JsonPatch = PatchOperation[];
+ 
+ const OPERATIONS: readonly unknown[] = ["add", "remove", "replace", "move", "copy", "test"];
+ 
++/**
++ * Whether `value` is a JSON value: null, a boolean, a finite number, a string, an array, or an object
++ * with a plain prototype, all of whose contents are JSON values. `ancestors` holds the containers being
++ * checked, so that a cycle is refused.
++ */
++function isJsonValue(value: unknown, ancestors: Set<object> = new Set()): value is JsonValue {
++  if (value === null || typeof value === "boolean" || typeof value === "string") {
++    return true;
++  }
++  if (typeof value === "number") {
++    return Number.isFinite(value);
++  }
++  if (typeof value !== "object" || ancestors.has(value)) {
++    return false;
++  }
++  const isArray = Array.isArray(value);
++  const prototype = Object.getPrototypeOf(value);
++  if (!isArray && prototype !== Object.prototype && prototype !== null) {
++    return false;
++  }
++  ancestors.add(value);
++  const contents = isArray
++    ? Array.from({ length: value.length }, (_, i) => (Object.hasOwn(value, i) ? value[i] : undefined))
++    : Object.values(value);
++  const json = contents.every((item) => isJsonValue(item, ancestors));
++  ancestors.delete(value);
++  return json;
++}
++
+ /** Checks that `entry` is a well-formed operation, and returns it typed as one. Throws when it is not. */
+ function checkOperation(entry: unknown, index: number): PatchOperation {
+   if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+@@ -98,6 +127,9 @@ function checkOperation(entry: unknown, index: number): PatchOperation {
+   if ((member.op === "add" || member.op === "replace" || member.op === "test") && !Object.hasOwn(member, "value")) {
+     throw new Error(`invalid JSON Patch: operation ${index} has no "value"`);
+   }
++  if ((member.op === "add" || member.op === "replace" || member.op === "test") && !isJsonValue(member.value)) {
++    throw new Error(`invalid JSON Patch: operation ${index} has a "value" that is not a JSON value`);
++  }
+   return member as unknown as PatchOperation;
+ }
+ 
+@@ -210,10 +242,15 @@ function applyOperation(root: JsonValue, operation: PatchOperation): JsonValue {
+       // The value moves out of `from` before it is added at `path`, so `path` may not lie inside `from`.
+       const from = parsePointer(operation.from);
+       const to = parsePointer(operation.path);
+-      if (to.length > from.length && from.every((token, i) => token === to[i])) {
++      const isPrefix = from.length <= to.length && from.every((token, i) => token === to[i]);
++      if (isPrefix && from.length < to.length) {
+         throw new Error(`cannot move ${JSON.stringify(operation.from)} into one of its own children`);
+       }
+       const value = walk(root, from, operation.from);
++      // The same location: the value is removed and added back where it was, so nothing changes.
++      if (isPrefix) {
++        return root;
++      }
+       return add(remove(root, operation.from), operation.path, value);
+     }
+     case "copy": {
+@@ -234,16 +271,25 @@ function applyOperation(root: JsonValue, operation: PatchOperation): JsonValue {
+  * Applies a JSON Patch (RFC 6902) to a JSON document and returns the resulting document. The operations
+  * apply in order. The input is not mutated: the result is a new value.
+  *
+- * Throws when `patch` is not a valid JSON Patch, or when one of its operations fails.
++ * Throws when `document` is not a JSON value, when `patch` is not a valid JSON Patch, or when one of its
++ * operations fails. The whole patch is checked before its first operation is applied.
+  */
+ export function applyPatch(document: JsonValue, patch: JsonPatch): JsonValue {
+   if (!Array.isArray(patch)) {
+     throw new Error("invalid JSON Patch: expected an array of operations");
+   }
++  if (!isJsonValue(document)) {
++    throw new Error("invalid JSON document: it contains a value that is not a JSON value");
++  }
++  // Indexed rather than forEach, so that a hole in a sparse array is checked and not skipped.
++  const operations: PatchOperation[] = [];
++  for (let index = 0; index < patch.length; index++) {
++    operations.push(checkOperation(patch[index], index));
++  }
+   // The operations work on a copy, so that a failing patch leaves the input as it was.
+   let result = structuredClone(document);
+-  patch.forEach((entry, index) => {
+-    result = applyOperation(result, checkOperation(entry, index));
+-  });
++  for (const operation of operations) {
++    result = applyOperation(result, operation);
++  }
+   return result;
+ }

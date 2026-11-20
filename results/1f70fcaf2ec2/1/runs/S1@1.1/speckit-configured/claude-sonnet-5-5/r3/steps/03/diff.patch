@@ -1,0 +1,107 @@
+diff --git a/README.md b/README.md
+index 3ba8be2256935cbdedf6d79e57c25363f9c786aa..374f91e1699f0d902f84cecea5c869fd816cc9bf 100644
+--- a/README.md
++++ b/README.md
+@@ -18,3 +18,6 @@ and `test` operations, paths being JSON Pointers) and returns the result as a ne
+ the patch are never mutated. It throws `JsonPatchError` when the patch is invalid or an operation fails
+ (missing target, bad array index, `move` into a child of `from`, failed `test`); a failing patch has no
+ effect (section 5). Removing the whole document (`remove` with path `""`) is rejected.
++
++`applyPatch` also rejects, with `JsonPatchError`, a document or an operation `value` that is not a JSON
++value (RFC 8259): `undefined`, `NaN`/`Infinity`, `Date`, `Map`, `bigint`, functions, symbol keys or sparse arrays.
+diff --git a/specs/003-patch-conformance/spec.md b/specs/003-patch-conformance/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c90b6e5e8ee050286750c1f2c0bde400edc97ae0
+--- /dev/null
++++ b/specs/003-patch-conformance/spec.md
+@@ -0,0 +1,9 @@
++# Spec 003: applyPatch conformance review (RFC 6902 sections 3, 4, 5; RFC 8259)
++
++Review of operations against RFC 6902 found one deviation: values that are not JSON values
++(`Date`, `Map`, `NaN`, `undefined`, ...) were silently accepted or coerced (`NaN` to `null`, `Date` kept).
++They are now rejected with `JsonPatchError` before any change, in the document, `add`/`replace` values and
++`test` values. Tests added in `test/patch.test.ts`.
++
++Open point surfaced, unchanged: `remove` with path `""` is rejected (RFC 6902 does not define the result;
++documented in README).
+diff --git a/src/index.ts b/src/index.ts
+index 225a11cd22a5997562fe41f312c3b7fa089d6e33..a6531e8e5f57bb762f1fa98c5849054b590eab1c 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -80,12 +80,33 @@ function isContainer(value: unknown): value is Container {
+   return typeof value === "object" && value !== null;
+ }
+ 
+-function clone<T>(value: T): T {
+-  try {
+-    return structuredClone(value);
+-  } catch {
+-    throw new JsonPatchError("Value is not a JSON value");
++// RFC 8259: only null, booleans, finite numbers, strings, arrays and plain objects are JSON values
++function assertJson(value: unknown): void {
++  if (value === null || typeof value === "string" || typeof value === "boolean") return;
++  if (typeof value === "number" && Number.isFinite(value)) return;
++  if (Array.isArray(value)) {
++    for (let i = 0; i < value.length; i++) {
++      if (!(i in value)) throw new JsonPatchError("Value is not a JSON value");
++      assertJson(value[i]);
++    }
++    return;
++  }
++  if (typeof value === "object") {
++    const proto = Object.getPrototypeOf(value);
++    if (proto === Object.prototype || proto === null) {
++      for (const key of Reflect.ownKeys(value)) {
++        if (typeof key === "symbol") throw new JsonPatchError("Value is not a JSON value");
++        assertJson((value as Record<string, unknown>)[key]);
++      }
++      return;
++    }
+   }
++  throw new JsonPatchError("Value is not a JSON value");
++}
++
++function clone<T>(value: T): T {
++  assertJson(value);
++  return structuredClone(value);
+ }
+ 
+ // RFC 6901 syntax (section 3) into decoded reference tokens (section 4)
+@@ -240,7 +261,9 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+         break;
+       }
+       case "test":
+-        if (!jsonEqual(getValue(result, path), member(op, "value"))) {
++        const expected = member(op, "value");
++        assertJson(expected);
++        if (!jsonEqual(getValue(result, path), expected)) {
+           throw new JsonPatchError("Test operation failed");
+         }
+         break;
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index e07a258517cb97c9d416d6cbdc5d8c42b4de70b7..4ade6a76716f0b4252148096f11bbd63ae9349ba 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -112,3 +112,22 @@ test("__proto__ is a plain key and does not pollute", () => {
+   assert.strictEqual(Object.getPrototypeOf(out2), Object.prototype);
+   assert.strictEqual(Object.hasOwn(out2, "constructor"), true);
+ });
++
++for (const [name, value] of [
++  ["Date", new Date(0)],
++  ["NaN", NaN],
++  ["Infinity", Infinity],
++  ["undefined", undefined],
++  ["Map", new Map()],
++  ["bigint", 1n],
++  ["function", () => 1],
++] as [string, unknown][]) {
++  test(`throws: non-JSON value ${name}`, () => {
++    for (const op of ["add", "replace", "test"]) {
++      assert.throws(() => applyPatch({ a: 1 }, [{ op, path: "/a", value: { v: value } }]), JsonPatchError);
++    }
++  });
++}
++test("throws: non-JSON document", () => {
++  assert.throws(() => applyPatch({ a: new Date(0) }, []), JsonPatchError);
++});

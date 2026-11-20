@@ -1,0 +1,186 @@
+diff --git a/src/diff.ts b/src/diff.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebe5942254e75e7c5fad9d1e84fd011119be52b4
+--- /dev/null
++++ b/src/diff.ts
+@@ -0,0 +1,94 @@
++import { clone, equal, isObject } from "./patch.ts";
++
++type Operation = { op: "add" | "replace"; path: string; value: unknown } | { op: "remove"; path: string };
++
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++/** Computes, for two arrays, the pairs of indexes of a longest common subsequence of equal items. */
++function commonItems(a: unknown[], b: unknown[]): Array<[number, number]> {
++  let start = 0;
++  while (start < a.length && start < b.length && equal(a[start], b[start])) start++;
++  let endA = a.length;
++  let endB = b.length;
++  while (endA > start && endB > start && equal(a[endA - 1], b[endB - 1])) {
++    endA--;
++    endB--;
++  }
++  const n = endA - start;
++  const m = endB - start;
++  // lengths[i][j]: LCS length of a[start+i..endA) and b[start+j..endB)
++  const lengths = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
++  for (let i = n - 1; i >= 0; i--) {
++    for (let j = m - 1; j >= 0; j--) {
++      lengths[i][j] = equal(a[start + i], b[start + j])
++        ? lengths[i + 1][j + 1] + 1
++        : Math.max(lengths[i + 1][j], lengths[i][j + 1]);
++    }
++  }
++  const pairs: Array<[number, number]> = [];
++  for (let i = 0; i < start; i++) pairs.push([i, i]);
++  let i = 0;
++  let j = 0;
++  while (i < n && j < m) {
++    if (equal(a[start + i], b[start + j])) {
++      pairs.push([start + i, start + j]);
++      i++;
++      j++;
++    } else if (lengths[i + 1][j] >= lengths[i][j + 1]) i++;
++    else j++;
++  }
++  for (let k = 0; k < a.length - endA; k++) pairs.push([endA + k, endB + k]);
++  return pairs;
++}
++
++function diffArrays(from: unknown[], to: unknown[], path: string, ops: Operation[]): void {
++  const pairs = commonItems(from, to);
++  pairs.push([from.length, to.length]); // sentinel closing the last gap
++  let prevFrom = 0;
++  let prevTo = 0;
++  let position = 0; // index in the array as transformed so far
++  for (const [matchFrom, matchTo] of pairs) {
++    const removed = matchFrom - prevFrom;
++    const added = matchTo - prevTo;
++    const shared = Math.min(removed, added);
++    for (let k = 0; k < shared; k++) {
++      diffValues(from[prevFrom + k], to[prevTo + k], `${path}/${position + k}`, ops);
++    }
++    for (let k = shared; k < removed; k++) ops.push({ op: "remove", path: `${path}/${position + shared}` });
++    for (let k = shared; k < added; k++) {
++      ops.push({ op: "add", path: `${path}/${position + k}`, value: clone(to[prevTo + k]) });
++    }
++    position += added + 1;
++    prevFrom = matchFrom + 1;
++    prevTo = matchTo + 1;
++  }
++}
++
++function diffValues(from: unknown, to: unknown, path: string, ops: Operation[]): void {
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArrays(from, to, path, ops);
++  } else if (isObject(from) && isObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!Object.hasOwn(to, key)) ops.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++    for (const key of Object.keys(to)) {
++      const child = `${path}/${escapeToken(key)}`;
++      if (!Object.hasOwn(from, key)) ops.push({ op: "add", path: child, value: clone(to[key]) });
++      else diffValues(from[key], to[key], child, ops);
++    }
++  } else if (!equal(from, to)) {
++    ops.push({ op: "replace", path, value: clone(to) });
++  }
++}
++
++/**
++ * Returns a JSON Patch (RFC 6902) that turns `from` into `to`. Neither input is mutated.
++ * Array items that were inserted, removed or moved are added/removed individually.
++ */
++export function createPatch(from: unknown, to: unknown): Operation[] {
++  const ops: Operation[] = [];
++  diffValues(from, to, "", ops);
++  return ops;
++}
+diff --git a/src/index.ts b/src/index.ts
+index 27abd94dbe653cefd05e3b59cdfbc18b1159f9c8..00f19b75b0fdea14ea34d4970caf796345446ab0 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,3 +1,4 @@
+ export { resolvePointer, parsePointer } from "./pointer.ts";
+ export { applyPatch } from "./patch.ts";
+ export { applyMergePatch } from "./merge-patch.ts";
++export { createPatch } from "./diff.ts";
+diff --git a/src/patch.ts b/src/patch.ts
+index 9cf715c12a0f99233f3056a1533d425c30d848a2..361b2eceb498e195f6d1cad76dc825f69e90ceaf 100644
+--- a/src/patch.ts
++++ b/src/patch.ts
+@@ -2,7 +2,7 @@ import { parsePointer } from "./pointer.ts";
+ 
+ type Container = unknown[] | Record<string, unknown>;
+ 
+-function isObject(value: unknown): value is Record<string, unknown> {
++export function isObject(value: unknown): value is Record<string, unknown> {
+   return typeof value === "object" && value !== null && !Array.isArray(value);
+ }
+ 
+@@ -11,7 +11,7 @@ function setMember(object: Record<string, unknown>, key: string, value: unknown)
+   Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
+ }
+ 
+-function clone<T>(value: T): T {
++export function clone<T>(value: T): T {
+   if (Array.isArray(value)) return value.map(clone) as T;
+   if (isObject(value)) {
+     const copy: Record<string, unknown> = {};
+@@ -21,7 +21,7 @@ function clone<T>(value: T): T {
+   return value;
+ }
+ 
+-function equal(a: unknown, b: unknown): boolean {
++export function equal(a: unknown, b: unknown): boolean {
+   if (Array.isArray(a)) {
+     return Array.isArray(b) && a.length === b.length && a.every((item, i) => equal(item, b[i]));
+   }
+diff --git a/test/diff.test.ts b/test/diff.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..5dd9ae193ac42a3f5e553c5624db18cd18f2fcd9
+--- /dev/null
++++ b/test/diff.test.ts
+@@ -0,0 +1,40 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { createPatch, applyPatch } from "../src/index.ts";
++
++function check(from: unknown, to: unknown) {
++  const f = JSON.stringify(from), t = JSON.stringify(to);
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.equal(JSON.stringify(from), f);
++  assert.equal(JSON.stringify(to), t);
++  return patch;
++}
++
++test("small changes give small patches", () => {
++  assert.deepEqual(check({ a: 1, b: { c: [1, 2] } }, { a: 1, b: { c: [1, 3] } }), [{ op: "replace", path: "/b/c/1", value: 3 }]);
++  assert.deepEqual(check({ "a/b": 1, "~": 2 }, { "a/b": 1 }), [{ op: "remove", path: "/~0" }]);
++  assert.deepEqual(check([1], [1]), []);
++  assert.deepEqual(check(1, [1]), [{ op: "replace", path: "", value: [1] }]);
++});
++
++test("array insert, remove, move", () => {
++  const big = [{ x: 1 }, { x: 2 }, { x: 3 }, { x: 4 }];
++  assert.deepEqual(check(big, [big[0], { x: 9 }, ...big.slice(1)]), [{ op: "add", path: "/1", value: { x: 9 } }]);
++  assert.deepEqual(check(big, [big[0], big[2], big[3]]), [{ op: "remove", path: "/1" }]);
++  assert.equal(check(big, [big[1], big[2], big[3], big[0]]).length, 2);
++});
++
++test("random round trips", () => {
++  let s = 7;
++  const r = (n: number) => (s = (s * 1103515245 + 12345) % 2147483648) % n;
++  const gen = (d: number): unknown => {
++    const k = r(d > 2 ? 3 : 5);
++    if (k === 0) return r(3);
++    if (k === 1) return "s" + r(2);
++    if (k === 2) return null;
++    if (k === 3) return Array.from({ length: r(6) }, () => gen(d + 1));
++    return Object.fromEntries(Array.from({ length: r(4) }, () => ["k" + r(4), gen(d + 1)]));
++  };
++  for (let i = 0; i < 3000; i++) check(gen(0), gen(0));
++});

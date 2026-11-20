@@ -1,0 +1,130 @@
+diff --git a/README.md b/README.md
+index ce20f5032fbc7fa66f4338bd370e6bdee023502f..8de7a32c0b6c19d040e2cf880336fe9ed55c65ba 100644
+--- a/README.md
++++ b/README.md
+@@ -13,6 +13,9 @@ and sails:
+   number of euro cents.
+ - `quote({ itemId, start, end })` — returns `{ itemId, start, end, total }`.
+ - `book({ itemId, start, end })` — returns `{ id, itemId, start, end, total }`.
++- `availability({ start, end, kind? })` — returns the sorted ids of the equipment, of that `kind` or of
++  any kind when none is given, that is free for the whole period (no booking overlaps it). It throws for an
++  invalid period or kind.
+ 
+ Periods are whole days: `start` and `end` are ISO-8601 UTC strings at midnight, and `end` is the start of
+ the day after the last rented day. `quote` and `book` throw for an unknown item or an invalid period, and
+diff --git a/src/index.ts b/src/index.ts
+index 3770992ac0a5fed80eb64893025cf74ecf4bf1a5..cab3e9664cc28a8bc7c40ab622cdebc09f40d643 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -28,6 +28,13 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++/** An availability query: `start` and `end` follow `RentalRequest`; without `kind`, every kind is searched. */
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: EquipmentKind;
++}
++
+ /** The in-memory rental service of the booking desk. */
+ export interface RentalService {
+   /** Registers an item for rental; throws on an invalid item or a duplicate id. */
+@@ -36,6 +43,8 @@ export interface RentalService {
+   quote(request: RentalRequest): Quote;
+   /** Books an item; throws like `quote`, and when the item is not free for the whole period. */
+   book(request: RentalRequest): Booking;
++  /** Lists, sorted, the ids of the equipment free for the whole period; throws for a disallowed period or kind. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+@@ -88,6 +97,10 @@ export function createRentalService(): RentalService {
+     return { quote: { itemId, start: s, end: e, total: item.dailyPrice * days }, start, end };
+   }
+ 
++  function isFree(itemId: string, start: number, end: number): boolean {
++    return !bookings.some((b) => b.itemId === itemId && start < b.end && b.start < end);
++  }
++
+   return {
+     addEquipment(item) {
+       validateEquipment(item);
+@@ -103,13 +116,24 @@ export function createRentalService(): RentalService {
+ 
+     book(request) {
+       const { quote, start, end } = price(request);
+-      const clash = bookings.some((b) => b.itemId === quote.itemId && start < b.end && b.start < end);
+-      if (clash) {
++      if (!isFree(quote.itemId, start, end)) {
+         throw new Error(`item ${quote.itemId} is not free for the whole period`);
+       }
+       const id = `booking-${bookings.length + 1}`;
+       bookings.push({ id, itemId: quote.itemId, start, end });
+       return { id, ...quote };
+     },
++
++    availability(query) {
++      const { start, end } = parsePeriod(query);
++      const kind = query.kind;
++      if (kind !== undefined && kind !== 'board' && kind !== 'sail') {
++        throw new Error("kind must be 'board' or 'sail'");
++      }
++      return [...equipment.values()]
++        .filter((item) => (kind === undefined || item.kind === kind) && isFree(item.id, start, end))
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 503d5c847e7ab0acdc16403ea6e00a5a5bb551db..a75d96f2f4ffc6e5f1478ea850e7da0f826e865a 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -71,3 +71,46 @@ test('addEquipment validates items', () => {
+   assert.throws(() => s.addEquipment({ id: 'x', kind: 'board', dailyPrice: 12.5 }));
+   assert.throws(() => s.addEquipment({ id: 'x', kind: 'board', dailyPrice: -1 }));
+ });
++
++function stocked() {
++  const s = setup();
++  s.addEquipment({ id: 'board-0', kind: 'board', dailyPrice: 2000 });
++  s.addEquipment({ id: 'sail-0', kind: 'sail', dailyPrice: 1000 });
++  return s;
++}
++
++test('availability lists free equipment sorted, of one kind or of any', () => {
++  const s = stocked();
++  assert.deepStrictEqual(s.availability({ start: day(1), end: day(3) }), ['board-0', 'board-1', 'sail-0', 'sail-1']);
++  assert.deepStrictEqual(s.availability({ start: day(1), end: day(3), kind: 'sail' }), ['sail-0', 'sail-1']);
++});
++
++test('availability excludes items booked for any part of the period', () => {
++  const s = stocked();
++  s.book({ itemId: 'board-1', start: day(2), end: day(5) });
++  assert.deepStrictEqual(s.availability({ start: day(1), end: day(3), kind: 'board' }), ['board-0']);
++  assert.deepStrictEqual(s.availability({ start: day(4), end: day(9), kind: 'board' }), ['board-0']);
++  assert.deepStrictEqual(s.availability({ start: day(3), end: day(4), kind: 'board' }), ['board-0']);
++  assert.deepStrictEqual(s.availability({ start: day(1), end: day(9), kind: 'board' }), ['board-0']);
++});
++
++test('availability treats back-to-back periods as free', () => {
++  const s = stocked();
++  s.book({ itemId: 'board-1', start: day(2), end: day(5) });
++  assert.deepStrictEqual(s.availability({ start: day(5), end: day(6), kind: 'board' }), ['board-0', 'board-1']);
++  assert.deepStrictEqual(s.availability({ start: day(1), end: day(2), kind: 'board' }), ['board-0', 'board-1']);
++});
++
++test('availability is empty when nothing matches', () => {
++  const s = setup();
++  s.book({ itemId: 'sail-1', start: day(1), end: day(2) });
++  assert.deepStrictEqual(s.availability({ start: day(1), end: day(2), kind: 'sail' }), []);
++  assert.deepStrictEqual(createRentalService().availability({ start: day(1), end: day(2) }), []);
++});
++
++test('availability rejects disallowed periods and kinds', () => {
++  const s = setup();
++  assert.throws(() => s.availability({ start: '2026-06-01T10:00:00Z', end: day(2) }));
++  assert.throws(() => s.availability({ start: day(2), end: day(2) }));
++  assert.throws(() => s.availability({ start: day(1), end: day(2), kind: 'kayak' as 'board' }));
++});

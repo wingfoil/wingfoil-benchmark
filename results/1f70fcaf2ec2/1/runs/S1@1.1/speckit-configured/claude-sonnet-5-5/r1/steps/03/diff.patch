@@ -1,0 +1,107 @@
+diff --git a/specs/003-patch-conformance/spec.md b/specs/003-patch-conformance/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a65b98587a4c5979f172e02b26d8addb8cdf28fe
+--- /dev/null
++++ b/specs/003-patch-conformance/spec.md
+@@ -0,0 +1,7 @@
++# Spec: JSON Patch conformance review
++**Standard**: RFC 6902 §3, §4.1–4.6, §5; RFC 6901.
++Review of `applyPatch` found and fixed:
++- Sparse-array holes in a patch were silently skipped; now rejected (each element must be an operation object, §3/§4).
++- `op`/`path`/`from`/`value` were read through the prototype chain; only own members count now.
++- `replace` was remove+add, which moved the member to the end of the object; now replaced in place (§4.3).
++Tests: `test/patch.test.js` ("conformance"). No public API change.
+diff --git a/src/patch.ts b/src/patch.ts
+index 2ca4f6e50a2ef42078f45733cddde990665468f7..4a21fb26d4e2a73e47004cee4dea1ea33b2da60f 100644
+--- a/src/patch.ts
++++ b/src/patch.ts
+@@ -101,6 +101,27 @@ function add(root: unknown, pointer: string, value: unknown): unknown {
+   return root;
+ }
+ 
++function ownMember(object: Record<string, unknown>, key: string): unknown {
++  return Object.hasOwn(object, key) ? object[key] : undefined;
++}
++
++/** Replaces the value at an existing location in place (RFC 6902 section 4.3). */
++function replace(root: unknown, pointer: string, value: unknown): unknown {
++  const tokens = parsePointer(pointer);
++  if (tokens.length === 0) {
++    return value;
++  }
++  const key = tokens[tokens.length - 1];
++  const parent = container(root, tokens.slice(0, -1), pointer);
++  child(parent, key, pointer);
++  if (Array.isArray(parent)) {
++    parent[Number(key)] = value;
++  } else {
++    setMember(parent, key, value);
++  }
++  return root;
++}
++
+ function remove(root: unknown, pointer: string): { root: unknown; removed: unknown } {
+   const tokens = parsePointer(pointer);
+   if (tokens.length === 0) {
+@@ -134,11 +155,14 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+     throw new PatchError("A JSON Patch must be an array of operations");
+   }
+   let result = clone(document);
+-  patch.forEach((operation: unknown, index: number) => {
++  for (let index = 0; index < patch.length; index++) {
++    const operation: unknown = patch[index];
+     if (!isObject(operation)) {
+       throw new PatchError(`Operation ${index} is not an object`);
+     }
+-    const { op, path, from } = operation;
++    const op = ownMember(operation, "op");
++    const path = ownMember(operation, "path");
++    const from = ownMember(operation, "from");
+     if (typeof op !== "string" || !OPS.includes(op)) {
+       throw new PatchError(`Operation ${index} has a missing or unknown "op"`);
+     }
+@@ -152,7 +176,7 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+     if ((op === "move" || op === "copy") && typeof from !== "string") {
+       throw new PatchError(`Operation ${index} ("${op}") needs a string "from"`);
+     }
+-    const value = operation.value;
++    const value = ownMember(operation, "value");
+     switch (op) {
+       case "add":
+         result = add(result, path, clone(value));
+@@ -161,8 +185,7 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+         result = remove(result, path).root;
+         break;
+       case "replace":
+-        get(result, path);
+-        result = parsePointer(path).length === 0 ? clone(value) : add(remove(result, path).root, path, clone(value));
++        result = replace(result, path, clone(value));
+         break;
+       case "move": {
+         const source = parsePointer(from as string);
+@@ -187,6 +210,6 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+         }
+         break;
+     }
+-  });
++  }
+   return result;
+ }
+diff --git a/test/patch.test.js b/test/patch.test.js
+index 0d5009d42189595cf72f4449ec92f9ad96ddb1a3..1866449869c2c2da6c8fe8b755f4a3bbea58ce31 100644
+--- a/test/patch.test.js
++++ b/test/patch.test.js
+@@ -141,3 +141,13 @@ test("prototype pollution", () => {
+   const t = ap({}, [{ op: "add", path: "/a", value: JSON.parse('{"__proto__": 1}') }]);
+   assert.strictEqual(Object.getPrototypeOf(t.a), Object.prototype);
+ });
++
++test("conformance: holes, inherited members, in-place replace", () => {
++  // eslint-disable-next-line no-sparse-arrays
++  bad({}, [, { op: "add", path: "/a", value: 1 }]);
++  const inherited = Object.create({ op: "add", path: "/a", value: 1 });
++  bad({}, [inherited]);
++  assert.deepStrictEqual(Object.keys(ap({ a: 1, b: 2 }, [{ op: "replace", path: "/a", value: 3 }])), ["a", "b"]);
++  bad({ a: [1] }, [{ op: "replace", path: "/a/1", value: 3 }]);
++  bad({ a: [1] }, [{ op: "replace", path: "/a/-", value: 3 }]);
++});

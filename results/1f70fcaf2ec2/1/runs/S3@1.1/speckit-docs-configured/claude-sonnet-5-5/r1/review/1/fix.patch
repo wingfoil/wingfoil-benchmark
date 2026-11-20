@@ -1,0 +1,62 @@
+diff --git a/src/index.ts b/src/index.ts
+index 49dd04e9a415fc5a316deff1443ea95ac83b1348..0ec6a0e477ac6c73b8554a93bd6f5d90e90e3124 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -56,6 +56,10 @@ const LONG_STAY_TENTHS = 9;
+ /** Rule 5: full price in cents, less 10% from 3 days; rounded half up to a whole cent. */
+ function rentalTotal(days: number, dailyPrice: number): number {
+   const full = days * dailyPrice;
++  // Beyond the safe-integer range the arithmetic would silently lose precision.
++  if (!Number.isSafeInteger(full) || !Number.isSafeInteger(full * LONG_STAY_TENTHS + 5)) {
++    throw new Error('rental total is too large');
++  }
+   return days >= LONG_STAY_MIN_DAYS ? Math.floor((full * LONG_STAY_TENTHS + 5) / 10) : full;
+ }
+ 
+@@ -68,7 +72,7 @@ function parseMidnightUtc(value: unknown, name: string): number {
+     throw new Error(`${name} must be an ISO-8601 UTC string at midnight`);
+   }
+   const ms = Date.parse(value);
+-  if (Number.isNaN(ms)) {
++  if (Number.isNaN(ms) || new Date(ms).toISOString().slice(0, 13) !== value.slice(0, 13)) {
+     throw new Error(`${name} is not a valid date`);
+   }
+   return ms;
+@@ -80,7 +84,7 @@ function parseHourUtc(value: unknown, name: string): number {
+     throw new Error(`${name} must be an ISO-8601 UTC string on the hour`);
+   }
+   const ms = Date.parse(value);
+-  if (Number.isNaN(ms)) {
++  if (Number.isNaN(ms) || new Date(ms).toISOString().slice(0, 13) !== value.slice(0, 13)) {
+     throw new Error(`${name} is not a valid date`);
+   }
+   return ms;
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 3ffdf5d05dd91449739c132b6a92517c5f6f35ec..b98f5e30537464b008c67c9fec7e99f07157bf08 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -42,6 +42,8 @@ test('rejects invalid periods', () => {
+     ['2026-07-02T00:00:00Z', '2026-07-01T00:00:00Z'], // reversed
+     ['2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z'], // empty
+     ['2026-02-30T00:00:00Z', '2026-03-02T00:00:00Z'], // impossible date
++    ['2026-02-30T00:00:00Z', '2026-03-05T00:00:00Z'], // impossible date, end after start
++    ['2026-07-01T00:00:00Z', '2026-06-31T00:00:00Z'], // impossible end date
+     ['nope', 'nope'],
+   ];
+   for (const [start, end] of bad) {
+@@ -204,3 +206,15 @@ test('addEquipment validates hourlyPrice', () => {
+   assert.throws(() => s.addEquipment({ id: 'a', kind: 'board', dailyPrice: 100, hourlyPrice: -1 }));
+   s.addEquipment({ id: 'a', kind: 'board', dailyPrice: 100, hourlyPrice: 0 });
+ });
++
++test('impossible dates are rejected in availability and hourly rentals', () => {
++  const s = hourly();
++  assert.throws(() => s.availability({ start: '2026-02-30T00:00:00Z', end: '2026-03-05T00:00:00Z' }));
++  assert.throws(() => s.quote(req('h', '2026-02-30T10:00:00Z', '2026-02-30T12:00:00Z')));
++});
++
++test('a total beyond the safe-integer range is rejected', () => {
++  const s = createRentalService();
++  s.addEquipment({ id: 'big', kind: 'board', dailyPrice: Number.MAX_SAFE_INTEGER });
++  assert.throws(() => s.quote(req('big', '2026-07-01T00:00:00Z', '2026-07-05T00:00:00Z')));
++});

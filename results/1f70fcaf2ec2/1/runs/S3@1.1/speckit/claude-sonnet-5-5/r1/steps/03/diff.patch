@@ -1,0 +1,76 @@
+diff --git a/specs/003-long-stay-discount/spec.md b/specs/003-long-stay-discount/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..20195ac4331e95cbc031118172f1728e2e2405f4
+--- /dev/null
++++ b/specs/003-long-stay-discount/spec.md
+@@ -0,0 +1,23 @@
++# Feature Specification: Long-stay discount
++
++**Created**: 2026-11-20
++**Status**: Implemented
++**Input**: A rental of 3 days or more costs 10% less than its full price. Quotes and bookings both show the reduced total.
++
++## Requirements
++
++- **FR-001**: Days = (end - start) / 1 day. When days >= 3, total = 90% of days x dailyPrice, rounded to whole cents.
++- **FR-002**: When days < 3, total is unchanged (days x dailyPrice).
++- **FR-003**: `quote` and `book` return the same discounted total (shared pricing).
++- **FR-004**: Overlap rules, validation and the safe-integer check on the full price are unchanged.
++
++## Assumptions
++
++- The discount applies to the whole rental, not only to days beyond the second.
++- Rounding: half up to the nearest cent (e.g. full price 7650 -> 6885; 1005 x 3 = 3015 -> 2713.5 -> 2714).
++
++## Acceptance
++
++1. 2 days at 2550 -> 5100 (no discount).
++2. 3 days at 2550 -> 6885, for both quote and book.
++3. 10 days at 1000 -> 9000.
+diff --git a/src/index.ts b/src/index.ts
+index ab48bbd5c8090c481b9812f14e944bf44c3416bc..4f76ed4d8eb6ec0ea5386eb40d3617f51d7e9014 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -45,6 +45,7 @@ export interface RentalService {
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
++const LONG_STAY_DAYS = 3;
+ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+ 
+ function parseInstant(value: unknown, label: string): number {
+@@ -73,8 +74,11 @@ export function createRentalService(): RentalService {
+     const startMs = parseInstant(request.start, 'start');
+     const endMs = parseInstant(request.end, 'end');
+     if (endMs <= startMs) throw new Error('end must be after start');
+-    const total = ((endMs - startMs) / DAY_MS) * stored.item.dailyPrice;
+-    if (!Number.isSafeInteger(total)) throw new Error('total is too large');
++    const days = (endMs - startMs) / DAY_MS;
++    const fullPrice = days * stored.item.dailyPrice;
++    if (!Number.isSafeInteger(fullPrice * 9)) throw new Error('total is too large');
++    // 10% off from 3 days; integer cents, rounded half up.
++    const total = days >= LONG_STAY_DAYS ? Math.floor((fullPrice * 9 + 5) / 10) : fullPrice;
+     return { stored, startMs, endMs, total };
+   }
+ 
+diff --git a/src/rental.test.ts b/src/rental.test.ts
+index 21371af582b705dcc7d55599b2bc0b773ed6309d..8192dafb6168be150ce500746d9e69aa3612002e 100644
+--- a/src/rental.test.ts
++++ b/src/rental.test.ts
+@@ -10,7 +10,15 @@ const mk = () => {
+ const r = (start: string, end: string) => ({ itemId: 'b1', start, end });
+ 
+ test('quote multiplies days by daily price', () => {
+-  assert.equal(mk().quote(r('2026-05-01T00:00:00Z', '2026-05-04T00:00:00Z')).total, 7650);
++  assert.equal(mk().quote(r('2026-05-01T00:00:00Z', '2026-05-03T00:00:00Z')).total, 5100);
++});
++test('rentals of 3 days or more get 10% off, in quote and book', () => {
++  const s = mk();
++  assert.equal(s.quote(r('2026-05-01T00:00:00Z', '2026-05-04T00:00:00Z')).total, 6885);
++  assert.equal(s.book(r('2026-05-01T00:00:00Z', '2026-05-04T00:00:00Z')).total, 6885);
++  const t = createRentalService();
++  t.addEquipment({ id: 'b1', kind: 'board', dailyPrice: 1005 });
++  assert.equal(t.quote(r('2026-05-01T00:00:00Z', '2026-05-04T00:00:00Z')).total, 2714);
+ });
+ test('rejects bad periods and unknown items', () => {
+   const s = mk();

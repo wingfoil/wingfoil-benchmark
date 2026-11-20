@@ -1,0 +1,202 @@
+diff --git a/specs/003-create-patch/spec.md b/specs/003-create-patch/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7faeede73bc9710ba360b90345c37d05a1f0c237
+--- /dev/null
++++ b/specs/003-create-patch/spec.md
+@@ -0,0 +1,11 @@
++# Feature: createPatch(from, to)
++
++Returns an RFC 6902 JSON Patch turning `from` into `to`; inputs are not mutated and not aliased.
++
++- Minimal: objects diffed per member (recursively); only changed members appear.
++- Arrays: LCS on deep equality, so inserts/removals emit a single add/remove and a move emits a
++  remove plus an add; differing items at the same slot are diffed recursively.
++- Differing types/primitives produce a `replace` (path "" for the root).
++- Implemented in `src/diff.ts`, tested in `test/diff.test.ts` (including a randomised round-trip).
++
++Note: `.specify/memory/constitution.md` is still the unfilled template, so no project rules applied.
+diff --git a/src/diff.ts b/src/diff.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..be60faa265ed92783a06df9a76d104cad900b808
+--- /dev/null
++++ b/src/diff.ts
+@@ -0,0 +1,85 @@
++import { deepEqual, isObject } from "./patch.ts";
++
++type Operation = { op: "add" | "replace"; path: string; value: unknown } | { op: "remove"; path: string };
++
++const escapeToken = (token: string): string => token.replace(/~/g, "~0").replace(/\//g, "~1");
++
++function diffArrays(from: unknown[], to: unknown[], path: string, ops: Operation[]): void {
++  let start = 0;
++  while (start < from.length && start < to.length && deepEqual(from[start], to[start])) start++;
++  let endFrom = from.length;
++  let endTo = to.length;
++  while (endFrom > start && endTo > start && deepEqual(from[endFrom - 1], to[endTo - 1])) {
++    endFrom--;
++    endTo--;
++  }
++  const a = from.slice(start, endFrom);
++  const b = to.slice(start, endTo);
++
++  // longest common subsequence of the differing middle part
++  const lcs: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
++  for (let i = a.length - 1; i >= 0; i--) {
++    for (let j = b.length - 1; j >= 0; j--) {
++      lcs[i][j] = deepEqual(a[i], b[j]) ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
++    }
++  }
++
++  let index = start; // position in the array as it stands after the operations emitted so far
++  const flush = (removed: unknown[], added: unknown[]): void => {
++    const paired = Math.min(removed.length, added.length);
++    for (let k = 0; k < paired; k++) diffValues(removed[k], added[k], `${path}/${index + k}`, ops);
++    for (let k = paired; k < removed.length; k++) ops.push({ op: "remove", path: `${path}/${index + paired}` });
++    for (let k = paired; k < added.length; k++) {
++      ops.push({ op: "add", path: `${path}/${index + k}`, value: structuredClone(added[k]) });
++    }
++    index += added.length;
++  };
++
++  let i = 0;
++  let j = 0;
++  let removed: unknown[] = [];
++  let added: unknown[] = [];
++  while (i < a.length || j < b.length) {
++    if (i < a.length && j < b.length && deepEqual(a[i], b[j]) && lcs[i][j] === lcs[i + 1][j + 1] + 1) {
++      flush(removed, added);
++      removed = [];
++      added = [];
++      index++;
++      i++;
++      j++;
++    } else if (j < b.length && (i === a.length || lcs[i][j + 1] >= lcs[i + 1][j])) {
++      added.push(b[j++]);
++    } else {
++      removed.push(a[i++]);
++    }
++  }
++  flush(removed, added);
++}
++
++function diffValues(from: unknown, to: unknown, path: string, ops: Operation[]): void {
++  if (deepEqual(from, to)) return;
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArrays(from, to, path, ops);
++  } else if (isObject(from) && isObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!Object.hasOwn(to, key)) ops.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++    for (const key of Object.keys(to)) {
++      const child = `${path}/${escapeToken(key)}`;
++      if (Object.hasOwn(from, key)) diffValues(from[key], to[key], child, ops);
++      else ops.push({ op: "add", path: child, value: structuredClone(to[key]) });
++    }
++  } else {
++    ops.push({ op: "replace", path, value: structuredClone(to) });
++  }
++}
++
++/**
++ * Returns a JSON Patch (RFC 6902) that turns `from` into `to` when applied, describing only what changed.
++ * Neither argument is modified.
++ */
++export function createPatch(from: unknown, to: unknown): Operation[] {
++  const ops: Operation[] = [];
++  diffValues(from, to, "", ops);
++  return ops;
++}
+diff --git a/src/index.ts b/src/index.ts
+index 0f5aa9ff92446865b5d5c6a5fc2a6956a4aed23f..d5b558c93ecd56408523109064f8060b6161e33e 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,3 +1,4 @@
+ export { resolvePointer } from "./pointer.ts";
+ export { applyPatch } from "./patch.ts";
+ export { applyMergePatch } from "./merge-patch.ts";
++export { createPatch } from "./diff.ts";
+diff --git a/src/patch.ts b/src/patch.ts
+index ccd14ef4e832ed0ec6d34e4b7c3bfeb26ec36aee..3d4f6227c86b0a362f15d1f2af9b41292b473a02 100644
+--- a/src/patch.ts
++++ b/src/patch.ts
+@@ -4,11 +4,11 @@ type Container = Record<string, unknown> | unknown[];
+ 
+ const OPS = new Set(["add", "remove", "replace", "move", "copy", "test"]);
+ 
+-function isObject(value: unknown): value is Record<string, unknown> {
++export function isObject(value: unknown): value is Record<string, unknown> {
+   return typeof value === "object" && value !== null && !Array.isArray(value);
+ }
+ 
+-function deepEqual(a: unknown, b: unknown): boolean {
++export function deepEqual(a: unknown, b: unknown): boolean {
+   if (a === b) return true;
+   if (Array.isArray(a)) {
+     return Array.isArray(b) && a.length === b.length && a.every((item, i) => deepEqual(item, b[i]));
+diff --git a/test/diff.test.ts b/test/diff.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..b6c8fb52710e88aa6ad338ccb2180976bdd19e07
+--- /dev/null
++++ b/test/diff.test.ts
+@@ -0,0 +1,61 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++function check(from: unknown, to: unknown, maxOps?: number) {
++  const a = structuredClone(from);
++  const b = structuredClone(to);
++  const patch = createPatch(from, to);
++  assert.deepEqual(from, a);
++  assert.deepEqual(to, b);
++  assert.deepEqual(applyPatch(from, patch), to);
++  if (maxOps !== undefined) assert.ok(patch.length <= maxOps, JSON.stringify(patch));
++  return patch;
++}
++
++test("identical documents give an empty patch", () => {
++  assert.deepEqual(check({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] }), []);
++});
++
++test("small change is small", () => {
++  assert.deepEqual(check({ a: { b: 1, c: [1, 2] }, d: 1 }, { a: { b: 2, c: [1, 2] }, d: 1 }), [
++    { op: "replace", path: "/a/b", value: 2 },
++  ]);
++});
++
++test("root, type changes, escaping", () => {
++  check(1, 2);
++  check({ a: 1 }, [1]);
++  check(null, { a: null });
++  check({ "a/b": 1, "~": 1 }, { "a/b": 2, x: 1 });
++  check({}, { ["__proto__"]: 1 });
++});
++
++test("array insert/remove/move touch only the item", () => {
++  const big = Array.from({ length: 10 }, (_, i) => ({ id: i }));
++  check(big, [...big.slice(0, 4), { id: 99 }, ...big.slice(4)], 1);
++  check(big, [...big.slice(0, 4), ...big.slice(5)], 1);
++  check(big, [big[0], ...big.slice(2, 8), big[1], ...big.slice(8)], 2);
++  check(big, [big[9], ...big.slice(0, 9)], 2);
++  check(big, big.slice().reverse());
++  check([1, 1, 1], [1, 1]);
++  check([1, 2, 3], [4, 1, 2, 3, 5]);
++});
++
++test("array element modified in place", () => {
++  assert.deepEqual(check([{ a: 1 }, { b: 2 }], [{ a: 1 }, { b: 3 }]), [{ op: "replace", path: "/1/b", value: 3 }]);
++});
++
++test("randomised round trip", () => {
++  let seed = 7;
++  const rnd = (n: number) => (seed = (seed * 1103515245 + 12345) % 2147483648) % n;
++  const gen = (d: number): unknown => {
++    const k = rnd(d > 2 ? 3 : 5);
++    if (k === 0) return rnd(3);
++    if (k === 1) return "s" + rnd(3);
++    if (k === 2) return null;
++    if (k === 3) return Array.from({ length: rnd(6) }, () => gen(d + 1));
++    return Object.fromEntries(Array.from({ length: rnd(4) }, () => ["k" + rnd(4), gen(d + 1)]));
++  };
++  for (let n = 0; n < 2000; n++) check(gen(0), gen(0));
++});

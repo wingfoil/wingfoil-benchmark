@@ -1,0 +1,110 @@
+diff --git a/docs/memory/task/task-001-fix-sku-case-free-shipping-threshold-vat-rounding.md b/docs/memory/task/task-001-fix-sku-case-free-shipping-threshold-vat-rounding.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..28639e8ac3debd77d15ae1df20312c6f2afc15e9
+--- /dev/null
++++ b/docs/memory/task/task-001-fix-sku-case-free-shipping-threshold-vat-rounding.md
+@@ -0,0 +1,23 @@
++---
++id: task-001-fix-sku-case-free-shipping-threshold-vat-rounding
++type: task
++title: "Fix SKU case, free shipping threshold, VAT rounding"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++## Request
++
++Three reports on the order service:
++
++1. Lower-case SKU (`lb-220`) refused as unknown: `Catalog.find` trimmed but did not upper-case. Now uses `canonicalSku`.
++2. Free shipping not applied at exactly €50.00 of goods: `shippingCost` used `>`. Now `>=` (README: "€50.00 or more").
++3. Line VAT one cent low (€1.99 at 22% gave 0.43): `lineVat` rounded down. Now `percentOf` (half up).
++
++Tests: `test/reports.test.ts` covers each, with boundaries (50.00 vs 49.99, 0.5-cent rounding). `npm test` passes.
+diff --git a/src/catalog.ts b/src/catalog.ts
+index 0dfc92645f10374f948e9312a79dc7dca44318e5..b114b9c78623136e5ee8c9b1fc6d118c4c478c33 100644
+--- a/src/catalog.ts
++++ b/src/catalog.ts
+@@ -56,7 +56,7 @@ export class Catalog {
+ 
+   /** The product with `sku`, or undefined. */
+   find(sku: string): Product | undefined {
+-    return this.#products.get(sku.trim());
++    return this.#products.get(canonicalSku(sku));
+   }
+ 
+   /** The product with `sku`; throws UnknownProductError when there is none. */
+diff --git a/src/shipping.ts b/src/shipping.ts
+index 71920b9dc3b375440460eaebb217a70a48152b33..f4290d2a7729ec7e4c062d0d5606894fb26fae09 100644
+--- a/src/shipping.ts
++++ b/src/shipping.ts
+@@ -30,6 +30,6 @@ export function parcelCost(grams: number): Cents {
+ 
+ /** The shipping cost of an order whose goods amount to `goods` and weigh `grams`. */
+ export function shippingCost(goods: Cents, grams: number): Cents {
+-  if (goods > FREE_SHIPPING_FROM_CENTS) return 0;
++  if (goods >= FREE_SHIPPING_FROM_CENTS) return 0;
+   return parcelCost(grams);
+ }
+diff --git a/src/tax.ts b/src/tax.ts
+index 7449c567971f4c22ec68c991949f8652936e091b..5e12c55f1ca4a2044012df5ea175a5b57febbef3 100644
+--- a/src/tax.ts
++++ b/src/tax.ts
+@@ -23,7 +23,7 @@ export function vatRate(vatClass: VatClass): number {
+ 
+ /** The VAT of one order line whose net amount is `net`. */
+ export function lineVat(net: Cents, vatClass: VatClass): Cents {
+-  return Math.floor((net * vatRate(vatClass)) / 100);
++  return percentOf(net, vatRate(vatClass));
+ }
+ 
+ /** The VAT on a shipping cost: the standard rate. */
+diff --git a/test/reports.test.ts b/test/reports.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..6f7b98e475dc835d9bab04e9798c64ffa4be4dc2
+--- /dev/null
++++ b/test/reports.test.ts
+@@ -0,0 +1,37 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++
++import { createShop } from '../src/index.ts';
++
++function shop() {
++  const s = createShop();
++  s.catalog.add({ sku: 'LB-220', name: 'Lamp bulb', priceCents: 199, vatClass: 'standard', weightGrams: 100 });
++  s.catalog.add({ sku: 'FIFTY', name: 'Fifty', priceCents: 5000, vatClass: 'exempt', weightGrams: 100 });
++  s.catalog.add({ sku: 'FIFTY-1', name: 'Just under', priceCents: 4999, vatClass: 'exempt', weightGrams: 100 });
++  for (const sku of ['LB-220', 'FIFTY', 'FIFTY-1']) s.inventory.restock(sku, 10);
++  return s;
++}
++
++describe('reported defects', () => {
++  it('finds a product by a lower-case SKU', () => {
++    const { catalog, orders } = shop();
++    assert.equal(catalog.find('lb-220')?.sku, 'LB-220');
++    assert.equal(catalog.get(' lb-220 ').sku, 'LB-220');
++    const order = orders.place({ customer: 'c', date: '2026-03-02', lines: [{ sku: 'lb-220', quantity: 1 }] });
++    assert.equal(order.lines[0]?.sku, 'LB-220');
++  });
++
++  it('ships free at exactly 50.00 of goods, not at 49.99', () => {
++    const { orders } = shop();
++    const exact = orders.place({ customer: 'c', date: '2026-03-02', lines: [{ sku: 'FIFTY', quantity: 1 }] });
++    assert.equal(exact.totals.shippingCents, 0);
++    const under = orders.place({ customer: 'c', date: '2026-03-02', lines: [{ sku: 'FIFTY-1', quantity: 1 }] });
++    assert.equal(under.totals.shippingCents, 490);
++  });
++
++  it('rounds line VAT half up: 1.99 at 22% is 0.44', () => {
++    const { orders } = shop();
++    const order = orders.place({ customer: 'c', date: '2026-03-02', lines: [{ sku: 'LB-220', quantity: 1 }] });
++    assert.equal(order.lines[0]?.vatCents, 44);
++  });
++});

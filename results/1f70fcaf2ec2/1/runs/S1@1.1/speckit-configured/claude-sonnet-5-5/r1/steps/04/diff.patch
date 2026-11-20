@@ -1,0 +1,222 @@
+diff --git a/README.md b/README.md
+index ca26820d6ce1d1d0e0ae0bc33abc95548d262a50..3a03fca2ef1bd73e5ae7d9b8801cebad341e0a78 100644
+--- a/README.md
++++ b/README.md
+@@ -23,6 +23,14 @@ patch is atomic: it throws a `PatchError` if the patch is invalid or an operatio
+ a `PointerError` for a malformed `path`/`from`. `remove` of the whole document (`""`) is rejected, as no document would
+ remain. Keys such as `__proto__` are ordinary members and never affect prototypes.
+ 
++### `applyMergePatch(target, patch)`
++
++Applies a JSON Merge Patch ([RFC 7396](https://www.rfc-editor.org/rfc/rfc7396), section 2) to a JSON document and
++returns the merged document as a new value. An object patch is merged member by member: `null` removes a member, other
++values are merged recursively (a non-object target is treated as `{}`). Any other patch (array, string, number, boolean,
++`null`) replaces the target wholesale, so arrays are never merged. Neither argument is modified and the result shares no
++structure with them. Keys such as `__proto__` are ordinary members and never affect prototypes. It never throws.
++
+ ## Development
+ 
+ `npm test` type-checks and builds with `tsc`, then runs the tests with `node --test`.
+diff --git a/specs/004-json-merge-patch/plan.md b/specs/004-json-merge-patch/plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..779eb0f28b76a8f0771309f56e94b990fed7be23
+--- /dev/null
++++ b/specs/004-json-merge-patch/plan.md
+@@ -0,0 +1,6 @@
++# Plan: JSON Merge Patch
++Single pure recursive function in `src/merge-patch.ts`, re-exported from `src/index.ts`; follows RFC 7396 §2 pseudocode.
++## Constitution Check
++- I: RFC 7396 §2/§3 named. II: no deps. III: tests in `test/merge-patch.test.js` written first, seen failing.
++- IV: builds fresh objects (own-property definition via defineProperty), clones non-object patch values, no mutation.
++- V: typed, doc-commented, exported from entry. VI: one function, small.
+diff --git a/specs/004-json-merge-patch/spec.md b/specs/004-json-merge-patch/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..811b7abaa797676405965ea2d99fad5ae83d4bd5
+--- /dev/null
++++ b/specs/004-json-merge-patch/spec.md
+@@ -0,0 +1,16 @@
++# Spec: JSON Merge Patch
++**Standard**: RFC 7396 §2 (algorithm) and §3 (examples). The request cited "RFC 7386"; the JSON Merge Patch
++standard is RFC 7396 (the constitution names it too), so that is what is implemented.
++**API**: `applyMergePatch(target, patch)` exported from `src/index.ts`; returns the merged document.
++## Requirements
++- Patch is an object: target that is not an object is treated as `{}`; each member with value `null` removes that
++  member from the target (absent is fine); other members are merged recursively.
++- Patch is not an object (array, string, number, boolean, `null`): the result is the patch itself. Arrays replace wholesale;
++  a top-level `null` patch yields `null`.
++- Nulls nested in a patch value that replaces a non-object are dropped (the value is merged into `{}`), per the algorithm.
++- Neither argument is modified; the result shares no structure with them (Constitution IV).
++- `__proto__`, `constructor`, `prototype` are ordinary members; prototypes are never affected. Only own members are read.
++- Member order of the target is preserved; new members append.
++- No new error types: every JSON value is a valid patch/target.
++## Assumptions
++- Inputs are JSON values (not undefined/functions). Non-breaking addition; README updated.
+diff --git a/specs/004-json-merge-patch/tasks.md b/specs/004-json-merge-patch/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0f9bb33fc8b06020d4e0df20f5ceee0000ce0bfd
+--- /dev/null
++++ b/specs/004-json-merge-patch/tasks.md
+@@ -0,0 +1,4 @@
++# Tasks
++- [x] T001 Write `test/merge-patch.test.js` (RFC 7396 Appendix A cases, nulls, arrays, immutability, `__proto__`); see it fail
++- [x] T002 Implement `src/merge-patch.ts`; export from `src/index.ts`
++- [x] T003 Update README; run `npm test`
+diff --git a/src/index.ts b/src/index.ts
+index 669f2425b5e3e9eaefd8b08ce9214e6187833a47..0271b271b90657f9f44117e7f2c844b1ebe9ef36 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,2 +1,3 @@
+ export { resolvePointer, PointerError } from "./pointer.js";
+ export { applyPatch, PatchError } from "./patch.js";
++export { applyMergePatch } from "./merge-patch.js";
+diff --git a/src/merge-patch.ts b/src/merge-patch.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..40b8b06fbe12f94b3d3ab3487afbb7474a1e6d30
+--- /dev/null
++++ b/src/merge-patch.ts
+@@ -0,0 +1,59 @@
++function isObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++function setMember(object: Record<string, unknown>, key: string, value: unknown): void {
++  // defineProperty creates an own member even for "__proto__", which plain assignment would not.
++  Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
++}
++
++function clone(value: unknown): unknown {
++  if (Array.isArray(value)) {
++    return value.map(clone);
++  }
++  if (isObject(value)) {
++    const copy: Record<string, unknown> = {};
++    for (const key of Object.keys(value)) {
++      setMember(copy, key, clone(value[key]));
++    }
++    return copy;
++  }
++  return value;
++}
++
++function own(object: Record<string, unknown>, key: string): unknown {
++  return Object.hasOwn(object, key) ? object[key] : undefined;
++}
++
++function merge(target: unknown, patch: unknown): unknown {
++  if (Array.isArray(patch)) {
++    return clone(patch);
++  }
++  if (!isObject(patch)) {
++    return patch;
++  }
++  const result: Record<string, unknown> = {};
++  if (isObject(target)) {
++    for (const key of Object.keys(target)) {
++      setMember(result, key, clone(target[key]));
++    }
++  }
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, merge(own(result, key), value));
++    }
++  }
++  return result;
++}
++
++/**
++ * Applies a JSON Merge Patch (RFC 7396, section 2) to a JSON document and returns the merged document.
++ * An object patch is merged member by member (`null` removes a member); any other patch replaces the target.
++ * Neither argument is modified and the result shares no structure with them.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  return merge(target, patch);
++}
+diff --git a/test/merge-patch.test.js b/test/merge-patch.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..9d9fc2aa5e80431c0b1fb113919b08512d409458
+--- /dev/null
++++ b/test/merge-patch.test.js
+@@ -0,0 +1,80 @@
++import { test } from "node:test";
++import assert from "node:assert";
++import { applyMergePatch } from "../dist/index.js";
++
++test("RFC 7396 section 3 example", () => {
++  const target = { title: "Goodbye!", author: { givenName: "John", familyName: "Doe" }, tags: ["example", "sample"], content: "This will be unchanged" };
++  const patch = { title: "Hello!", phoneNumber: "+01-123-456-7890", author: { familyName: null }, tags: ["example"] };
++  assert.deepStrictEqual(applyMergePatch(target, patch), {
++    title: "Hello!", author: { givenName: "John" }, tags: ["example"], content: "This will be unchanged", phoneNumber: "+01-123-456-7890",
++  });
++});
++
++test("RFC 7396 Appendix A cases", () => {
++  const cases = [
++    [{ a: "b" }, { a: "c" }, { a: "c" }],
++    [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++    [{ a: "b" }, { a: null }, {}],
++    [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++    [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++    [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++    [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++    [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++    [["a", "b"], ["c", "d"], ["c", "d"]],
++    [{ a: "b" }, ["c"], ["c"]],
++    [{ a: "foo" }, null, null],
++    [{ a: "foo" }, "bar", "bar"],
++    [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++    [[1, 2], { a: "b", c: null }, { a: "b" }],
++    [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++  ];
++  for (const [t, p, r] of cases) assert.deepStrictEqual(applyMergePatch(t, p), r);
++});
++
++test("primitives and empty patch", () => {
++  assert.deepStrictEqual(applyMergePatch(1, {}), {});
++  assert.deepStrictEqual(applyMergePatch({ a: 1 }, {}), { a: 1 });
++  assert.strictEqual(applyMergePatch({ a: 1 }, 5), 5);
++});
++
++test("does not mutate or share structure", () => {
++  const target = { a: { b: 1 }, l: [1] };
++  const patch = { a: { c: 2 }, n: { x: [1, { y: 1 }] }, arr: [{ z: 1 }] };
++  const t0 = structuredClone(target), p0 = structuredClone(patch);
++  const r = applyMergePatch(target, patch);
++  assert.deepStrictEqual(target, t0);
++  assert.deepStrictEqual(patch, p0);
++  assert.notStrictEqual(r.a, target.a);
++  assert.notStrictEqual(r.l, target.l);
++  assert.notStrictEqual(r.n, patch.n);
++  assert.notStrictEqual(r.n.x[1], patch.n.x[1]);
++  assert.notStrictEqual(r.arr, patch.arr);
++  assert.notStrictEqual(applyMergePatch({}, [{ q: 1 }])[0], undefined);
++});
++
++test("prototype pollution safe", () => {
++  const patch = JSON.parse('{"__proto__":{"polluted":true},"constructor":{"prototype":{"p2":1}},"a":{"__proto__":{"p3":1}}}');
++  const r = applyMergePatch({}, patch);
++  assert.strictEqual({}.polluted, undefined);
++  assert.strictEqual({}.p2, undefined);
++  assert.strictEqual(Object.getPrototypeOf(r), Object.prototype);
++  assert.deepStrictEqual(Object.keys(r), ["__proto__", "constructor", "a"]);
++  assert.deepStrictEqual(Object.getOwnPropertyDescriptor(r, "__proto__").value, { polluted: true });
++  const r2 = applyMergePatch(JSON.parse('{"__proto__":{"k":1}}'), JSON.parse('{"__proto__":{"k":null}}'));
++  assert.deepStrictEqual(Object.getOwnPropertyDescriptor(r2, "__proto__").value, {});
++});
++
++test("inherited members are not read", () => {
++  const r = applyMergePatch({}, { toString: { a: 1 } });
++  assert.deepStrictEqual(r, { toString: { a: 1 } });
++  assert.deepStrictEqual(applyMergePatch({}, { toString: null }), {});
++});
++
++test("member order preserved", () => {
++  assert.deepStrictEqual(Object.keys(applyMergePatch({ a: 1, b: 2 }, { a: 3, c: 4 })), ["a", "b", "c"]);
++});
++
++test("nulls inside arrays and untouched target members are kept", () => {
++  assert.deepStrictEqual(applyMergePatch({}, { a: [{ b: null }] }), { a: [{ b: null }] });
++  assert.deepStrictEqual(applyMergePatch({ k: { x: null } }, { z: 1 }), { k: { x: null }, z: 1 });
++});
