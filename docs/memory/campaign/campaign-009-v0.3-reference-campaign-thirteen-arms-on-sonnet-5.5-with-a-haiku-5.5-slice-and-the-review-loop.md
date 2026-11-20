@@ -2,7 +2,7 @@
 id: campaign-009-v0.3-reference-campaign-thirteen-arms-on-sonnet-5.5-with-a-haiku-5.5-slice-and-the-review-loop
 type: campaign
 title: "v0.3 reference campaign, thirteen arms on Sonnet 5.5 with a Haiku 5.5 slice and the review loop"
-status: pending
+status: approved
 release: v0.3
 campaign_file: campaigns/v0-3-reference.yaml
 campaign_id: 1f70fcaf2ec2
