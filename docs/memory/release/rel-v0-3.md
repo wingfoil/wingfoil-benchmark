@@ -48,6 +48,15 @@ and v0.2's follow-ups merged, filed or dropped.
   [docs/calibration/v0.3.md](../../calibration/v0.3.md) §6.
 - **Validation:** [task-159](../task/task-159-validation-of-v0.3-the-suites-and-one-real-agent-run-per-arm-on-s1-the-scenario-with-the-largest-step.md): the suites on main and the execution `2ee46ad9e617/1`, S1@1.1 in the
   thirteen arms on Sonnet 5.5, all `completed` with their review loops, 8.59 EUR API-equivalent.
+- **Reference campaign:** [campaign-009](../campaign/campaign-009-v0.3-reference-campaign-thirteen-arms-on-sonnet-5.5-with-a-haiku-5.5-slice-and-the-review-loop.md): the execution `1f70fcaf2ec2/1`, 82 runs, all
+  `completed`, 46.77 EUR (52.45 USD) API-equivalent within the approved budget; scored, reviewed and published
+  (`5bb1e07f`, 2026-11-20). Its findings exported, bug-055 filed and approved (`0402db49`). No `compared_with`:
+  campaign-002 differs in manual, scenario version and policy; the chain to v0.2 is in the release notes.
+- **Publishing:** prepared on 2026-11-20 (`1e3b2338`): the catalogue entry, the site built (`1f70fcaf2ec2/1` leading,
+  137 pages), the release notes [docs/releases/v0.3.md](../../releases/v0.3.md), the transcripts' release
+  `1f70fcaf2ec2-1` packed (540 transcripts and the harnesses, both archives scanned clean). Published by the approver
+  while releasing: the push, the transcripts' release, `bench site publish`, the tag `v0.3` on the releasing commit and
+  the GitHub release; each is recorded here before the releasing → released gate.
 
 ## Retrospective
 
