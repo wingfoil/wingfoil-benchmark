@@ -137,5 +137,8 @@ version is expected.
 - **For WingFoil:** what the external runner covers for WingFoil's missing engine is listed as that project's pack
   deviations. Those that bear on the Benchmark (R2, R4) join F-041 as evidence in the feedback inbox (dl-163); no new
   note is filed before the spike.
-- **Not in this decision:** using the external runner's records as Benchmark results; any change to the campaign
-  runner beyond the quota wait and the notices.
+- **Not in this decision:** the external runner's adoption as this repository's own governance, its workflows run by
+  the runner's commands instead of a session (planned for when this repository's pin moves to WingFoil 0.4, with
+  task-127; the arm of C is a different use of the same runner, and the two are kept apart in versions and pins);
+  using the external runner's records as Benchmark results; any change to the campaign runner beyond the quota wait
+  and the notices.
