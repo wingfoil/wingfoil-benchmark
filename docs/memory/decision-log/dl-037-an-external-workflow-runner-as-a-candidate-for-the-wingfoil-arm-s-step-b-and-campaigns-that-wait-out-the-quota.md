@@ -10,10 +10,15 @@ tags: ["v0.4","wingfoil","runner"]
 
 The approver asked on 2026-11-20 for a comparison between the Benchmark and a workflow runner written for another of
 the maintainer's WingFoil projects, in anticipation of WingFoil's workflow engine. The approver also asked whether
-campaigns could use that runner. On 2026-11-21 the approver added two points: the changes the Benchmark needs are asked
-of the runner's maintainers, keeping the private projects unnamed; and, if step B depends on WingFoil 0.4 in any case,
-the runner is adopted only once it has been updated to WingFoil 0.4. For step B this is recorded **as a candidate for
-v0.4's release-planning, not a decision**. It changes nothing in v0.3's remaining work.
+campaigns could use that runner. On 2026-11-21 the approver set the direction:
+
+- the changes the Benchmark needs are asked of the runner's maintainers, keeping the private projects unnamed;
+- this repository's own WingFoil pin, its governance, stays at 0.3.2;
+- before the next campaign runs, the campaign's wingfoil arms move to WingFoil's latest release: 0.4 if it is released
+  by then, otherwise 0.3.2;
+- the external runner enters the next campaign as the wingfoil arm's step B, without waiting for WingFoil 0.4.
+
+It changes nothing in v0.3's remaining work.
 
 **What the external runner does** (version 1.1.18; its configuration, its directive and its step records were read
 on 2026-11-20):
@@ -60,9 +65,11 @@ it, and the models differ by role. Most of its Codex steps record no model.
   `--timeout` (WingFoil task-335); a launched agent's output forwarded to the caller (task-336); token counts and the
   agent's version in a Claude Code run record (task-337). The external runner, built on 0.3.x, launches the agents
   itself, which is what that launch replaces.
-- **The Benchmark's v0.4 does not depend on WingFoil 0.4 by its scope.** The sequencer gives it new scenarios (S4–S7)
-  and the blind judge. Its wingfoil arm, though, is pinned to the WingFoil release admitted when its campaigns run
-  (dl-034), and step B is defined on 0.4 (dl-021). Step B therefore needs WingFoil 0.4 whatever drives it.
+- **The arm's WingFoil is the campaign's pin**, not this repository's (`arms/wingfoil/arm.yaml`: "WingFoil at the
+  campaign's pin"). campaign-009 ran on 0.3.1; this repository runs 0.3.2 since task-152. A new pin is an admission,
+  as task-107 was for 0.3.1: the telemetry and the capabilities re-read, the setup and the configuration places
+  checked, a new arm digest, its effect read through a bridge (dl-021). WingFoil plans no 0.3.3: its next release is
+  0.4.
 
 ## Options
 
@@ -71,24 +78,23 @@ it, and the models differ by role. Most of its Codex steps record no model.
   image, a container per run, a frozen arm setup, the scripted approver, hidden tests, a hold-out. It picks the model
   by role, against "harness, not model". Its trust features (a home aligned with `origin/main`, the signed ledger, the
   timers) are obstacles in a container.
-- **B. The external runner on WingFoil 0.3.x, now, as a provisional engine for step B.** Rejected. It would be built
-  on the runner's own launch, which WingFoil 0.4 replaces, and step B is defined on 0.4 anyway.
-- **C. The external runner, once its maintainers have updated it to WingFoil 0.4, as the loop around WingFoil's
-  headless launch in step B.** The Benchmark's needs are asked of its maintainers now, so that the update can include
-  them. Proposed, as a candidate.
-- **D. WingFoil 0.4's headless launch alone** (dl-021 step B as it stands), the campaign runner calling `agent execute
-  --next` step by step. It stays the reference. C is adopted only if it adds what D lacks: the choice of the step from
-  the frontier, the distinct reviewer, the checks around each step.
+- **B. The external runner as step B's loop, on the WingFoil the campaign pins, from the next campaign.** Proposed. It
+  amends dl-021's step B: the steps are launched one per role by the external runner, on 0.3.2 with its own launch, on
+  0.4 with WingFoil's headless launch if the runner takes it.
+- **C. Wait for the runner's WingFoil 0.4 version.** Rejected by the approver: the arm's pin is the campaign's, and
+  step B is wanted in the next campaign.
+- **D. WingFoil 0.4's headless launch alone** (dl-021 step B as written), the campaign runner calling `agent execute
+  --next` step by step. It stays the reference once 0.4 is admitted; B is read against it then.
 - **E. A minimal step-B runner written in this repository.** Kept as the fallback: dl-021 rejected a driver written by
-  the Benchmark (T1, T12). It is used only if the external runner cannot take the Benchmark's needs, and its deviation
-  from dl-021 is then stated on the method page.
+  the Benchmark (T1, T12). It is used only if the external runner cannot take the Benchmark's needs in time, and its
+  deviation from dl-021 is then stated on the method page.
 - **F. Campaigns wait out the quota and send notices.** This takes the external runner's ideas, not its code. It is
   independent of the others. Proposed.
+- **G. The wingfoil arms' pin moved to WingFoil's latest release before the campaign.** Proposed.
 
 ## Proposal
 
-**F now; C as a candidate, adopted only after WingFoil 0.4 is admitted and the external runner is updated to it; D
-stays dl-021's step B; E only as the fallback.**
+**B, F and G, before the next campaign; D stays the reference for 0.4; E only as the fallback.**
 
 **F. The quota wait and the notices:**
 
@@ -102,43 +108,49 @@ stays dl-021's step B; E only as the fallback.**
 3. **A task implements 1–2.** Its tests use the fake agent's replayed limits, red first. It needs no real-agent session,
    so it costs 0 €.
 
-**C. The request to the external runner's maintainers,** relayed by the approver without naming any private project,
-for the runner's WingFoil 0.4 version:
+**G. The arms' pin.** When the next campaign is prepared, an admission task moves `wingfoil`, `wingfoil-configured`
+and B's arm to WingFoil's latest release: 0.4 if it is released and admitted by then, otherwise 0.3.2. The task checks
+that the move is possible (the telemetry, the capabilities, the setup, the configuration places, the configured
+variant's configuration) and records the bridge to campaign-009's 0.3.1. A new configuration, if one is needed, is
+written by the configuring agent under the approver's spending consent. This repository's own pin stays 0.3.2.
+
+**B. The request to the external runner's maintainers,** relayed by the approver without naming any private project,
+for the runner's current version on WingFoil 0.3.2 and for its 0.4 version:
 
 | # | Need | Why |
 |---|---|---|
 | R1 | **A run mode for one project in a container:** steps until no agent step is left, then exit, with the timers, the push, the notices, the budget and the trust checks (a home aligned with `origin/main`, the git configuration allowlist) off | the same isolation and the same steps as every arm; those features belong to a machine, not to a run |
 | R2 | **Gates answered by a caller's policy:** the runner stops at a gate and hands its packet to a command the caller names, or exits so that the caller rules it with the runner's ruling command, the ledger's signature replaceable | the fixed approver of every arm |
 | R3 | **One adapter for every tier and role**, and `distinct_from` satisfied by another session of the same agent | "harness, not model"; T14 |
-| R4 | **Each launch measured:** through WingFoil 0.4's headless launch, or its own, each launch's stream, usage, model and exit status written where the caller names; the model reported by every adapter (most Codex steps record none today) | cost, the observed model and the transcripts are measured as in every other arm (dl-021 step B's own condition) |
+| R4 | **Each launch measured:** each launch's stream, usage, model and exit status written where the caller names, through the runner's own launch on 0.3.2 and WingFoil's headless launch on 0.4 if the runner takes it; the model reported by every adapter (most Codex steps record none today) | cost, the observed model and the transcripts are measured as in every other arm (dl-021 step B's own condition, F-041) |
 | R5 | **A published, versioned release:** a tag and the manifest's digest at a stable public place | T12: the setup is public, pinned in the arm's digest, and can be contested |
 | R6 | **A changelog line for every change to the step loop's behaviour** | a new runner version is a new arm version (dl-021) |
 
-Two questions go with it: whether the runner, on 0.4, launches through `agent execute --headless`, and when its 0.4
-version is expected.
+Three questions go with it: which of R1–R6 can be in a version before the Benchmark's next campaign; which the runner
+would rather leave to a wrapper on the Benchmark's side; and whether, on 0.4, it launches through `agent execute
+--headless`.
 
-**If C is adopted**, the arm (provisionally `wingfoil-runner`):
+**The arm** (provisionally `wingfoil-runner`):
 
 - **is reported apart.** Its result is the result of WingFoil driven by that runner, not WingFoil's own. It is never
-  the wingfoil arm's headline and never replaces step A or D.
+  the wingfoil arm's headline and never replaces step A; on 0.4 it is read against D.
 - **has its hypothesis written before its first run**, because the runner and WingFoil come from the Benchmark's
-  maintainer (T1): "per-role launches with a distinct reviewer catch more of the scenario's checks than D's launch
-  alone, at a cost not above D's by more than the variance". A failure is published as a finding.
+  maintainer (T1): "per-role launches with a distinct reviewer catch more of the scenario's checks than step A's
+  single session, at a cost not above step A's by more than the variance". A failure is published as a finding.
 - **starts with a spike** (a task, at most one dry run, with the approver's spending consent). It shows that R1–R6 hold
-  in the run's container. If more than a thin wrapper is needed, C is dropped and E is weighed.
+  in the run's container on the campaign's WingFoil. If more than a thin wrapper is needed and the runner cannot take
+  the rest in time, E is weighed, or the arm waits for the following campaign.
 
 ## Consequences
 
-- **Now:** a task for F, after v0.3's release; the request R1–R6, sent once this decision is approved. Nothing is
-  spent.
-- **Step B enters with WingFoil 0.4:** at the first Benchmark release whose planning follows 0.4's admission and the
-  external runner's update, v0.4 if both are in time, otherwise the next. dl-021's table gains a row for C only if C is
-  confirmed then.
+- **Now:** the request R1–R6, sent once this decision is approved; tasks for F, G, B's spike and B's arm, placed
+  before the next campaign. Nothing is spent before the approver's consent.
+- **dl-021 is amended:** step B may be driven by the external runner, on the WingFoil the campaign pins; its table
+  gains that row when B's arm is admitted.
 - **For WingFoil:** what the external runner covers for WingFoil's missing engine is listed as that project's pack
   deviations. Those that bear on the Benchmark (R2, R4) join F-041 as evidence in the feedback inbox (dl-163); no new
   note is filed before the spike.
 - **Not in this decision:** the external runner's adoption as this repository's own governance, its workflows run by
-  the runner's commands instead of a session (planned for when this repository's pin moves to WingFoil 0.4, with
-  task-127; the arm of C is a different use of the same runner, and the two are kept apart in versions and pins);
-  using the external runner's records as Benchmark results; any change to the campaign runner beyond the quota wait
-  and the notices.
+  the runner's commands instead of a session (handled with task-127; the arm is a different use of the same runner,
+  and the two are kept apart in versions and pins); using the external runner's records as Benchmark results; any
+  change to the campaign runner beyond the quota wait and the notices.
