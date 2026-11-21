@@ -2,7 +2,7 @@
 id: dl-037-an-external-workflow-runner-as-a-candidate-for-the-wingfoil-arm-s-step-b-and-campaigns-that-wait-out-the-quota
 type: decision-log
 title: "An external workflow runner as a candidate for the wingfoil arm's step B, and campaigns that wait out the quota"
-status: draft
+status: pending
 tags: ["v0.4","wingfoil","runner"]
 ---
 
