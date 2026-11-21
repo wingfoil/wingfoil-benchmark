@@ -55,8 +55,10 @@ and v0.2's follow-ups merged, filed or dropped.
 - **Publishing:** prepared on 2026-11-20 (`1e3b2338`): the catalogue entry, the site built (`1f70fcaf2ec2/1` leading,
   137 pages), the release notes [docs/releases/v0.3.md](../../releases/v0.3.md), the transcripts' release
   `1f70fcaf2ec2-1` packed (540 transcripts and the harnesses, both archives scanned clean). Published by the approver
-  while releasing: the push, the transcripts' release, `bench site publish`, the tag `v0.3` on the releasing commit and
-  the GitHub release; each is recorded here before the releasing → released gate.
+  on 2026-11-21: main pushed at `779ebc19`; the release `1f70fcaf2ec2-1` with `transcripts.tar.gz` and
+  `harnesses.tar.gz`; the site published (`gh-pages` `8f11d6db`: the eight executions, `1f70fcaf2ec2/1` leading); the
+  annotated tag `v0.3` on the releasing commit `779ebc19`; the GitHub release "WingFoil Benchmark v0.3 — WingFoil as
+  designed, harnesses as configured" with the release notes as its body.
 
 ## Retrospective
 
