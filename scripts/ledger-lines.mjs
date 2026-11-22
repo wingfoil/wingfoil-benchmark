@@ -97,16 +97,17 @@ function firstTimestamp(file) {
 }
 
 /**
- * A stored run's ledger line, for a dry run or a campaign run: its date from its first transcript, its kind cell
+ * A stored run's ledger line, for a dry run or a campaign run: its date from its first transcript (else `fallback`,
+ * a campaign's start: Codex transcripts record no timestamp), its kind cell
  * (`label` and `where` open it, the caller may close it), its model, its cost with its review loop's, its secret scan.
  */
-function runRow(dir, label, where, scanned) {
+function runRow(dir, label, where, scanned, fallback) {
   const run = JSON.parse(readFileSync(join(root, dir, 'run.json'), 'utf8'));
   const usd = run.steps.reduce((sum, step) => sum + (step.usage?.costUsd ?? 0), 0);
   const eur = run.steps.reduce((sum, step) => sum + (step.usage?.costEur ?? 0), 0);
   const interventions = Array.isArray(run.interventions) ? run.interventions.length : 0;
   const loop = reviewLoop(join(root, dir));
-  const timestamp = firstTimestamp(join(root, dir, 'steps', '01', 'transcript.jsonl'));
+  const timestamp = firstTimestamp(join(root, dir, 'steps', '01', 'transcript.jsonl')) ?? fallback;
   const date = timestamp ?? 'unknown date';
   return {
     date,
@@ -163,13 +164,23 @@ if (kind === 'configuring') {
 } else if (kind === 'campaign') {
   const execution = options.execution;
   const base = join(root, 'results', execution, 'runs');
+  const executionFile = join(root, 'results', execution, 'execution.json');
+  const started = existsSync(executionFile)
+    ? JSON.parse(readFileSync(executionFile, 'utf8')).started
+    : undefined;
   for (const scenario of directories(base)) {
     for (const arm of directories(join(base, scenario))) {
       for (const model of directories(join(base, scenario, arm))) {
         for (const repetition of directories(join(base, scenario, arm, model))) {
           const dir = `results/${execution}/runs/${scenario}/${arm}/${model}/${repetition}`;
           if (!existsSync(join(root, dir, 'run.json'))) continue;
-          const row = runRow(dir, `campaign run ${scenario} ${repetition}, ${arm} arm`, execution, dir);
+          const row = runRow(
+            dir,
+            `campaign run ${scenario} ${repetition}, ${arm} arm`,
+            execution,
+            dir,
+            started,
+          );
           if ((row.run.attempts ?? 1) > 1) row.cells[2] += `; attempt ${row.run.attempts}`;
           if (row.loop !== undefined) row.cells[2] += `; review loop ${loopOutcome(row.loop)}`;
           row.cells[2] += ')';
