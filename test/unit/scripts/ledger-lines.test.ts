@@ -226,6 +226,25 @@ describe('scripts/ledger-lines.mjs (task-144)', () => {
     expect(lines[2]).toContain('| campaign run S2@1.0 r1, baseline arm ');
   });
 
+  it("dates a campaign run whose transcript has no timestamp, as Codex's, by its execution's start (task-161)", () => {
+    const root = tempDir('bench-ledger-lines-');
+    const dir = join(root, 'results', 'abc123', '1', 'runs', 'S3@1.0', 'baseline', 'gpt-6-luna', 'r1');
+    mkdirSync(join(dir, 'steps', '01'), { recursive: true });
+    const body = { agent: { name: 'codex', version: '0.162.1' }, model: 'gpt-6-luna', effort: 'medium' };
+    writeFileSync(
+      join(dir, 'run.json'),
+      JSON.stringify({ ...body, outcome: 'completed', steps: [], interventions: [] }),
+    );
+    writeFileSync(join(dir, 'steps', '01', 'transcript.jsonl'), '{"type":"thread.started"}\n');
+    writeFileSync(
+      join(root, 'results', 'abc123', '1', 'execution.json'),
+      JSON.stringify({ state: 'completed', started: '2026-10-25T05:55:54.821Z' }),
+    );
+    const result = run(['campaign', root, ...COMMON, '--execution', 'abc123/1']);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/^\| 2026-10-25 \| E \| campaign run S3@1\.0 r1, baseline arm /);
+  });
+
   it('refuses a campaign call without --execution (task-161)', () => {
     expect(run(['campaign', '.', ...COMMON]).status).toBe(2);
   });
