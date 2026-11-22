@@ -110,7 +110,8 @@ Written on 2026-11-21 and 2026-11-22, at plan-005 step 7 (`release-cycle` › `r
 
 1. **Gates and records slipped around campaigns:** a second `memory approve` passed campaign-004's publish gate (then
    reverted); campaign-009's element was filed after its launch, so its spending gate was recorded afterwards;
-   campaign-004's results were not committed by its campaign step and its runs are missing from the ledger.
+   campaign-004's results were not committed by its campaign step and its runs were missing from the ledger (added
+   by task-161).
 2. **Agents touched the main checkout:** task-102's reviewer helper reset main (restored); reviewers of task-131 and
    task-133 read main's history against their brief.
 3. **The targeted checks miss tests.** Full suites went red after a green targeted or pre-review run in tasks 114,
