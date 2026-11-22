@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 // Spending-ledger lines generated from the stored records (task-144, dl-006; a dry run's review loop, task-154): one Markdown table row per configuring
-// session (`scenarios/<id>/<version>/configured/<arm>.json`) or per dry run (`results/dry-runs/<n>/`), in the columns
-// of docs/calibration/v0.3-ledger.md. It runs no agent, spends nothing and writes nothing.
+// session (`scenarios/<id>/<version>/configured/<arm>.json`), per dry run (`results/dry-runs/<n>/`) or per campaign
+// run of an execution (`results/<id>/<n>/`, task-161), in the columns of docs/calibration/v0.3-ledger.md. It runs no agent, spends nothing and writes nothing.
 //
-// Usage: node scripts/ledger-lines.mjs configuring|dry-runs <root> --element <md> --consent <text> --ceiling <text>
-//          [--version <v>] [--after <n>] [--token-file <path>]
+// Usage: node scripts/ledger-lines.mjs configuring|dry-runs|campaign <root> --element <md> --consent <text>
+//          --ceiling <text> [--version <v>] [--after <n>] [--execution <id>/<n>] [--token-file <path>]
 //   --version     the scenario version read (default 1.1)
 //   --after       dry runs only: the dry runs numbered above <n> (default 0)
+//   --execution   campaign only (required): the execution whose runs are listed, `results/<id>/<n>/`, every scenario
+//                 version (task-161)
 //   --token-file  the credential file the secret scan looks for (`grep -rlF`, the value never read here); without it,
 //                 each line says the scan was not run
 // A dry run's date is the first timestamp of its first step's transcript (UTC): transcripts are git-ignored, kept in
@@ -21,14 +23,16 @@ const options = {};
 for (let index = 0; index < rest.length; index += 2)
   options[rest[index].replace(/^--/, '')] = rest[index + 1];
 if (
-  !['configuring', 'dry-runs'].includes(kind) ||
+  !['configuring', 'dry-runs', 'campaign'].includes(kind) ||
   root === undefined ||
   !options.element ||
   !options.consent ||
-  !options.ceiling
+  !options.ceiling ||
+  (kind === 'campaign' && !options.execution)
 ) {
   console.error(
-    'usage: ledger-lines.mjs configuring|dry-runs <root> --element <md> --consent <text> --ceiling <text>',
+    'usage: ledger-lines.mjs configuring|dry-runs|campaign <root> --element <md> --consent <text> --ceiling <text>' +
+      ' (campaign: --execution <id>/<n>)',
   );
   process.exit(2);
 }
@@ -92,6 +96,39 @@ function firstTimestamp(file) {
   return readFileSync(file, 'utf8').match(/"timestamp":"([^"]+)"/)?.[1];
 }
 
+/**
+ * A stored run's ledger line, for a dry run or a campaign run: its date from its first transcript, its kind cell
+ * (`label` and `where` open it, the caller may close it), its model, its cost with its review loop's, its secret scan.
+ */
+function runRow(dir, label, where, scanned) {
+  const run = JSON.parse(readFileSync(join(root, dir, 'run.json'), 'utf8'));
+  const usd = run.steps.reduce((sum, step) => sum + (step.usage?.costUsd ?? 0), 0);
+  const eur = run.steps.reduce((sum, step) => sum + (step.usage?.costEur ?? 0), 0);
+  const interventions = Array.isArray(run.interventions) ? run.interventions.length : 0;
+  const loop = reviewLoop(join(root, dir));
+  const timestamp = firstTimestamp(join(root, dir, 'steps', '01', 'transcript.jsonl'));
+  const date = timestamp ?? 'unknown date';
+  return {
+    date,
+    run,
+    loop,
+    cells: [
+      timestamp === undefined ? date : timestamp.slice(0, 10),
+      options.element,
+      `${label} (\`${where}\`, ${count(run.steps.length, 'step')}, ${count(interventions, 'intervention')}; ` +
+        run.outcome,
+      options.consent,
+      modelCell(run.model, run.effort, run.agent),
+      options.ceiling,
+      loop === undefined
+        ? costCell(usd, eur)
+        : `${money(usd + loop.usd, eur + loop.eur)} API-equivalent: steps ${money(usd, eur)}, ` +
+          `review loop ${money(loop.usd, loop.eur)}; nothing billed per token`,
+      `\`${dir}/\`; ${secretScan([scanned])}`,
+    ],
+  };
+}
+
 const rows = [];
 if (kind === 'configuring') {
   for (const id of directories(join(root, 'scenarios'))) {
@@ -123,6 +160,24 @@ if (kind === 'configuring') {
       }
     }
   }
+} else if (kind === 'campaign') {
+  const execution = options.execution;
+  const base = join(root, 'results', execution, 'runs');
+  for (const scenario of directories(base)) {
+    for (const arm of directories(join(base, scenario))) {
+      for (const model of directories(join(base, scenario, arm))) {
+        for (const repetition of directories(join(base, scenario, arm, model))) {
+          const dir = `results/${execution}/runs/${scenario}/${arm}/${model}/${repetition}`;
+          if (!existsSync(join(root, dir, 'run.json'))) continue;
+          const row = runRow(dir, `campaign run ${scenario} ${repetition}, ${arm} arm`, execution, dir);
+          if ((row.run.attempts ?? 1) > 1) row.cells[2] += `; attempt ${row.run.attempts}`;
+          if (row.loop !== undefined) row.cells[2] += `; review loop ${loopOutcome(row.loop)}`;
+          row.cells[2] += ')';
+          rows.push(row);
+        }
+      }
+    }
+  }
 } else {
   const after = Number(options.after ?? 0);
   const base = join(root, 'results', 'dry-runs');
@@ -133,35 +188,15 @@ if (kind === 'configuring') {
       for (const arm of directories(join(base, n, 'runs', scenario))) {
         for (const model of directories(join(base, n, 'runs', scenario, arm))) {
           const dir = `results/dry-runs/${n}/runs/${scenario}/${arm}/${model}/r1`;
-          const runFile = join(root, dir, 'run.json');
-          if (!existsSync(runFile)) continue;
-          const run = JSON.parse(readFileSync(runFile, 'utf8'));
-          const usd = run.steps.reduce((sum, step) => sum + (step.usage?.costUsd ?? 0), 0);
-          const eur = run.steps.reduce((sum, step) => sum + (step.usage?.costEur ?? 0), 0);
-          const interventions = Array.isArray(run.interventions) ? run.interventions.length : 0;
-          const loop = reviewLoop(join(root, dir));
-          const timestamp = firstTimestamp(join(root, dir, 'steps', '01', 'transcript.jsonl'));
-          const date = timestamp ?? 'unknown date';
-          rows.push({
-            date,
-            n: Number(n),
-            key: `${scenario} ${arm} ${model}`,
-            cells: [
-              timestamp === undefined ? date : timestamp.slice(0, 10),
-              options.element,
-              `dry run of ${scenario}, ${arm} arm (\`dry-runs/${n}\`, ${count(run.steps.length, 'step')}, ` +
-                `${count(interventions, 'intervention')}; ${run.outcome}` +
-                (loop === undefined ? '' : `; review loop ${loopOutcome(loop)}`),
-              options.consent,
-              modelCell(run.model, run.effort, run.agent),
-              options.ceiling,
-              loop === undefined
-                ? costCell(usd, eur)
-                : `${money(usd + loop.usd, eur + loop.eur)} API-equivalent: steps ${money(usd, eur)}, ` +
-                  `review loop ${money(loop.usd, loop.eur)}; nothing billed per token`,
-              `\`${dir}/\`; ${secretScan([`results/dry-runs/${n}`])}`,
-            ],
-          });
+          if (!existsSync(join(root, dir, 'run.json'))) continue;
+          const row = runRow(
+            dir,
+            `dry run of ${scenario}, ${arm} arm`,
+            `dry-runs/${n}`,
+            `results/dry-runs/${n}`,
+          );
+          if (row.loop !== undefined) row.cells[2] += `; review loop ${loopOutcome(row.loop)}`;
+          rows.push({ ...row, n: Number(n), key: `${scenario} ${arm} ${model}` });
         }
       }
     }
