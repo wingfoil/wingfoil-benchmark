@@ -37,7 +37,7 @@ changes.
 <!-- Documentation errata: no code, so no red-first test. -->
 
 1. [campaign-008](../campaign/campaign-008-claude-code-step-a-campaign-on-haiku-5.5-and-sonnet-5.5-every-scenario-on-approver-policy-v5.md)'s
-   Publication gets an "Erratum (2026-11-2x)" line under the headline: the counts under requirements 1.49, the
+   Publication gets a dated "Erratum" line under the headline: the counts under requirements 1.49, the
    reason (bug-030, task-129) and a link to the method page's `#headline`; the original sentence stays (a hand edit,
    W-07).
 2. The catalogue entry `33b54dd89e8b/1` in `site-content/catalog.yaml` gets an erratum note in the same words, in the
