@@ -43,12 +43,19 @@ const MODELS = {
   'claude-haiku-5-5': 'Haiku 5.5',
   'claude-opus-5-5': 'Opus 5.5',
 };
+// A Codex run is worded as the ledger's Codex lines are: its effort as Codex's setting, its cost from the pinned price
+// table and nothing spent, on ChatGPT Plus (dl-024; review of task-161).
 const modelCell = (model, effort, agent) =>
-  `${MODELS[model] ?? model}, effort ${effort} (${agent.name === 'claude-code' ? 'Claude Code' : agent.name} ` +
-  `${agent.version})`;
+  agent.name === 'codex'
+    ? `${model}, \`model_reasoning_effort\` ${effort} (Codex CLI ${agent.version})`
+    : `${MODELS[model] ?? model}, effort ${effort} (${agent.name === 'claude-code' ? 'Claude Code' : agent.name} ` +
+      `${agent.version})`;
 const count = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const money = (usd, eur) => `${usd.toFixed(4)} USD (${eur.toFixed(4)} €)`;
-const costCell = (usd, eur) => `${money(usd, eur)} API-equivalent; nothing billed per token`;
+const costCell = (usd, eur, agent) =>
+  agent?.name === 'codex'
+    ? `${usd.toFixed(4)} USD API-equivalent (\`price-table\`); 0 € spent: ChatGPT Plus (dl-024)`
+    : `${money(usd, eur)} API-equivalent; nothing billed per token`;
 
 /** A loop's outcome and round; `not clean at 5` already names its round. */
 const loopOutcome = (loop) =>
@@ -107,10 +114,12 @@ function runRow(dir, label, where, scanned, fallback) {
   const eur = run.steps.reduce((sum, step) => sum + (step.usage?.costEur ?? 0), 0);
   const interventions = Array.isArray(run.interventions) ? run.interventions.length : 0;
   const loop = reviewLoop(join(root, dir));
-  const timestamp = firstTimestamp(join(root, dir, 'steps', '01', 'transcript.jsonl')) ?? fallback;
+  const own = firstTimestamp(join(root, dir, 'steps', '01', 'transcript.jsonl'));
+  const timestamp = own ?? fallback;
   const date = timestamp ?? 'unknown date';
   return {
     date,
+    datedByFallback: own === undefined && fallback !== undefined,
     run,
     loop,
     cells: [
@@ -122,7 +131,7 @@ function runRow(dir, label, where, scanned, fallback) {
       modelCell(run.model, run.effort, run.agent),
       options.ceiling,
       loop === undefined
-        ? costCell(usd, eur)
+        ? costCell(usd, eur, run.agent)
         : `${money(usd + loop.usd, eur + loop.eur)} API-equivalent: steps ${money(usd, eur)}, ` +
           `review loop ${money(loop.usd, loop.eur)}; nothing billed per token`,
       `\`${dir}/\`; ${secretScan([scanned])}`,
@@ -164,6 +173,10 @@ if (kind === 'configuring') {
 } else if (kind === 'campaign') {
   const execution = options.execution;
   const base = join(root, 'results', execution, 'runs');
+  if (!/^[^/]+\/\d+$/.test(execution) || !existsSync(base)) {
+    console.error(`ledger-lines.mjs: no stored execution results/${execution}/runs (expected <id>/<n>)`);
+    process.exit(2);
+  }
   const executionFile = join(root, 'results', execution, 'execution.json');
   const started = existsSync(executionFile)
     ? JSON.parse(readFileSync(executionFile, 'utf8')).started
@@ -182,6 +195,7 @@ if (kind === 'configuring') {
             started,
           );
           if ((row.run.attempts ?? 1) > 1) row.cells[2] += `; attempt ${row.run.attempts}`;
+          if (row.datedByFallback) row.cells[2] += "; dated by the execution's start";
           if (row.loop !== undefined) row.cells[2] += `; review loop ${loopOutcome(row.loop)}`;
           row.cells[2] += ')';
           rows.push(row);
