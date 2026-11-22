@@ -70,8 +70,8 @@ changes.
 - **campaign-004's lines**, generated from the main checkout (read only, where the git-ignored transcripts live) with
   the token file passed as a path: 18 lines, all dated 2026-10-25, every secret scan clean, inserted after
   `dry-runs/77`, the last of the dry runs it was estimated from, and before task-105's dry runs. Their sum,
-  computed from the lines: 6.1067 USD (5.4453 €), the 6.11 USD of `3799c054`. The Codex total over the ledger's lines is now 74.71 USD (151 lines); rel-v0-3's spending row and the
-  release notes say so (the release notes with a dated erratum, the original row kept).
+  computed from the lines: 6.1067 USD (5.4453 €), the 6.11 USD of `3799c054`. The Codex total over the ledger's
+  lines is now 74.71 USD (151 lines); rel-v0-3's spending row and the release notes say so (the release notes with a dated erratum, the original row kept).
 - **campaign-008's erratum**, dated 2026-11-22, in its element's Publication (under the original headline, a hand
   edit, W-07), in the catalogue's notes of `33b54dd89e8b/1` and in `docs/releases/v0.3.md` after the campaigns' table.
   The new counts are those of the page the site build prints today. Prettier also requoted one existing note of
