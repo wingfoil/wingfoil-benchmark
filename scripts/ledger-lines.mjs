@@ -130,6 +130,8 @@ function runRow(dir, label, where, scanned, fallback) {
       options.consent,
       modelCell(run.model, run.effort, run.agent),
       options.ceiling,
+      // A review loop's cell is worded for Claude Code, the only agent whose runs have one so far; a Codex run with a
+      // loop (a later campaign's) gets the Codex wording with its first such line (review of task-161, round 2).
       loop === undefined
         ? costCell(usd, eur, run.agent)
         : `${money(usd + loop.usd, eur + loop.eur)} API-equivalent: steps ${money(usd, eur)}, ` +
