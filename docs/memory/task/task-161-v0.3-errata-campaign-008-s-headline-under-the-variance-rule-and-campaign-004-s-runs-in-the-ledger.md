@@ -102,3 +102,10 @@ changes.
   - Not changed: "0 interventions" against the older lines' "no intervention", and no "(main checkout)": the
     generator's wording, as in campaign-009's lines. After the fixes the lines sum to 6.1067 USD and the Codex total
     is 74.71 USD over 151 lines. Fix commits up to `952f5460`.
+- **Round 2** (an independent read-only subagent, in a temporary clone, on round 1's fix diff `74238df7..5a57bc05`;
+  the main checkout's reflog unchanged): clean, one nit. It checked both should-fix fixes and their tests, the Claude
+  branches byte-identical, the 18 regenerated lines against the runs (6.1067 USD) and the Codex total (74.71 USD, 151
+  lines); it could not reproduce the "41 of 154 / 0 of 109" comparison under its brief.
+  - nit: a Codex run with a review loop would be worded the Claude way. **Fixed** with a comment (`fdc10c8f`): no Codex
+    line has a loop yet; the first such line gets the Codex wording. A comment only, checked with eslint, Prettier
+    and the script's tests (9 passed). The review closes here.
