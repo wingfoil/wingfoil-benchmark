@@ -214,9 +214,9 @@ describe('scripts/ledger-lines.mjs (task-144)', () => {
       'E',
       'campaign run S1@1.0 r1, baseline arm (`abc123/1`, 1 step, 0 interventions; completed)',
       'C',
-      'gpt-5.6-terra, effort medium (codex 0.162.1)',
+      'gpt-5.6-terra, `model_reasoning_effort` medium (Codex CLI 0.162.1)',
       'X',
-      '1.0000 USD (0.5000 €) API-equivalent; nothing billed per token',
+      '1.0000 USD API-equivalent (`price-table`); 0 € spent: ChatGPT Plus (dl-024)',
       '`results/abc123/1/runs/S1@1.0/baseline/gpt-5.6-terra/r1/`; secret scan not run',
     ];
     expect(lines[0]).toBe(`| ${cells.join(' | ')} |`);
@@ -243,10 +243,20 @@ describe('scripts/ledger-lines.mjs (task-144)', () => {
     const result = run(['campaign', root, ...COMMON, '--execution', 'abc123/1']);
     expect(result.status).toBe(0);
     expect(result.stdout).toMatch(/^\| 2026-10-25 \| E \| campaign run S3@1\.0 r1, baseline arm /);
+    expect(result.stdout).toContain("0 interventions; completed; dated by the execution's start) |");
+    expect(result.stdout).toContain('| gpt-6-luna, `model_reasoning_effort` medium (Codex CLI 0.162.1) |');
+    expect(result.stdout).toContain(
+      '| 0.0000 USD API-equivalent (`price-table`); 0 € spent: ChatGPT Plus (dl-024) |',
+    );
   });
 
-  it('refuses a campaign call without --execution (task-161)', () => {
+  it('refuses a campaign call without --execution, or with one that names no stored execution (task-161)', () => {
     expect(run(['campaign', '.', ...COMMON]).status).toBe(2);
+    const root = tempDir('bench-ledger-lines-');
+    mkdirSync(join(root, 'results', 'abc123', '1', 'runs'), { recursive: true });
+    expect(run(['campaign', root, ...COMMON, '--execution', 'abc123']).status).toBe(2);
+    expect(run(['campaign', root, ...COMMON, '--execution', 'abc123/9']).status).toBe(2);
+    expect(run(['campaign', root, ...COMMON, '--execution', 'abc123/1']).status).toBe(0);
   });
 
   it('refuses a call without its kind, root, element, consent or ceiling', () => {
