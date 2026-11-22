@@ -2,7 +2,7 @@
 id: task-161-v0.3-errata-campaign-008-s-headline-under-the-variance-rule-and-campaign-004-s-runs-in-the-ledger
 type: task
 title: "v0.3 errata: campaign-008's headline under the variance rule, and campaign-004's runs in the ledger"
-status: in-progress
+status: in-review
 release: v0.3
 wave: retrospective
 features: []
