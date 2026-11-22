@@ -87,7 +87,7 @@ Written on 2026-11-21 and 2026-11-22, at plan-005 step 7 (`release-cycle` › `r
 | Bugs and decisions | 31 bugs (bug-025 to bug-055), 27 `fixed` with `fixed_by`, 4 `approved` and open (bug-046, bug-052, bug-053, bug-055); 17 decision-logs (dl-021 to dl-037), all approved |
 | Tests | 2 521 (1 660 at v0.2), coverage 97.05 % statements; requirements 1.60 (1.33), experiment design 1.13 (1.6) |
 | Review | about 166 independent review rounds, 2.8 a task; 7 tasks clean at the first round |
-| Real-agent spending | Claude Code 155.12 USD API-equivalent: calibration dry runs 65.99, campaigns 74.03, validation 9.63, review-loop dry runs 3.97, configuring 0.81, spike 0.70. Codex 68.60 USD API-equivalent in the ledger, plus campaign-004's 6.11 the ledger lacks; nothing billed (ChatGPT Plus) |
+| Real-agent spending | Claude Code 155.12 USD API-equivalent: calibration dry runs 65.99, campaigns 74.03, validation 9.63, review-loop dry runs 3.97, configuring 0.81, spike 0.70. Codex 74.71 USD API-equivalent, campaign-004's 6.11 included (its runs added to the ledger by task-161); nothing billed (ChatGPT Plus) |
 | Campaigns | six: 004, 006, 007 on Codex, 008 and 009 on Claude Code published, 005 deprecated (bug-035); the reference `1f70fcaf2ec2/1`, 82 runs, 46.77 € against a high estimate of 50.85 € |
 
 ### What went well
