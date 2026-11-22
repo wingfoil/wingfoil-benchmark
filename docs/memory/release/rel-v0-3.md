@@ -62,9 +62,126 @@ and v0.2's follow-ups merged, filed or dropped.
 
 ## Retrospective
 
-<!-- What went well, what to change, and the WingFoil usage notes handed to WingFoil. -->
+Written on 2026-11-21 and 2026-11-22, at plan-005 step 7 (`release-cycle` › `retrospective`), after the release was approved
+(`39571f45`). Inputs:
+
+- three read-only agents mined the Execution, Review and Approval notes of the 59 tasks; the calibration report, the
+  ledger, the re-scoring and the review-loop report, campaigns 004 to 009 and the release notes; every bug and
+  decision-log of v0.3, the feedback inbox and the git history `v0.2..v0.3`;
+- the WingFoil maintainer's input of 2026-10-24, collected below;
+- a discussion of the points below with the approver, whose decisions are recorded under "Decisions taken with the
+  approver".
 
 **Inputs collected for the retrospective** (input only, not acted on before it):
 
 - 2026-10-24, the WingFoil maintainer on the wingfoil arm and WingFoil's workflow model (dl-203, the steps A, B, C):
   [docs/retrospective-inputs/v0.3/](../../retrospective-inputs/v0.3/2026-10-24-wingfoil-maintainer-the-arm-and-the-workflow-model.md).
+
+**v0.3 in figures:**
+
+| | |
+|---|---|
+| Span and history | 30 days (2026-10-22 → 2026-11-21); 1 514 commits, 73 merges |
+| Work | 59 tasks (101–160 but 127, which is v0.4's), all done; waves W15–W19, calibration, validation |
+| Process | 668 WingFoil transitions, 3 of them rejects (dl-022, task-117, task-146); 207 commits with an `Approver:` line |
+| Bugs and decisions | 31 bugs (bug-025 to bug-055), 27 `fixed` with `fixed_by`, 4 `approved` and open (bug-046, bug-052, bug-053, bug-055); 17 decision-logs (dl-021 to dl-037), all approved |
+| Tests | 2 521 (1 660 at v0.2), coverage 97.05 % statements; requirements 1.60 (1.33), experiment design 1.13 (1.6) |
+| Review | about 166 independent review rounds, 2.8 a task; 7 tasks clean at the first round |
+| Real-agent spending | Claude Code 155.12 USD API-equivalent: calibration dry runs 65.99, campaigns 74.03, validation 9.63, review-loop dry runs 3.97, configuring 0.81, spike 0.70. Codex 68.60 USD API-equivalent in the ledger, plus campaign-004's 6.11 the ledger lacks; nothing billed (ChatGPT Plus) |
+| Campaigns | six: 004, 006, 007 on Codex, 008 and 009 on Claude Code published, 005 deprecated (bug-035); the reference `1f70fcaf2ec2/1`, 82 runs, 46.77 € against a high estimate of 50.85 € |
+
+### What went well
+
+1. **Every estimate held.** Each campaign came in between its estimate's mean and high; the review loop's worst case
+   was a safe overestimate (18 € reserved, 0.03–0.18 € a loop measured).
+2. **Calibration and validation caught the defects before they reached a published result:** bug-038 and bug-039 (S10),
+   bug-047, bug-048 and bug-051 (calibration), bug-054 (validation), each fixed before the reference campaign.
+3. **v0.2's decisions were all carried out:** step A (brought ahead by dl-027, measured under both agents), the
+   configured variants with scenario versions 1.1, the oracle and metrics v2, the review rule, the review loop in
+   every arm, the v0.2 errata.
+4. **Spikes stayed decisive:** task-107 (F-043, F-044, and bug-036 from its review), task-109 (F-045, F-011 explained),
+   task-114 (the approval question read as a question; the manual fixed).
+5. **The Codex trial was used before its end** (dl-022, dl-027): four Codex campaigns, the weak model Luna among them,
+   nothing billed.
+6. **The re-scoring reproduced:** task-139's 2 536 patches with no difference, task-132's v1/v2 comparison, task-121's
+   figures of dl-032.
+
+### What to change
+
+1. **Gates and records slipped around campaigns:** a second `memory approve` passed campaign-004's publish gate (then
+   reverted); campaign-009's element was filed after its launch, so its spending gate was recorded afterwards;
+   campaign-004's results were not committed by its campaign step and its runs are missing from the ledger.
+2. **Agents touched the main checkout:** task-102's reviewer helper reset main (restored); reviewers of task-131 and
+   task-133 read main's history against their brief.
+3. **The targeted checks miss tests.** Full suites went red after a green targeted or pre-review run in tasks 114,
+   117, 120, 140, 146 and 156 (two rejects); red tests reached history in 106 and 152; the pre-review script stops
+   silently on many files (bug-053). Red-first slipped in eleven tasks.
+4. **Review rounds stayed at 2.8 a task**, with fixes that caused the next round (task-147 r2–r4, task-150 r2), final
+   changes not reviewed again (154–158, 160), and the same findings recurring: hand-made figures in notes, prose that
+   claims more than was observed, requirements out of step with the code.
+5. **The machine interrupted the work:** reboots and a lost scratchpad (task-144), an ACPI hang, a full disk and sleep
+   during a dry run (task-154), systemd-oomd killing the session inside campaign-009.
+6. **A published headline changed without a note.** Rebuilding the site for campaign-009 applied bug-030's rule
+   (better or worse only beyond the variance) to campaign-008: wingfoil "better in 4, worse in 2" became "1 better,
+   1 worse, 4 within the variance". Only the method page mentions the rule; campaign-008's element still states the
+   old counts.
+7. **The evidence stays preliminary:** n = 1 on S2, S3, S8 and the Haiku slice; dl-023's repetition campaigns never
+   ran; steps are small (median about 58 lines); H5 was not observable; the chain from v0.2 changes the manual, the
+   scenario version and the policy together.
+8. **Follow-ups left in notes:** about fourteen without an element (among them classifier v2's gaps, the Resource's
+   size under Codex, `memory amend`/`park`, the `ambiguous` hook answer on Haiku, the hold-out branch of the review
+   loop, `.prettierignore` hiding `src/results/`, the evaluation page after publication); plan-005's test-gap and
+   cleanup tasks never filed; dl-033 to dl-036 without tasks.
+9. **The feedback inbox grew and nothing reached WingFoil:** F-040 to F-047 added, 12 notes open and 4 `needs-info`
+   waiting for a sync.
+
+### Decisions taken with the approver
+
+The approver accepted every proposal below on 2026-11-22.
+
+- **Campaign gates and records:** `campaign run` refuses to start without the campaign's element and the approver's
+  spending consent recorded in it; every run writes its own line in the ledger, whatever the agent; campaign-004's
+  missing lines (6.11 USD API-equivalent) are added.
+- **Agents and the main checkout:** a review or helper agent works only in a temporary directory of its own, never in
+  the main checkout; the reflog is checked after every review round. This becomes written practice in the
+  `code-review` directive and in `kanban-delivery`'s review step.
+- **The checks before review:** bug-053 is fixed and the pre-review script's test selection made to cover every test
+  that imports a changed file; the full suites run before every move to in-review, at night when the approver is
+  away.
+- **Review rounds:** figures in notes are generated by script, never typed; after the last fix a short final review
+  reads the final diff before in-review.
+- **The machine:** a campaign preflight checks sleep inhibition, free memory and free disk, together with dl-037's
+  quota wait and notices (task F).
+- **campaign-008's headline:** an erratum, no rerun. The campaign's element, the catalogue and the release notes say
+  that bug-030's rule (better or worse only beyond the variance), applied when the site was rebuilt for campaign-009,
+  turned "better in 4, worse in 2" into "1 better, 1 worse, 4 within the variance".
+- **Repetitions:** dl-023's repetitions (n = 3) are decided before the next campaign, so that its results can be read
+  as more than preliminary (plan-005's step 7 already asked it).
+- **Follow-ups:** the fourteen follow-ups left in notes, plan-005's test-gap and cleanup tasks, dl-033 to dl-036
+  without tasks, and the WingFoil maintainer's new points of 2026-10-24 (WingFoil dl-203's `coordinator` role,
+  dl-171, bug-413, bug-392, the Determinism Index's *P* read from the workflow) are triaged when v0.4 is planned. The
+  input's other points were dl-021's step A, carried out in v0.3.
+- **The WingFoil feedback inbox:** the approver files F-040 to F-047 and the open notes in WingFoil now, with the
+  findings (dl-009), and the inbox is synced afterwards.
+- **The open bugs:** bug-052, bug-053 and bug-055 go into v0.4's first wave, each with a task; bug-046 stays as it is.
+
+### Actions recorded
+
+To file, in this order (the approver approves each decision-log and task; one task in review at a time):
+
+| When | Kind | What |
+|---|---|---|
+| Now | task | the v0.3 erratum: campaign-008's headline in its element, the catalogue and the release notes; campaign-004's ledger lines |
+| Now | approver | F-040 to F-047 and the open notes filed in WingFoil (dl-009), then the inbox synced |
+| v0.4, first wave | tasks | bug-053 with the pre-review selection; bug-052; bug-055 |
+| v0.4, first wave | task | campaign gates: `campaign run` checks the element and the consent; a ledger line for every run |
+| v0.4, first wave | task | the review practice: a temporary directory for every review agent, the reflog after each round, figures by script, a final review on the last diff, the full suites before in-review (`code-review`, `kanban-delivery`) |
+| Before the next campaign | tasks | dl-037's F (quota wait and notices) with the machine preflight, G (the arms' pin), B's spike and the `wingfoil-runner` arm |
+| Before the next campaign | decision-log | dl-023's repetitions (n = 3) for the next campaign |
+| v0.4 planning | triage | the follow-ups in notes, plan-005's test-gap and cleanup tasks, dl-033 to dl-036, the maintainer's new points of 2026-10-24 |
+
+### WingFoil feedback inbox
+
+`docs/wingfoil-feedback/` holds F-001 to F-047: 25 resolved, 6 captured, 4 needs-info (F-007, F-009, F-023, F-034),
+12 open (F-030, F-031, F-035, F-037, F-040 to F-047). v0.3 added F-040 to F-047 (task-100, task-107, task-109,
+task-122, task-133); the syncs of 2026-10-27 (0.3.1) and 2026-11-16 (0.3.2) moved F-036 to resolved.
