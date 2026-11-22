@@ -187,6 +187,49 @@ describe('scripts/ledger-lines.mjs (task-144)', () => {
     expect(result.stdout).toMatch(/^\| unknown date \| E \| dry run of S1@1\.1, baseline arm /);
   });
 
+  it('prints a line per campaign run of an execution, every scenario version, its attempts (task-161)', () => {
+    const root = tempDir('bench-ledger-lines-');
+    const CODEX = { name: 'codex', version: '0.162.1' };
+    const write = (scenario: string, arm: string, rep: string, date: string, extra: object) => {
+      const dir = join(root, 'results', 'abc123', '1', 'runs', scenario, arm, 'gpt-5.6-terra', rep);
+      mkdirSync(join(dir, 'steps', '01'), { recursive: true });
+      const body = { agent: CODEX, model: 'gpt-5.6-terra', effort: 'medium', outcome: 'completed' };
+      const step = { usage: { costUsd: 1, costEur: 0.5 } };
+      writeFileSync(
+        join(dir, 'run.json'),
+        JSON.stringify({ ...body, steps: [step], interventions: [], attempts: 1, ...extra }),
+      );
+      writeFileSync(join(dir, 'steps', '01', 'transcript.jsonl'), `{"timestamp":"${date}"}\n`);
+    };
+    write('S2@1.0', 'baseline', 'r1', '2026-10-25T07:00:00.000Z', {});
+    write('S1@1.0', 'baseline', 'r2', '2026-10-25T06:00:00.000Z', { attempts: 2 });
+    write('S1@1.0', 'baseline', 'r1', '2026-10-25T05:00:00.000Z', {});
+    mkdirSync(join(root, 'results', 'abc123', '2', 'runs', 'S1@1.0'), { recursive: true });
+    const result = run(['campaign', root, ...COMMON, '--execution', 'abc123/1']);
+    expect(result.status).toBe(0);
+    const lines = result.stdout.trim().split('\n');
+    expect(lines).toHaveLength(3);
+    const cells = [
+      '2026-10-25',
+      'E',
+      'campaign run S1@1.0 r1, baseline arm (`abc123/1`, 1 step, 0 interventions; completed)',
+      'C',
+      'gpt-5.6-terra, effort medium (codex 0.162.1)',
+      'X',
+      '1.0000 USD (0.5000 €) API-equivalent; nothing billed per token',
+      '`results/abc123/1/runs/S1@1.0/baseline/gpt-5.6-terra/r1/`; secret scan not run',
+    ];
+    expect(lines[0]).toBe(`| ${cells.join(' | ')} |`);
+    expect(lines[1]).toContain(
+      '| campaign run S1@1.0 r2, baseline arm (`abc123/1`, 1 step, 0 interventions; completed; attempt 2) |',
+    );
+    expect(lines[2]).toContain('| campaign run S2@1.0 r1, baseline arm ');
+  });
+
+  it('refuses a campaign call without --execution (task-161)', () => {
+    expect(run(['campaign', '.', ...COMMON]).status).toBe(2);
+  });
+
   it('refuses a call without its kind, root, element, consent or ceiling', () => {
     expect(run(['dry-runs']).status).toBe(2);
     expect(run(['dry-runs', '.', '--element', 'E', '--consent', 'C']).status).toBe(2);
