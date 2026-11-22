@@ -82,3 +82,22 @@ changes.
 - `scripts/pre-review.sh main`: green (eslint, tsc, 44 tests in 3 files).
 
 ### Review
+
+- **Round 1** (an independent read-only subagent, in a temporary clone; the main checkout's reflog unchanged): no
+  blocker, 2 should-fix, 4 nits. It checked the dry-run lines byte-identical before and after `runRow` (109 lines),
+  the 18 lines against the runs, the sums (6.1067, 68.60 → 74.71 USD) and the new counts on a site it built.
+  - should-fix: `--execution` naming no stored execution printed nothing and exited 0. **Fixed:** refused (exit 2)
+    unless `<id>/<n>` and `results/<id>/<n>/runs` exist; red test first.
+  - should-fix: the 18 lines were worded unlike the ledger's other Codex lines, dropping `price-table` and dl-024.
+    **Fixed:** `modelCell` and `costCell` word a Codex run as those lines do (`model_reasoning_effort`, Codex
+    CLI, `price-table`, 0 € spent: ChatGPT Plus (dl-024)); the lines regenerated, never edited. The dry-runs mode
+    changes only for Codex runs: over the main checkout, 41 of 154 lines at 1.0, all Codex; 0 of 109 at 1.1.
+  - nit: a date from the execution's start was not said. **Fixed:** "dated by the execution's start" in the kind
+    cell.
+  - nit: the catalogue's erratum lacked task-129 and REQ-RES-03. **Fixed.**
+  - nit: the retrospective still said campaign-004's runs are missing. **Fixed:** "were missing … (added by
+    task-161)".
+  - nit: Prettier requoted an unrelated catalogue note. Kept: formatting only, and the file is now Prettier-clean.
+  - Not changed: "0 interventions" against the older lines' "no intervention", and no "(main checkout)": the
+    generator's wording, as in campaign-009's lines. After the fixes the lines sum to 6.1067 USD and the Codex total
+    is 74.71 USD over 151 lines. Fix commits up to `952f5460`.
