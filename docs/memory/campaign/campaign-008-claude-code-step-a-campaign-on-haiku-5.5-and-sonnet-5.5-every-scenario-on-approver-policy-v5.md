@@ -348,6 +348,11 @@ decision WingFoil should take (2026-11-01). Considered and not filed there:
 - **The site built** (`bench site build`, 2026-11-01): every execution under `site/` rebuilt, `33b54dd89e8b/1` last
   (25 pages), so the root page leads to it. Its headline: against the baseline, wingfoil better in 4, worse in 2 of 6
   comparisons across categories C–F; baseline-docs better in 2, worse in 4.
+  **Erratum (2026-11-22, task-161):** these counts are of the site built before requirements 1.49 (v0.3), which
+  counted any difference of the means as better or worse. The site rebuilt for campaign-009 applies bug-030's rule
+  (task-129, REQ-RES-03: better or worse only beyond the variance) to this execution too, and reads, for wingfoil and
+  for baseline-docs alike: better in 1, worse in 1, within the variance in 4 of 6 comparisons across categories C–F.
+  The runs and the scores are unchanged; only the reading is ([the method page's headline](https://wingfoil.github.io/wingfoil-benchmark/33b54dd89e8b/1/method.html#headline)).
 - **Approved for publication** by the approver (`ac4d5740`) and pushed at the approver's request in chat (2026-11-01,
   "approvato, pusha"): `e840f7ac..ac4d5740`, after a check that no anonymous project is named in the commits.
 - **The transcripts' release, prepared** (`bench transcripts pack 33b54dd89e8b/1`, with the credential's file passed by
