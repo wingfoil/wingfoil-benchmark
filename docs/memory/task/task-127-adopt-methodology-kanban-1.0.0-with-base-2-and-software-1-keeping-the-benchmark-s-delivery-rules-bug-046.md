@@ -66,9 +66,9 @@ no file moves: `decision_log_path`, `task_path`, `adr_path`, `bug_path`, `tech_s
    when the pilot ends. `task` takes `kanban`'s machine (the same states, plus `returns` and the two limits);
    `campaign` stays a project type.
 2. **The release keeps its two gates** (planning and releasing, the approver's); it gains the `release-line` field the
-   composed type requires, filled for `rel-v0.4` by a first release line, `rl-1`. `delivery` is a custom copy whose `plan-release` moves the release
-   draft → planning with a submit and planning → in-development with the approver's approval, instead of the pack's
-   two submits, which a gated planning refuses.
+   composed type requires, filled for `rel-v0.4` by a first release line, `rl-1`. `delivery` is a custom copy whose
+   `plan-release` moves the release draft → planning with a submit and planning → in-development with the approver's
+   approval, instead of the pack's two submits, which a gated planning refuses.
 3. **`work-item` is a custom copy with `kanban`'s steps** (`start`, `build`, `review`, `approve`, `done`), carrying
    `kanban-delivery` version 6's rules: `review` is the independent review with severities and re-review (dl-020),
    `scripts/pre-review.sh main` before every round and the full suites before in-review; `approve` stays the
