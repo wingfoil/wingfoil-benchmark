@@ -315,3 +315,6 @@ next W20 task.
   workflow's reach leaves out a parent's element through a plain include, where WingFoil itself warns
   `W_PHASE_ACTION_UNTARGETED`, so the check never fails a state WingFoil accepts without a diagnostic. The review
   closes.
+- **Full suites** (`scripts/full-suites.sh`, 2026-11-23, at `bcea782c`, worktree clean): LINT 0, TEST 0, BUILD 0,
+  BIN 0, DOCKER 0 (log `.cache/full-suites/2026-11-23/task_task-127-…-bcea782c-230441.txt` in the main checkout;
+  157 test files, 2560 tests passed and 10 skipped; test:bin 22 passed; test:docker 22 passed and 2 skipped).
