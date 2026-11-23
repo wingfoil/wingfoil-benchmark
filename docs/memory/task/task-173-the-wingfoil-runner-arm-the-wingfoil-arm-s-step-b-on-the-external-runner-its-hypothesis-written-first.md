@@ -2,7 +2,7 @@
 id: task-173-the-wingfoil-runner-arm-the-wingfoil-arm-s-step-b-on-the-external-runner-its-hypothesis-written-first
 type: task
 title: "The wingfoil-runner arm: the wingfoil arm's step B on the external runner, its hypothesis written first"
-status: draft
+status: pending
 release: v0.4
 wave: W21
 features: []          # e.g. [F1.1, F3.1]
