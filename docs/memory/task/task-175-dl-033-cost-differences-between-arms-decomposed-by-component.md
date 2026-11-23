@@ -2,7 +2,7 @@
 id: task-175-dl-033-cost-differences-between-arms-decomposed-by-component
 type: task
 title: "dl-033: cost differences between arms decomposed by component"
-status: pending
+status: backlog
 release: v0.4
 wave: W21
 features: []          # e.g. [F1.1, F3.1]
