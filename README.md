@@ -333,7 +333,7 @@ MIT — see [LICENSE](LICENSE).
 
 ## Pre-review checks
 
-`scripts/pre-review.sh <base>` runs, before every review round of a task (dl-020, `kanban-delivery` version 6), the
+`scripts/pre-review.sh <base>` runs, before every review round of a task (dl-020; `work-item`'s review step), the
 checks a reviewer should never have to report: on changed Markdown, every line the branch added within 120 characters
 (tables, code blocks, the front matter and lines with a link apart) and a final newline, since Prettier leaves Markdown
 out (it would rewrite the front matter WingFoil writes); Prettier on every file the branch changed over `<base>` (types
@@ -361,4 +361,4 @@ scripts/full-suites.sh task/task-075-… # one branch
 ```
 
 They take tens of minutes and load the machine, so they run on demand when it is free, never from a cron on a machine
-that sleeps (dl-016, task-075). Their green log is what the approver approves a task on (kanban-delivery version 5).
+that sleeps (dl-016, task-075). Their green log is what the approver approves a task on (`work-item`'s approve step).

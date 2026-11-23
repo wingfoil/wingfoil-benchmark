@@ -25,6 +25,11 @@ Waves, features and the triage: [plan-006](../../plans/plan-006-release-v0.4.md)
 and each wave's first task; the sequencer's amendment 1.3 inserts W20, W21 and W25 around its W20–W22, renumbered
 W22–W24, and v1.0's waves become W26–W28.
 
+**Governance** (task-127): methodology/kanban 1.0.0 with base 2.0.1 and software 1.0.0, composed by wingfoil-templates'
+reference composer at `549d787d`, on WingFoil 0.3.2; this repository's deviations in
+[docs/pack-deviations.md](../../pack-deviations.md). The delivery runs through `sw-life-cycle`'s `delivery` and
+`work-item` from task-127's merge on; the pilot on W20 keeps or rolls it back.
+
 | Wave | Features | High unc. | Ends with | Verified |
 |---|---|---|---|---|
 | W20 — Foundations | the governance adoption (task-127, bug-046); the retrospective's fixes; the quota wait (dl-037 F) | the runner as governance | the pilot's exit criteria read; the suites green on the new methodology | |

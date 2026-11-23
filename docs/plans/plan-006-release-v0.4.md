@@ -3,16 +3,17 @@ id: plan-006-release-v0.4
 type: plan
 title: "Release v0.4"
 status: active
-workflow: release-cycle
-phase: release-cycle
+workflow: sw-life-cycle
+phase: delivery
 tags: ["release","v0.4"]
 ---
 
 ## Context
 
 Release v0.3 is `released` (2026-11-21, tag `v0.3`) and plan-005 is `done` (2026-11-23); its retrospective's
-immediate action is done (task-161, published). The `release-cycle` phase of `sw-life-cycle` runs its fourth
-iteration, on [rel-v0.4](../memory/release/rel-v0.4.md).
+immediate action is done (task-161, published). The fourth release, [rel-v0.4](../memory/release/rel-v0.4.md), runs
+through `release-cycle` until task-127, then through `sw-life-cycle`'s `delivery` (the steps below map to it as
+task-127's key mapping says).
 
 **Scope, the approver's choices in chat (2026-11-23):**
 
@@ -26,7 +27,7 @@ iteration, on [rel-v0.4](../memory/release/rel-v0.4.md).
 
 | Wave | Features | High unc. | Ends with |
 |---|---|---|---|
-| W20 — Foundations | task-127 (methodology `kanban` 1.0.0, the runner as governance, one pilot); bug-053, bug-052, bug-055; campaign gates; the review practice; dl-037 F (quota wait, notices, machine preflight); v0.4's specification | the runner as governance | the pilot's exit criteria read; the suites green on the new methodology |
+| W20 — Foundations | task-127 (methodology `kanban` 1.0.0, one pilot); task-177 (the runner as governance, the pilot's other half); bug-053, bug-052, bug-055; campaign gates; the review practice; dl-037 F (quota wait, notices, machine preflight); v0.4's specification | the runner as governance | the pilot's exit criteria read; the suites green on the new methodology |
 | W21 — Step B | F2.8 the wingfoil arm's step B on the external runner (dl-037 B, dl-021 amended); dl-037 G (the arms' pin); dl-023's repetition preset; dl-033; dl-034 (the release watch) | the step-B spike | an S1 dry run driven by the runner in its container, measured like every arm |
 | W22 — Knowledge and legacy | F6.4 S4 fictional domain · F6.7 S7 legacy refactoring | — | F and D covered with two more scenarios |
 | W23 — Specification | F6.5 S5 spec authoring · F4.6 blind rubric judge | F6.5 | category A covered |
@@ -90,19 +91,21 @@ runner's project is never named in this repository ("an external workflow runner
 | # | Phase | Role | Produces | Gate |
 |---|-------|------|----------|------|
 | 1 | release-planning | product-owner | this plan; `rel-v0.4` filled and submitted; the triage above; W20's and W21's first tasks pending | approver: `rel-v0.4` planning → in-development, and each element's gate |
-| 2 | delivery | developer, reviewer | W20 → W25 through `kanban-delivery` (version 6 until task-127 adopts the methodology, then the adopted one), each wave's "Ends with" recorded in `rel-v0.4` | approver: every task pending → backlog and in-review → approved |
+| 2 | delivery | developer, reviewer | W20 → W25 through `kanban-delivery` (version 6) until task-127, then `work-item` (docs/pack-deviations.md D3), each wave's "Ends with" recorded in `rel-v0.4` | approver: every task pending → backlog and in-review → approved |
 | 3 | calibration | scenario-author | `docs/calibration/v0.4.md`: dry runs of every v0.4 scenario in every arm, step B included, measured costs, the revised budget, the hypotheses restated | approver: revised budget; every real-agent run |
-| 4 | validation | qa | as `release-cycle` states (dl-010) | approver: the real-agent runs |
+| 4 | validation | qa | as the release slot's validation step states (dl-010) | approver: the real-agent runs |
 | 5 | campaign | scenario-author, qa | the reference campaign at n = 3, on the arms' latest WingFoil (G), step B apart; its bridge to campaign-009 | approver: spending, results, publication |
 | 6 | publishing | tech-lead | tag `v0.4`, site, release notes `docs/releases/v0.4.md`, transcripts and harnesses as release assets | approver: `rel-v0.4` releasing → released |
 | 7 | retrospective | facilitator | `rel-v0.4` Retrospective; elements for the benchmark; WingFoil feedback notes | approver review |
 
 **Delivery order** (WIP 1 in-progress, 1 in-review):
 
-1. W20: task-127 (the adoption and the pilot's criteria) → v0.4's specification (the sequencer's amendment 1.3, F2.8
-   and F6.14 in the features, the experiment design's Q-E4 and step B, the requirements each wave needs first) →
-   bug-053 → bug-052 → bug-055 → the campaign gates → the review practice → dl-037 F → the test gaps and cleanups →
-   the `wingfoil-sync`. The pilot's exit criteria are read when W20's last task is done.
+1. W20: task-127 (the adoption and the pilot's criteria) → task-177 (the runner as governance, started as soon as a
+   runner version names no private project, so that the runner carries at least three W20 tasks) → v0.4's
+   specification (the sequencer's amendment 1.3, F2.8 and F6.14 in the features, the experiment design's Q-E4 and
+   step B, the requirements each wave needs first) → bug-053 → bug-052 → bug-055 → the campaign gates → the review
+   practice → dl-037 F → the test gaps and cleanups → the `wingfoil-sync`. The pilot's exit criteria are read when
+   W20's last task is done.
 2. W21: dl-037 G (the arms' pin, re-run when the campaign is prepared) → the step-B spike on `runner-1.2.0` (one dry
    run at most, with the approver's spending consent) → the `wingfoil-runner` arm, its hypothesis first → dl-023's
    repetition preset → dl-033 → dl-034.
@@ -128,4 +131,5 @@ runner's project is never named in this repository ("an external workflow runner
   - each wave's "Ends with" recorded;
   - calibration approved; the reference campaign `published`;
   - `rel-v0.4` `released`.
-- **Completion:** `rel-v0.4` `released` with its Retrospective written; the plan then moves `active → done`.
+- **Completion:** `rel-v0.4` `released` with its Retrospective written; the plan then moves `active → done` through
+  `wingfoil workflow end` (plan waits at `active`, task-127).

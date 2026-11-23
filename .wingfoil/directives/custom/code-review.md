@@ -30,7 +30,7 @@ authority.
   for what the fix changed: a regression, a new edge case, a text it left untrue. A round with nits only closes the
   review, unless a nit's fix changes code, a test or a script, which gets a quick check of that diff.
 - **A review without a severity on every finding is incomplete**, and so is a round the author offered without the
-  post-fix checklist and `scripts/pre-review.sh <base>` (both in `kanban-delivery`'s review phase). The reviewer
+  post-fix checklist and `scripts/pre-review.sh <base>` (both in `work-item`'s review step). The reviewer
   checks that figures in the notes are generated, not typed, and that the task's diff stays under about 1 200 lines.
 - Approve or reject with a recorded reason; a rejection states what must change before resubmitting.
 - Approval authority belongs to a role, not to a person; AI agents never approve their own work.
