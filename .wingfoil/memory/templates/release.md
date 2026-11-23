@@ -6,6 +6,7 @@ status: draft
 version: ""           # e.g. v0.1
 waves: []             # e.g. [W1, W2, …, W11]
 features: []          # from docs/01_vision/07_sequencer.md
+release-line: ""      # e.g. rl-1 (task-127)
 ---
 
 ## Goal
