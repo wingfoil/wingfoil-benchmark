@@ -275,3 +275,12 @@ next W20 task.
   - nits: the `set_state` check reads a typed action's type (`bug.set_state(fixed)`), shown red on `resolved` and
     green on `fixed` by mutation; the real-agent check names the release's plan; the done step's "green again once
     every bug is fixed" restored; plan-006's completion names `workflow end`.
+- **Round 3** (a third independent read-only subagent, on `8db5bd16..243fa012`, in a temporary clone; the main
+  checkout's reflog unchanged). Round 2's fixes confirmed (W-07, W-08 and W-17 checked against 0.3.2's help and code).
+  One should-fix and two nits, all fixed:
+  - should-fix: F-049 still overstated 0.3.2: a typed `<type>.set_state` on a type the step does not bind is never
+    checked (reproduced: `bug.set_state(resolved)` in a task step, empty `diagnostics`; `element.set_state(bogus)`,
+    `W_PHASE_EXIT_STATE_UNDETERMINED`). F-049 now reports both gaps; the test header and `pack-deviations.md` say so.
+  - nits: the `set_state` check reads a quoted state, takes the selection's type in a `where` phase, fails on a
+    `set_state` it cannot read, and says it guards future actions (red on `"resolved"` and on two arguments, green on
+    `"fixed"`, by mutation); `work-item`'s real-agent-check reflowed.
