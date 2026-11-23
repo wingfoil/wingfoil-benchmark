@@ -2,7 +2,7 @@
 id: task-171-dl-037-g-the-wingfoil-arms-pin-moved-to-wingfoil-s-latest-release
 type: task
 title: "dl-037 G: the wingfoil arms' pin moved to WingFoil's latest release"
-status: draft
+status: pending
 release: v0.4
 wave: W21
 features: []          # e.g. [F1.1, F3.1]
