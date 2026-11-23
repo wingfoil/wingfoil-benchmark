@@ -46,7 +46,7 @@ the bug pending → approved, which is the same ruling under this repository's n
 The release machine stays draft, planning (gate), in-development, releasing (gate), released, where the pack's has
 the same states and no gate: both gates are the approver's. The composed type requires a `release-line` field, so the
 type requires it here too, and the release-line type takes `base`'s machine (draft, planning, active, done);
-`rel-v0.4` names the first release line, `rl-1`.
+`rel-v0.4` names the first release line, `rl-001` (WingFoil pads `rl-{n}`).
 
 `delivery` is a custom copy. Its `plan-release` step takes `memory.add`, `memory.submit` (draft → planning) and
 `memory.approve` (planning → in-development, the approver's), where the pack has two submits, which a gated planning
