@@ -66,7 +66,9 @@ no file moves: `decision_log_path`, `task_path`, `adr_path`, `bug_path`, `tech_s
    when the pilot ends. `task` takes `kanban`'s machine (the same states, plus `returns` and the two limits);
    `campaign` stays a project type.
 2. **The release keeps its two gates** (planning and releasing, the approver's); it gains the `release-line` field the
-   composed type requires, filled for `rel-v0.4` by a first release line, `rl-1`.
+   composed type requires, filled for `rel-v0.4` by a first release line, `rl-1`. `delivery` is a custom copy whose `plan-release` moves the release
+   draft → planning with a submit and planning → in-development with the approver's approval, instead of the pack's
+   two submits, which a gated planning refuses.
 3. **`work-item` is a custom copy with `kanban`'s steps** (`start`, `build`, `review`, `approve`, `done`), carrying
    `kanban-delivery` version 6's rules: `review` is the independent review with severities and re-review (dl-020),
    `scripts/pre-review.sh main` before every round and the full suites before in-review; `approve` stays the
@@ -93,23 +95,24 @@ outside the flow, `design` → `start`, `build` → `build`, `review` → `revie
 `done`, `real-agent-check` → the copy's manual step); `release-cycle`'s phases → `delivery`'s `plan-release` and
 `release-flow`'s `work`, `release` and `retrospective`. No element's state is renamed (deviation 1).
 
-**The runner as governance** (the approver's rulings of 2026-11-22 and 2026-11-23), version `runner-1.2.0`, on
-WingFoil 0.3.2:
+**The runner as governance** moves to a task of its own in W20 (the approver, 2026-11-23), started when the
+external runner ships a version whose common files name no private project: at `runner-1.2.0`, a test file in its
+manifest does, so it can be neither copied into this public repository nor packed in a campaign's harnesses (asked
+of the runner's maintainers on 2026-11-23). That task holds what this Design first planned here:
 
-- **`config/runner.yaml`:** one `trunk` line, its checkout and worktrees outside the main checkout;
-  `launch.allow: [work-item]`; `launch.manual` naming the copy's real-agent check, and never `campaign-cycle`, the
-  custom `release` or any step that spends (the paid launch and the spending consent stay the approver's);
-  `phases.integrate: [work-item.done]`; `integration.task_branch: task/{id}`, `merge: no-ff`; `paths.runs:
-  [docs/runs/]` (the root `/runs/` is the campaign runner's, git-ignored); the weekly budget set after the pilot's
-  first task. The runner's adapters copied into `.wingfoil/agents/custom/`; `docs/notices.md` with its markers. The
-  systemd timer is written disabled; the approver alone enables it.
-- **The runner's identity.** The runner stands in for the human executor until WingFoil's workflow engine runs the
-  steps, so it gets an identity of its own in `team.members`, "WingFoil Benchmark Runner"
-  (`runner@wingfoil-benchmark.invalid`, a reserved domain, so no real address is published), with the executor's
-  roles (developer, reviewer, facilitator, product-owner) and **never `approver`**: the gates stay the approver's,
-  ruled from the approver's terminal through `gate.mjs`. The agents it launches are credited by `Co-Authored-By`
-  (their entries in `team.agents`). This supersedes "Agent identity: not adopted now" in the input below.
-- **What stays by session:** campaign launches, every real-agent run, and the work before the pilot starts.
+- `config/runner.yaml`: one `trunk` line, its checkout and worktrees outside the main checkout (in a git-ignored
+  `config/runner.local.yaml`); `launch.allow: [work-item]`; `launch.manual` naming `work-item.real-agent-check`, and
+  never `campaign-cycle`, the release slot or any step that spends; `phases.integrate: [work-item.done]`;
+  `integration.task_branch: task/{id}`, `merge: no-ff`; Claude as the reviewer too, in another session (the Codex
+  subscription has ended); `paths.runs: [docs/runs/]`; the adapters, `docs/notices.md`, the runner's home and the
+  line's clone; `--doctor` and `--dry-run` clean; the timer written disabled, enabled by the approver alone.
+- **The runner's identity** (the approver's choice of 2026-11-23): an identity of its own, standing in for the human
+  executor until WingFoil's workflow engine runs the steps. `runner-1.2.0` signs as the line's `agent`, its email read
+  from `team.agents`, so the identity is a `team.agents` entry, "WingFoil Benchmark Runner"
+  (`runner@wingfoil-benchmark.invalid`, a reserved domain), with `approval_authority: false` and named as the trunk
+  line's agent: WingFoil refuses it every approval, and the gates stay the approver's, ruled from the approver's
+  terminal through `gate.mjs`. The launched model is credited by `Co-Authored-By`. This supersedes "Agent identity:
+  not adopted now" in the input below.
 
 **The pilot** runs on W20, after this task is done. Its criteria are read when W20's last task is done and recorded
 in [rel-v0.4](../release/rel-v0.4.md):
@@ -117,12 +120,11 @@ in [rel-v0.4](../release/rel-v0.4.md):
 | | Exit: kept | Rollback |
 |---|---|---|
 | The methodology | every W20 task flowed through `work-item`; no state outside the machine; WIP never exceeded; every gate the approver's; no hand workaround beyond the recorded deviations; the suites green | revert of this task's merge; no element changes state (deviation 1) |
-| The runner | at least three W20 tasks carried by the runner from `start` to `done`; no write to the main checkout outside its home; nothing spent; gates only by the approver through `gate.mjs` | the timer off and the steps run by a session again; the methodology stays |
+| The runner | at least three W20 tasks after its adoption task carried by the runner from `start` to `done`; no write to the main checkout outside its home; nothing spent; gates only by the approver through `gate.mjs` | the timer off and the steps run by a session again; the methodology stays |
 
-**Tests.** Red first: the docs test that `.wingfoil/workflows.yaml` includes no workflow whose name a pack declares
-twice, and that every custom workflow's steps exist; the traceability test unchanged (characterization); a test that
-`config/runner.yaml` never allows a paid launch (`campaign-cycle`, `release`) and names no `approver` among the
-runner's roles.
+**Tests.** Red first: a docs test that `.wingfoil/workflows.yaml` includes no two workflows of one name, that every
+included file exists, and that no workflow names a state its element's machine lacks; the traceability test
+unchanged (characterization).
 
 ## Input: the engine way of working (2026-11-16)
 
