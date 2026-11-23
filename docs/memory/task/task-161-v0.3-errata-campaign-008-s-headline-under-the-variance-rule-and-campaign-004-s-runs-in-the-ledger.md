@@ -109,3 +109,11 @@ changes.
   - nit: a Codex run with a review loop would be worded the Claude way. **Fixed** with a comment (`fdc10c8f`): no Codex
     line has a loop yet; the first such line gets the Codex wording. A comment only, checked with eslint, Prettier
     and the script's tests (9 passed). The review closes here.
+- **Full suites** (`scripts/full-suites.sh`, 2026-11-23, at `4b151dc0`, worktree clean): LINT 0, TEST 1, BUILD 0,
+  BIN 0, DOCKER 0 (log `.cache/full-suites/2026-11-23/task_task-161-…-4b151dc0-084941.txt` in the main checkout).
+  The one red test, `test/unit/site/method-approver-policies.test.ts`, is not this task's: main is red since
+  `1e3b2338` (2026-11-20), which added `1f70fcaf2ec2/1` to the catalogue on approver policy v5 without naming it
+  in the method page's `#approver-classifier` paragraph; the published v0.3 method page lacks it too. The approver
+  chose in chat (2026-11-23) to fix it here, as one more erratum published with this task's site: **fixed**
+  (`397d9569`), the method page naming `1f70fcaf2ec2/1` beside `33b54dd89e8b/1` under v5. The site's tests: 210
+  passed. The task goes back to in-progress for a review round of that diff and a new run of the full suites.
