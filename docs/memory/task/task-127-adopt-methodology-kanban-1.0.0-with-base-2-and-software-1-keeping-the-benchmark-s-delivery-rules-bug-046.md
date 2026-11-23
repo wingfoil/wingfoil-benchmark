@@ -309,3 +309,9 @@ next W20 task.
   - By mutation: green on `element.set_state(approved)` in `decision-log-ingest`, `element.set_state(pending)` after
     `end-of-life`'s `memory.add`, `element.set_state(deprecated)` in `delivery`; red on `bug.set_state(resolved)`,
     `element.set_state(bogus)` in a selection step, `decision-log.set_state(bogus)`.
+- **Round 6, the final review** (a sixth independent read-only subagent, on `60f7c22e..63e433cf`, in a temporary
+  clone; the main checkout's reflog unchanged). F-049's cases, `states()` against WingFoil's `machineStates` and the
+  `set_state` check reproduced and confirmed; no blocker, no should-fix. One nit, fixed in the comments only: the
+  workflow's reach leaves out a parent's element through a plain include, where WingFoil itself warns
+  `W_PHASE_ACTION_UNTARGETED`, so the check never fails a state WingFoil accepts without a diagnostic. The review
+  closes.

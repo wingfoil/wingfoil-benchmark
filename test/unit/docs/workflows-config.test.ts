@@ -2,7 +2,8 @@
 // repository's own state machines (docs/pack-deviations.md). WingFoil 0.3.2 loads a workflow whose `where` status
 // filter, or in some `set_state` actions, names a state the type's machine lacks with no diagnostic (F-049); this test
 // catches it at commit time. Its `set_state` check guards future actions (no included workflow has one today) and
-// never fails a state some type in the workflow's reach has; it also checks every include's element.
+// never fails a state some type in the workflow's own reach has (a parent's element, through a plain include, is
+// not in it; WingFoil warns W_PHASE_ACTION_UNTARGETED there); it also checks every include's element.
 import { existsSync, readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
@@ -102,7 +103,7 @@ describe('the composed workflows fit this repository (task-127)', () => {
       // step (bound, created, selected); this check does not repeat that resolution. It accepts the state if it
       // belongs to any type the workflow can act on: its element, a type a `memory.add` in it creates, a type a step
       // selects. A typed `<type>.set_state` is checked against that type. So it never fails a state WingFoil
-      // accepts, and still fails one no machine in reach has.
+      // accepts without a diagnostic, and still fails one no machine in reach has.
       const added = workflow.phases.flatMap((phase) =>
         (phase.actions ?? [])
           .map(String)
