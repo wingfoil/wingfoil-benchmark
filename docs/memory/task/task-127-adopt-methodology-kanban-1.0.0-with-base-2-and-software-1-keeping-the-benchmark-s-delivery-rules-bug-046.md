@@ -294,3 +294,18 @@ next W20 task.
     created first), reads a `where` type given as a list, and no longer presents a bare `set_state(…)` as an action
     (it fails as unreadable). By mutation: red on `bogus` in a selection phase and on `pending` after
     `memory.add(type: release)`; green on `approved` and `planning`; red on `bug.set_state(resolved)`.
+- **Round 5** (a fifth independent read-only subagent, on `d6d6f557..60f7c22e`, in a temporary clone; the main
+  checkout's reflog unchanged). Two should-fix and two nits, about the same two places, fixed by narrowing them rather
+  than by mirroring WingFoil's resolution further:
+  - should-fix: F-049's general rule was still too broad (a typed `set_state` on an element created earlier in the
+    same step is not checked either): F-049 now lists only the reproduced cases, with no general rule, and asks for
+    every state a workflow names to be checked; `pack-deviations.md` and the test header follow.
+  - should-fix: the `set_state` check failed valid future actions (a self-creating workflow's element; a
+    `memory.add` with more arguments). An untyped `set_state` or a fallback's is now accepted if its state belongs to
+    any type in the workflow's reach (its element, the types its `memory.add`s create, the types it selects); a typed
+    one is checked against its type.
+  - nits: the machines' states read as WingFoil's `machineStates` does (reject and return targets, `deprecated`);
+    F-049's last paragraph reflowed.
+  - By mutation: green on `element.set_state(approved)` in `decision-log-ingest`, `element.set_state(pending)` after
+    `end-of-life`'s `memory.add`, `element.set_state(deprecated)` in `delivery`; red on `bug.set_state(resolved)`,
+    `element.set_state(bogus)` in a selection step, `decision-log.set_state(bogus)`.
