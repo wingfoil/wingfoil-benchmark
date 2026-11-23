@@ -2,7 +2,7 @@
 id: task-172-step-b-spike-the-external-runner-runner-1.2.0-drives-s1-in-the-run-s-container
 type: task
 title: "Step-B spike: the external runner (runner-1.2.0) drives S1 in the run's container"
-status: draft
+status: pending
 release: v0.4
 wave: W21
 features: []          # e.g. [F1.1, F3.1]
