@@ -2,7 +2,7 @@
 id: task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
 type: task
 title: "v0.4's specification: the sequencer's amendment 1.3, features F2.8 and F6.14, step B and Q-E4 in the experiment design"
-status: pending
+status: backlog
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
