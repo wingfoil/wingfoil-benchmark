@@ -2,7 +2,7 @@
 id: task-167-the-review-practice-review-agents-in-temporary-directories-the-reflog-after-each-round-figures-by-script-a-final-review-on-the-last-diff-the-full-suites-before-in-review
 type: task
 title: "The review practice: review agents in temporary directories, the reflog after each round, figures by script, a final review on the last diff, the full suites before in-review"
-status: pending
+status: backlog
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
