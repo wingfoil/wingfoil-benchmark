@@ -131,4 +131,5 @@ runner's project is never named in this repository ("an external workflow runner
   - each wave's "Ends with" recorded;
   - calibration approved; the reference campaign `published`;
   - `rel-v0.4` `released`.
-- **Completion:** `rel-v0.4` `released` with its Retrospective written; the plan then moves `active → done`.
+- **Completion:** `rel-v0.4` `released` with its Retrospective written; the plan then moves `active → done` through
+  `wingfoil workflow end` (plan waits at `active`, task-127).

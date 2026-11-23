@@ -71,10 +71,12 @@ no file moves: `decision_log_path`, `task_path`, `adr_path`, `bug_path`, `tech_s
    approval, instead of the pack's two submits, which a gated planning refuses.
 3. **`work-item` is a custom copy with `kanban`'s steps** (`start`, `build`, `review`, `approve`, `done`), carrying
    `kanban-delivery` version 6's rules: `review` is the independent review with severities and re-review (dl-020),
-   `scripts/pre-review.sh main` before every round and the full suites before in-review; `approve` stays the
-   approver's gate; `done` is the `--no-ff` merge, the bugs it fixes moved to `fixed` and the wave's "Ends with"
-   recorded. The real-agent check becomes a manual step of the copy. A task's pending → backlog gate stays outside
-   the flow, as in the pack. `kanban-delivery` is removed (the approver's choice 3), its record kept in git.
+   `scripts/pre-review.sh main` before every round; `approve` stays the approver's gate, on the full suites run at the
+   commit offered for approval (dl-016; "the full suites before in-review" written here first was corrected in review
+   round 2, since it is task-167's question, not v6's rule); `done` is the `--no-ff` merge, the bugs it fixes moved
+   to `fixed` and the wave's "Ends with" recorded. The real-agent check becomes a manual step of the copy. A task's
+   pending → backlog gate stays outside the flow, as in the pack. `kanban-delivery` is removed (the approver's
+   choice 3), its record kept in git.
 4. **The slots are filled by this repository's workflows:** `custom/inception.yaml` (from `benchmark-inception`),
    `custom/specification.yaml` (from `benchmark-specification`; `software`'s default asks for a tech-spec, which this
    repository does not write), and `custom/release.yaml` with calibration, validation and the campaign before the
@@ -262,3 +264,14 @@ next W20 task.
     `dna.yaml`, the dropped `release-submit` and `release-publishing`, the retrospective's rewritten steps and
     end-of-life's source; stale references in plan-006, the README and `memory.yaml`; a long line in `delivery.yaml`;
     rl-1's gate in the steps above.
+- **Round 2** (a second independent read-only subagent, on the fix diff `ea1cda30..8db5bd16`, in a temporary clone;
+  the main checkout's reflog unchanged). Round 1's fixes confirmed (`{version}` resolves to `v0.4`; the adopted type
+  properties valid, no element broken; `workflow list` with no diagnostic). Four should-fix and four nits, all fixed:
+  - should-fix: the `wingfoil-cli` directive's W-07 (amend), W-08 (park) and W-17 (a plan closes by `submit`) were
+    untrue once `amendable`, `returns` and plan's `waiting` were adopted, rewritten; F-049 overstated the gap
+    (0.3.2 already warns on a `set_state` action and on a fallback's `set_state`), scoped to the `where` filter, and
+    the test's header and `pack-deviations.md` say so; the Design's deviation 3 still put the full suites before
+    in-review, corrected with a note.
+  - nits: the `set_state` check reads a typed action's type (`bug.set_state(fixed)`), shown red on `resolved` and
+    green on `fixed` by mutation; the real-agent check names the release's plan; the done step's "green again once
+    every bug is fixed" restored; plan-006's completion names `workflow end`.

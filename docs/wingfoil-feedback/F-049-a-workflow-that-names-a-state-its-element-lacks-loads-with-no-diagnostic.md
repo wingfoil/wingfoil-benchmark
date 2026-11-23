@@ -21,6 +21,7 @@ reaches it.
 ## Expected
 
 A diagnostic when the configuration is read (a warning naming the workflow, the step, the state and the type's
-machine), for every state a workflow names: in a `where` status filter, a `set_state` action or a fallback's
-`set_state`. It matters most when a project composes packs and keeps some of its own Memory
-machines, where such a mismatch is easy to miss.
+machine) for a state named in a `where` status filter, as 0.3.2 already gives for a `set_state` action
+(`W_PHASE_EXIT_STATE_UNDETERMINED`, "'<state>' is not a state of <type>") and for a fallback's `set_state` that differs
+from the reject target (`W_PHASE_FALLBACK_STATE_MISMATCH`). It matters most when a project composes packs and keeps
+some of its own Memory machines, where such a mismatch is easy to miss.

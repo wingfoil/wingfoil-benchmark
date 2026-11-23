@@ -1,7 +1,8 @@
 // task-127 — the composed methodology (software 1.0.0, methodology/kanban 1.0.0, base 2.0.1) runs on this
-// repository's own state machines (docs/pack-deviations.md). WingFoil 0.3.2 loads a workflow that names a state
-// its element's machine lacks, and only stops when an instance reaches it; this test catches it at commit time, in a
-// `where` status filter, a `set_state` action and a fallback's `set_state`, and checks every include's element.
+// repository's own state machines (docs/pack-deviations.md). WingFoil 0.3.2 loads a workflow whose `where` status
+// filter names a state the type's machine lacks with no diagnostic (F-049), and the step can never select an element;
+// this test catches it at commit time. It also guards a `set_state` action, a fallback's `set_state` (both of which
+// WingFoil already warns about) and every include's element.
 import { existsSync, readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
@@ -81,17 +82,20 @@ describe('the composed workflows fit this repository (task-127)', () => {
     }
   });
 
-  it('sets only states of its own element machine', () => {
+  it('sets only states of the machine it names', () => {
     for (const { path, workflow } of workflows) {
       for (const phase of workflow.phases) {
+        // `<type>.set_state(<state>)` sets an element of that type (WingFoil's typed action); `set_state(<state>)`,
+        // `element.set_state(<state>)` and a fallback's `set_state` set the workflow's own element.
         const targets = (phase.actions ?? [])
-          .map((action) => /set_state\(\s*([\w-]+)\s*\)/.exec(String(action))?.[1])
-          .concat(phase.fallback?.set_state)
-          .filter((state): state is string => state !== undefined);
-        if (targets.length === 0) continue;
-        expect(workflow.element, `${path} ${phase.name}: set_state needs the workflow's element`).toBeDefined();
-        const known = states(workflow.element as string);
-        for (const state of targets) expect(known, `${path} ${phase.name}`).toContain(state);
+          .map((action) => /(?:([a-z][a-z0-9-]*)\.)?set_state\(\s*([\w-]+)\s*\)/.exec(String(action)))
+          .filter((match): match is RegExpExecArray => match !== null)
+          .map((match) => ({ type: match[1] === undefined || match[1] === 'element' ? workflow.element : match[1], state: match[2] }))
+          .concat(phase.fallback?.set_state === undefined ? [] : [{ type: workflow.element, state: phase.fallback.set_state }]);
+        for (const { type, state } of targets) {
+          expect(type, `${path} ${phase.name}: set_state needs an element type`).toBeDefined();
+          expect(states(type as string), `${path} ${phase.name}`).toContain(state);
+        }
       }
     }
   });

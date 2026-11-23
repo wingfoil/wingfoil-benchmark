@@ -15,7 +15,8 @@ a new composition, run the same command and compare.
 **Test.** `test/unit/docs/workflows-config.test.ts` holds the composition together: every included file exists, no
 two included workflows share a name, every `include` names a loaded sub-workflow, every fallback names a step of its
 own workflow, an included sub-workflow is iterated over its own element type, and no workflow names a state its
-element's machine lacks, in a `where` status filter, a `set_state` action or a fallback.
+element's machine lacks, in a `where` status filter (which WingFoil 0.3.2 does not report, F-049), a `set_state`
+action or a fallback.
 
 ## D1 — the Memory machines of `bug`, `decision-log` and `adr` stay this repository's
 
