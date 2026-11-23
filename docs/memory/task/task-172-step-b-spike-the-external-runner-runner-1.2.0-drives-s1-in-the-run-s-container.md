@@ -7,7 +7,7 @@ release: v0.4
 wave: W21
 features: []          # e.g. [F1.1, F3.1]
 acceptance: []        # e.g. [campaign.feature, scenarios.feature]
-requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
+requirements: [REQ-RUN-02, REQ-RUN-09, REQ-FMT-12]
 fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
 tags: ["spike","runner","step-b","dl-037","v0.4"]
 ---

@@ -7,7 +7,7 @@ release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
 acceptance: []        # e.g. [campaign.feature, scenarios.feature]
-requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
+requirements: [REQ-RUN-21]
 fixes: [bug-052-the-review-loop-s-reviewer-usage.json-and-loop.json-are-written-inline-so-their-reader-is-tested-only-against-a-fixture]
 tags: ["bug","review-loop","v0.4"]
 ---

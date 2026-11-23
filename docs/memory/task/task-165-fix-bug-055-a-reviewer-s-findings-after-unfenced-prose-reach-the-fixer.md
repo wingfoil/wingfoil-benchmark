@@ -7,7 +7,7 @@ release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
 acceptance: []        # e.g. [campaign.feature, scenarios.feature]
-requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
+requirements: [REQ-RUN-21]
 fixes: [bug-055-a-reviewer-s-findings-after-prose-unfenced-end-the-review-loop-as-failed-and-its-should-fix-never-reaches-a-fixer]
 tags: ["bug","review-loop","v0.4"]
 ---
