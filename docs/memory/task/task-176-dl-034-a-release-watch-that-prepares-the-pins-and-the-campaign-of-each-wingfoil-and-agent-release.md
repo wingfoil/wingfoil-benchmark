@@ -2,7 +2,7 @@
 id: task-176-dl-034-a-release-watch-that-prepares-the-pins-and-the-campaign-of-each-wingfoil-and-agent-release
 type: task
 title: "dl-034: a release watch that prepares the pins and the campaign of each WingFoil and agent release"
-status: pending
+status: backlog
 release: v0.4
 wave: W21
 features: []          # e.g. [F1.1, F3.1]
