@@ -2,7 +2,7 @@
 id: task-161-v0.3-errata-campaign-008-s-headline-under-the-variance-rule-and-campaign-004-s-runs-in-the-ledger
 type: task
 title: "v0.3 errata: campaign-008's headline under the variance rule, and campaign-004's runs in the ledger"
-status: backlog
+status: approved
 release: v0.3
 wave: retrospective
 features: []
@@ -60,3 +60,64 @@ changes.
 - The errata say what changed and why; they never rewrite the original sentence or the scores.
 
 ## Execution notes
+
+- **Started** on 2026-11-22: branch `task/task-161-…` in `../WingFoil2-Benchmark-wt/t161`, `memory submit task-161`
+  backlog → in-progress (`6c91d73f`); declared and observed alike.
+- **The ledger's mode.** The existing modes read only configuring records and dry runs, so `scripts/ledger-lines.mjs`
+  gained `campaign <root> --execution <id>/<n>` (Design's first branch), red first (`test(scripts)` commits before
+  each `feat(scripts)`). The dry-run and campaign lines share one function, `runRow`. Codex transcripts record no
+  timestamp, so a campaign run without one takes its execution's `started` (a second red-first test).
+- **campaign-004's lines**, generated from the main checkout (read only, where the git-ignored transcripts live) with
+  the token file passed as a path: 18 lines, all dated 2026-10-25, every secret scan clean, inserted after
+  `dry-runs/77`, the last of the dry runs it was estimated from, and before task-105's dry runs. Their sum,
+  computed from the lines: 6.1067 USD (5.4453 €), the 6.11 USD of `3799c054`. The Codex total over the ledger's
+  lines is now 74.71 USD (151 lines); rel-v0-3's spending row and the release notes say so (the release notes with
+  a dated erratum, the original row kept).
+- **campaign-008's erratum**, dated 2026-11-22, in its element's Publication (under the original headline, a hand
+  edit, W-07), in the catalogue's notes of `33b54dd89e8b/1` and in `docs/releases/v0.3.md` after the campaigns' table.
+  The new counts are those of the page the site build prints today. Prettier also requoted one existing note of
+  `1f70fcaf2ec2/1` in `site-content/catalog.yaml` (the file was not formatted on main).
+- **The site**, built in this worktree (`bench site build 33b54dd89e8b/1`, then `1f70fcaf2ec2/1` so that the root
+  leads to the reference): the erratum shows on `site/33b54dd89e8b/1/index.html`. Publishing it (`gh-pages`) and
+  editing the GitHub release `v0.3` wait for the approver's consent in chat, after the merge.
+- `scripts/pre-review.sh main`: green (eslint, tsc, 44 tests in 3 files).
+
+### Review
+
+- **Round 1** (an independent read-only subagent, in a temporary clone; the main checkout's reflog unchanged): no
+  blocker, 2 should-fix, 4 nits. It checked the dry-run lines byte-identical before and after `runRow` (109 lines),
+  the 18 lines against the runs, the sums (6.1067, 68.60 → 74.71 USD) and the new counts on a site it built.
+  - should-fix: `--execution` naming no stored execution printed nothing and exited 0. **Fixed:** refused (exit 2)
+    unless `<id>/<n>` and `results/<id>/<n>/runs` exist; red test first.
+  - should-fix: the 18 lines were worded unlike the ledger's other Codex lines, dropping `price-table` and dl-024.
+    **Fixed:** `modelCell` and `costCell` word a Codex run as those lines do (`model_reasoning_effort`, Codex
+    CLI, `price-table`, 0 € spent: ChatGPT Plus (dl-024)); the lines regenerated, never edited. The dry-runs mode
+    changes only for Codex runs: over the main checkout, 41 of 154 lines at 1.0, all Codex; 0 of 109 at 1.1.
+  - nit: a date from the execution's start was not said. **Fixed:** "dated by the execution's start" in the kind
+    cell.
+  - nit: the catalogue's erratum lacked task-129 and REQ-RES-03. **Fixed.**
+  - nit: the retrospective still said campaign-004's runs are missing. **Fixed:** "were missing … (added by
+    task-161)".
+  - nit: Prettier requoted an unrelated catalogue note. Kept: formatting only, and the file is now Prettier-clean.
+  - Not changed: "0 interventions" against the older lines' "no intervention", and no "(main checkout)": the
+    generator's wording, as in campaign-009's lines. After the fixes the lines sum to 6.1067 USD and the Codex total
+    is 74.71 USD over 151 lines. Fix commits up to `952f5460`.
+- **Round 2** (an independent read-only subagent, in a temporary clone, on round 1's fix diff `74238df7..5a57bc05`;
+  the main checkout's reflog unchanged): clean, one nit. It checked both should-fix fixes and their tests, the Claude
+  branches byte-identical, the 18 regenerated lines against the runs (6.1067 USD) and the Codex total (74.71 USD, 151
+  lines); it could not reproduce the "41 of 154 / 0 of 109" comparison under its brief.
+  - nit: a Codex run with a review loop would be worded the Claude way. **Fixed** with a comment (`fdc10c8f`): no Codex
+    line has a loop yet; the first such line gets the Codex wording. A comment only, checked with eslint, Prettier
+    and the script's tests (9 passed). The review closes here.
+- **Full suites** (`scripts/full-suites.sh`, 2026-11-23, at `4b151dc0`, worktree clean): LINT 0, TEST 1, BUILD 0,
+  BIN 0, DOCKER 0 (log `.cache/full-suites/2026-11-23/task_task-161-…-4b151dc0-084941.txt` in the main checkout).
+  The one red test, `test/unit/site/method-approver-policies.test.ts`, is not this task's: main is red since
+  `1e3b2338` (2026-11-20), which added `1f70fcaf2ec2/1` to the catalogue on approver policy v5 without naming it
+  in the method page's `#approver-classifier` paragraph; the published v0.3 method page lacks it too. The approver
+  chose in chat (2026-11-23) to fix it here, as one more erratum published with this task's site: **fixed**
+  (`397d9569`), the method page naming `1f70fcaf2ec2/1` beside `33b54dd89e8b/1` under v5. The site's tests: 210
+  passed. The task goes back to in-progress for a review round of that diff and a new run of the full suites.
+- **Round 3** (an independent read-only subagent, in a temporary clone, on `4b151dc0..f28362b1`; the main checkout's
+  reflog unchanged): clean. It checked every catalogued execution's policy against its `results/<id>/<n>/campaign.yaml`
+  (v1: four, v2: two, v5: `33b54dd89e8b/1` and `1f70fcaf2ec2/1`), that no other page lists them wrongly, the notes
+  entry, and the site's tests (210 passed). The review closes here; the full suites run again at the commit offered.

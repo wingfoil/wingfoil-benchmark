@@ -133,8 +133,9 @@ available and each campaign pins one, shown among its execution's pins in [This 
 versions after v2 are described below. The published executions ran v1 for v0.1 and v0.2 and the Codex baseline
 (`c82a5e74885b/2`, `81ebb2691f9c/1`, `bf3a1ac7dff5/1`, `4682bcc65d6b/1`); v2 for Codex's two executions of WingFoil
 against its docs control, with v0.2's manual and at step A (`13fda3099afa/1`, `697e79b75e41/1`); v5 for the Claude Code
-execution of the step-A arms (`33b54dd89e8b/1`). A Codex execution of the wingfoil arm on v1, which missed most of its
-approval requests, was not published. Two executions on different versions are not compared across agents.
+executions of the step-A arms and of v0.3's reference (`33b54dd89e8b/1`, `1f70fcaf2ec2/1`). A Codex execution of the
+wingfoil arm on v1, which missed most of its approval requests, was not published. Two executions on different versions
+are not compared across agents.
 {#approver-classifier}
 
 Version v3, from v0.3's W17, adds **scripted verdicts** for a scenario that declares them, S10 so far: at a step whose
