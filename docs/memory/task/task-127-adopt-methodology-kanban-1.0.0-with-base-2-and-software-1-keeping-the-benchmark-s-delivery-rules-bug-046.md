@@ -284,3 +284,13 @@ next W20 task.
   - nits: the `set_state` check reads a quoted state, takes the selection's type in a `where` phase, fails on a
     `set_state` it cannot read, and says it guards future actions (red on `"resolved"` and on two arguments, green on
     `"fixed"`, by mutation); `work-item`'s real-agent-check reflowed.
+- **Round 4** (a fourth independent read-only subagent, on `243fa012..d6d6f557`, in a temporary clone; the main
+  checkout's reflog unchanged). Round 3's fixes confirmed. One should-fix and three nits, all fixed:
+  - should-fix: a third unchecked case, `element.set_state(<state>)` in a `where` phase that iterates nothing
+    (reproduced on `end-of-life`'s `approve`: empty `diagnostics`), and a fallback's `set_state` compared only with
+    the held gate's reject target: F-049 now states that 0.3.2 checks a `set_state`'s state only for an element the
+    step binds or created, and `pack-deviations.md` and the test header say the same.
+  - nits: the check resolves an untyped `set_state` as WingFoil does (the element a `memory.add` earlier in the phase
+    created first), reads a `where` type given as a list, and no longer presents a bare `set_state(…)` as an action
+    (it fails as unreadable). By mutation: red on `bogus` in a selection phase and on `pending` after
+    `memory.add(type: release)`; green on `approved` and `planning`; red on `bug.set_state(resolved)`.
