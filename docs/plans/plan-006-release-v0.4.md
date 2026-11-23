@@ -2,7 +2,7 @@
 id: plan-006-release-v0.4
 type: plan
 title: "Release v0.4"
-status: draft
+status: active
 workflow: release-cycle
 phase: release-cycle
 tags: ["release","v0.4"]
