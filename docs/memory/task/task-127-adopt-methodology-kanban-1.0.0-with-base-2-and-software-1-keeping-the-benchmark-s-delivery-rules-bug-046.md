@@ -160,3 +160,74 @@ answer about adopting WingFoil 0.3.x's workflow engine; confirmed by the approve
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
+
+**The composition** (wingfoil-templates at `549d787d`, in a scratchpad clone, after `npm ci && npm run build`):
+
+```sh
+npm run -s compose -- --tree . --out "$S/composed" \
+  --param project_name="WingFoil Benchmark" --param approver_name="Roberto Pompermaier" \
+  --param approver_email="robypomper@gmail.com" --param agent_name="Claude Code" \
+  --param decision_log_path='docs/memory/decision-log/{id}.md' --param task_path='docs/memory/task/{id}.md' \
+  --param plan_path='docs/plans/{id}.md' --param plan_id='plan-{n}-{slug}' \
+  --param retrospective_path='docs/retrospective-inputs/' --param adr_path='docs/memory/adr/{id}.md' \
+  --param bug_path='docs/memory/bug/{id}.md' --param tech_spec_path='docs/memory/tech-spec/{id}.md' \
+  --param release_path='docs/memory/release/{id}.md' --param release_id='rel-{slug}' \
+  --param release_line_path='docs/memory/release-line/{id}.md' --param release_line_id='rl-{n}' \
+  --param inception_path='docs/01_vision/01_product-brief.md' --param wip_in_progress=1 --param wip_in_review=1 \
+  software@1.0.0 methodology/kanban@1.0.0 base@2.0.1
+```
+
+Its output, 36 files, digest `fa7d1cfd8b86a6aa9e4bee41af878067fffce03cf6ba8ae7881496c03730b781`, from
+`find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum` in the output directory. The six files under
+`.wingfoil/workflows/built-in/` and the seven pack directives under `.wingfoil/directives/built-in/` are byte-identical
+to it (`cmp`); every other difference is a deviation in [docs/pack-deviations.md](../../pack-deviations.md) (D1–D7).
+
+**The key mapping** (no element's state renamed, D1):
+
+| Old | New |
+|---|---|
+| `kanban-delivery` (v6) `plan` | outside the flow: the task's pending → backlog gate |
+| `kanban-delivery` `design` | `work-item.start` |
+| `kanban-delivery` `build`, `review` | `work-item.build`, `work-item.review` |
+| `kanban-delivery`'s approval | `work-item.approve` |
+| `kanban-delivery` `deliver` | `work-item.done` |
+| `kanban-delivery` `real-agent-check` | `work-item.real-agent-check` (manual) |
+| `release-cycle` `release-planning` | `delivery.plan-release` |
+| `release-cycle` `delivery` | `release-flow.work` (each task through `work-item`) |
+| `release-cycle` `calibration`, `validation`, `campaign`, `publishing` | `release-flow.release` → the `release` slot's steps |
+| `release-cycle` `retrospective` | `release-flow.retrospective` → `retrospective` |
+| `sw-life-cycle` `release-cycle`, `sunset` | `sw-life-cycle` `delivery`, `end-of-life` |
+| plan-006: `workflow: release-cycle` | `workflow: sw-life-cycle`, `phase: delivery` |
+
+**`wingfoil` commands, declared vs observed** (WingFoil 0.3.2; the configuration read at HEAD, so every check
+followed a commit):
+
+- `workflow list`, on the first trial copy with the packs' own machines: declared, the workflows listed; observed,
+  exit 0 with 94 `W_MEMORY_INVALID_STATE` warnings (fixed and approved bugs, approved decision-logs and adrs, in
+  states the packs' machines lack). That led to D1. On this branch: 11 workflows, no warning.
+- `workflow list` with both the packs' and the custom `sw-life-cycle`, `bug-ingest`, `decision-log-ingest` and
+  `adr-ingest`: `E_WORKFLOW_DUPLICATE_NAME`, as wingfoil-templates' bug-007 states; hence D7.
+- `workflow status`, with plan-006 still naming `release-cycle`: `W_INSTANCE_WORKFLOW_UNKNOWN`; re-pointed to
+  `sw-life-cycle` (`6abeaf2e`).
+- `workflow adopt plan-006-release-v0.4 --step delivery.plan-release --element release:rel-v0.4 --reason …`: declared,
+  rel-v0.4, added before this task, counted as the release the step creates; observed, an empty commit with the
+  `WingFoil-Instance`, `WingFoil-Step` and `WingFoil-Adopted` trailers (`f83958f6`). The step still waited, with
+  `W_PHASE_EXIT_STATE_UNDETERMINED`: the pack's two submits cannot leave a gated planning. The custom `delivery`
+  (D2, `4f8038b2`) closed it.
+- `workflow next` and `workflow status`, at `68a45970`: plan-006 on `sw-life-cycle`, phases inception and
+  specification complete, delivery current; the frontier `work-item.build@task-127` and a `work-item.start` for each
+  of the 16 other v0.4 tasks in backlog, task-177 included. The frontier lists the starts while the in-progress limit
+  is full: in the trial copy, a second `memory submit` from backlog was refused at the limit, as the pack declares.
+  The frontier itself does not apply the limit; noted for the pilot.
+
+**Test, red first.** `test/unit/docs/workflows-config.test.ts` (`f3cf879c`): with the composer's `end-of-life.yaml`
+copied over the custom one, `names only states of the element machine it selects` failed on `in-discussion`; green
+with the custom copy. The docs and traceability tests unchanged and green.
+
+**Slip, recorded.** task-162 to task-177 were submitted with `requirements: []`, and `required-lists.test.ts` went red
+on main: the docs tests had run while the tasks were still drafts. Fixed on main in `a20c993d`, pushed with the
+approver's consent. The lesson, for the review practice (task-167): rerun the docs tests after every Memory verb that
+moves an element out of draft.
+
+**After the merge** (on main, Memory verbs): `memory add --type release-line` for `rl-1` (v0.4's line), then
+`release-line: rl-1` on `rel-v0.4`; the pilot starts with the next W20 task.
