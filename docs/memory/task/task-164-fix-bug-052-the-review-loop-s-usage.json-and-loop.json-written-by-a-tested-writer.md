@@ -2,7 +2,7 @@
 id: task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer
 type: task
 title: "Fix bug-052: the review loop's usage.json and loop.json written by a tested writer"
-status: pending
+status: backlog
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
