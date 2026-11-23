@@ -3,6 +3,7 @@ id: bug-046-the-repository-s-process-runs-init-s-kanban-scaffold-and-a-hand-writ
 type: bug
 title: "The repository's process runs init's Kanban scaffold and a hand-written delivery loop, not the published methodology/kanban 1.0.0"
 status: approved
+fixed_by: task-127-adopt-methodology-kanban-1.0.0-with-base-2-and-software-1-keeping-the-benchmark-s-delivery-rules-bug-046
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 tags: ["process","wingfoil","v0.4"]
 ---
@@ -30,3 +31,12 @@ by WingFoil"; no published methodology version is recorded.
 
 Adopt `methodology/kanban` 1.0.0 with `base` and `software` by its README's "Install and update" (eight hand steps),
 keeping `kanban-delivery`'s rules as the project's own, with `wip_in_progress: 1` and `wip_in_review: 1`.
+
+## Resolution
+
+Fixed by [task-127](../task/task-127-adopt-methodology-kanban-1.0.0-with-base-2-and-software-1-keeping-the-benchmark-s-delivery-rules-bug-046.md) (merged in `8bba48b3`). `.wingfoil/` is composed from `base` 2.0.1, `software`
+1.0.0 and `methodology/kanban` 1.0.0 by wingfoil-templates' reference composer, on WingFoil 0.3.2; the
+hand-written `kanban-delivery` is retired, and its rules live in the custom `work-item`, with WIP limits of 1 in
+progress and 1 in review enforced by `memory submit`. Every difference from the packs is in
+`docs/pack-deviations.md` (D1–D7), held together by `test/unit/docs/workflows-config.test.ts`. Verified by the full
+suites at `bcea782c` and `workflow list` with no diagnostics on main.
