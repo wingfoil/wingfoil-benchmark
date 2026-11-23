@@ -3,8 +3,8 @@ id: plan-006-release-v0.4
 type: plan
 title: "Release v0.4"
 status: active
-workflow: release-cycle
-phase: release-cycle
+workflow: sw-life-cycle
+phase: delivery
 tags: ["release","v0.4"]
 ---
 
