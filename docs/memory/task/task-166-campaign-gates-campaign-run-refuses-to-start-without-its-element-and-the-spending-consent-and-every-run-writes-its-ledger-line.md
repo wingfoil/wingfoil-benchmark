@@ -2,7 +2,7 @@
 id: task-166-campaign-gates-campaign-run-refuses-to-start-without-its-element-and-the-spending-consent-and-every-run-writes-its-ledger-line
 type: task
 title: "Campaign gates: campaign run refuses to start without its element and the spending consent, and every run writes its ledger line"
-status: draft
+status: pending
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
