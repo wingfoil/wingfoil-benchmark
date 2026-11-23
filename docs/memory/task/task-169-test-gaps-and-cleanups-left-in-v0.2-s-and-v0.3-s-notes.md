@@ -2,7 +2,7 @@
 id: task-169-test-gaps-and-cleanups-left-in-v0.2-s-and-v0.3-s-notes
 type: task
 title: "Test gaps and cleanups left in v0.2's and v0.3's notes"
-status: draft
+status: pending
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
