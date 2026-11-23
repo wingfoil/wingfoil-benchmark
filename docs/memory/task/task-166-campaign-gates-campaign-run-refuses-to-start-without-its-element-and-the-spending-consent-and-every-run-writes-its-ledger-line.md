@@ -7,7 +7,7 @@ release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
 acceptance: []        # e.g. [campaign.feature, scenarios.feature]
-requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
+requirements: [REQ-CLI-03, REQ-NFR-06]
 fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
 tags: ["campaign","gates","ledger","v0.4"]
 ---
