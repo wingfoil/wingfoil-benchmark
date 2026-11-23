@@ -152,3 +152,35 @@ logs, transcripts or results, beyond dl-024's bounded exception; one worktree pe
   - calibration approved; the reference campaign `published`;
   - `rel-v0-3` `released`.
 - **Completion:** `rel-v0-3` `released` with its Retrospective written; the plan then moves `active → done`.
+
+## Completion
+
+Closed on 2026-11-23, at the approver's request.
+
+- `rel-v0-3` is `released` (`39571f45`), and its Retrospective section is written (`e1d2499f`), with the approver's
+  decisions of 2026-11-22.
+- **Every checkpoint is reached:**
+  - `in-development` at the end of step 1 (`8fbe398a`);
+  - the Codex campaigns run before 2026-11-13: campaign-004, campaign-006 and campaign-007 published (`d2975efe`),
+    campaign-005 deprecated (bug-035);
+  - W15–W19's "Ends with" recorded in rel-v0-3 (`322b18e4`, `c4dd275d`, `40337b5a`, `40c48f5f`, `02b8aae1`);
+  - calibration approved with task-154 (`4bdf2aed`), the revised budget included; validation with task-159;
+  - the reference campaign, campaign-009 (`1f70fcaf2ec2/1`), `published` (`5bb1e07f`);
+  - `rel-v0-3` `released`, tag `v0.3`.
+- **The retrospective's immediate actions are done:** task-161 (the v0.3 errata: campaign-008's headline, campaign-004's
+  ledger lines, the method page's policy list) done and published (`5ccf0450`, `gh-pages` `8c79b411`).
+
+**What differed from the plan** is recorded in rel-v0-3 (Release checklist and Retrospective) and in the campaigns:
+
+- step A was brought ahead into W15 (dl-027) and measured under both agents; four Codex campaigns ran on ChatGPT Plus
+  before its end, nothing billed;
+- campaign-008 (step A on Claude Code, Haiku 5.5 and Sonnet 5.5) was added to W17 (dl-031);
+- the review loop (W19) ran in every arm of the reference campaign;
+- the repetition campaigns of dl-023 did not run: the evidence stays preliminary;
+- the test-gap and cleanup tasks (Delivery order 6) were not filed.
+
+**Carried to v0.4's planning** (rel-v0-3 Retrospective, "Actions recorded"): bug-052, bug-053 and bug-055 and the
+campaign-gate and review-practice tasks in the first wave; dl-037's F (with the machine preflight), G and the
+`wingfoil-runner` arm's spike before the next campaign; dl-023's repetitions decided before it; task-127 with the
+runner as governance and one pilot; the triage of the follow-ups in notes, dl-033 to dl-036 and the WingFoil
+maintainer's points of 2026-10-24; F-040 to F-047 filed in WingFoil by the approver (dl-009).

@@ -121,3 +121,7 @@ changes.
   reflog unchanged): clean. It checked every catalogued execution's policy against its `results/<id>/<n>/campaign.yaml`
   (v1: four, v2: two, v5: `33b54dd89e8b/1` and `1f70fcaf2ec2/1`), that no other page lists them wrongly, the notes
   entry, and the site's tests (210 passed). The review closes here; the full suites run again at the commit offered.
+- **Published by the approver** on 2026-11-23, after the merge (`9def08d3`) and done (`5ccf0450`), with consent in chat:
+  main pushed at `5ccf0450`; the site published (`gh-pages` `8c79b411`, the eight executions, `1f70fcaf2ec2/1` last,
+  the erratum on `33b54dd89e8b/1`'s page and the v5 list on the method page); the GitHub release `v0.3`'s notes
+  edited from `docs/releases/v0.3.md`, both errata in it (checked against the file: equal but for a final newline).
