@@ -3,27 +3,34 @@ id: task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a
 type: task
 title: "Fix bug-052: the review loop's usage.json and loop.json written by a tested writer"
 status: draft
-release: ""           # e.g. v0.1
-wave: ""              # e.g. W1
+release: v0.4
+wave: W20
 features: []          # e.g. [F1.1, F3.1]
 acceptance: []        # e.g. [campaign.feature, scenarios.feature]
 requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
-fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
+fixes: [bug-052-the-review-loop-s-reviewer-usage.json-and-loop.json-are-written-inline-so-their-reader-is-tested-only-against-a-fixture]
 tags: ["bug","review-loop","v0.4"]
 ---
 
 ## Context
 
-<!-- Why this task, which wave it belongs to, and what "done" means for the wave's "Ends with". -->
+[bug-052](../bug/bug-052-the-review-loop-s-reviewer-usage.json-and-loop.json-are-written-inline-so-their-reader-is-tested-only-against-a-fixture.md): the review loop's reviewer `usage.json` and `loop.json` are written inline,
+so their reader is tested only against a fixture. Placed in W20 by the approver's decision of 2026-11-22 ([rel-v0-3](../release/rel-v0-3.md)).
+
+**Done** means: one writer produces both files, and the reader's tests read what that writer writes.
 
 ## Acceptance criteria
 
-<!-- One line per criterion (Gherkin scenario or requirement), each classified as red-first
-     (new behaviour: a failing test precedes the code) or characterization (existing behaviour). -->
+1. Red first: a test round-trips a loop through the writer and the reader, and fails today because no writer
+   module exists.
+2. The inline writes are replaced by that writer; the files' format is unchanged (characterization against a recorded
+   v0.3 loop).
+3. Checks: `scripts/pre-review.sh main`, the docs and traceability tests, the full suites on the approver's go; an
+   independent review (dl-020).
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+<!-- To be written when the task starts. -->
 
 ## Execution notes
 

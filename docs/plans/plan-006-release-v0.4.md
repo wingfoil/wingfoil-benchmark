@@ -27,7 +27,7 @@ iteration, on [rel-v0.4](../memory/release/rel-v0.4.md).
 | Wave | Features | High unc. | Ends with |
 |---|---|---|---|
 | W20 — Foundations | task-127 (methodology `kanban` 1.0.0, the runner as governance, one pilot); bug-053, bug-052, bug-055; campaign gates; the review practice; dl-037 F (quota wait, notices, machine preflight); v0.4's specification | the runner as governance | the pilot's exit criteria read; the suites green on the new methodology |
-| W21 — Step B | F2.8 the wingfoil arm's step B on the external runner (dl-037 B, dl-021 amended); dl-037 G (the arms' pin); dl-023's repetition preset; dl-033 (to be confirmed) | the step-B spike | an S1 dry run driven by the runner in its container, measured like every arm |
+| W21 — Step B | F2.8 the wingfoil arm's step B on the external runner (dl-037 B, dl-021 amended); dl-037 G (the arms' pin); dl-023's repetition preset; dl-033; dl-034 (the release watch) | the step-B spike | an S1 dry run driven by the runner in its container, measured like every arm |
 | W22 — Knowledge and legacy | F6.4 S4 fictional domain · F6.7 S7 legacy refactoring | — | F and D covered with two more scenarios |
 | W23 — Specification | F6.5 S5 spec authoring · F4.6 blind rubric judge | F6.5 | category A covered |
 | W24 — Planning | F6.6 S6 plan-then-execute | F6.6 | category B covered |
@@ -60,14 +60,14 @@ specification task.
 - **Repetitions:** the reference campaign reads every group at n = 3, through dl-023's repetition campaigns of the same
   key or a preset that runs them, decided in W21 before the campaign's estimate.
 
-**The triage**, proposed for the approver's ruling at this plan's gate:
+**The triage**, accepted by the approver in chat (2026-11-23):
 
 | # | Element or item | Proposal |
 |---|---|---|
 | 1 | bug-046 | task-127 (W20, first) |
 | 2 | bug-052, bug-053, bug-055 | one task each in W20; bug-053 first, since the pre-review selection gates every later review |
-| 3 | dl-033 (costs by component) | W21, to read the campaign's costs; **to be confirmed by the approver** |
-| 4 | dl-034 (a release watch) | **open: the approver's ruling** (v0.4, after W21, or v1.0) |
+| 3 | dl-033 (costs by component) | W21, to read the campaign's costs (the approver, 2026-11-23) |
+| 4 | dl-034 (a release watch) | W21, after G (the approver, 2026-11-23) |
 | 5 | dl-035 (mirrors, provider arms) | v1.0 (the approver, 2026-11-23) |
 | 6 | dl-036 (role isolation) | W25: its specification, the Spec Kit and OpenSpec spike and the runner's changes, each its own task (the approver, 2026-11-23) |
 | 7 | S10's H5 (plan-005, Delivery order 7) | W25: a later S10 version with a step that tempts the agent to approve on its own |
@@ -105,7 +105,7 @@ runner's project is never named in this repository ("an external workflow runner
    the `wingfoil-sync`. The pilot's exit criteria are read when W20's last task is done.
 2. W21: dl-037 G (the arms' pin, re-run when the campaign is prepared) → the step-B spike on `runner-1.2.0` (one dry
    run at most, with the approver's spending consent) → the `wingfoil-runner` arm, its hypothesis first → dl-023's
-   repetition preset → dl-033 if confirmed.
+   repetition preset → dl-033 → dl-034.
 3. W22 → W24: each wave's specification first (its scenario, its requirements and acceptance), then the scenario; S5
    and S6 start with a spike (high uncertainty).
 4. W25: dl-036's specification, the Spec Kit and OpenSpec spike, the runner's changes (a role and a snapshot per

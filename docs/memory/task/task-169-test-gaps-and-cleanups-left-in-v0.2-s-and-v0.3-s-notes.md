@@ -3,8 +3,8 @@ id: task-169-test-gaps-and-cleanups-left-in-v0.2-s-and-v0.3-s-notes
 type: task
 title: "Test gaps and cleanups left in v0.2's and v0.3's notes"
 status: draft
-release: ""           # e.g. v0.1
-wave: ""              # e.g. W1
+release: v0.4
+wave: W20
 features: []          # e.g. [F1.1, F3.1]
 acceptance: []        # e.g. [campaign.feature, scenarios.feature]
 requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
@@ -14,16 +14,28 @@ tags: ["tests","cleanup","v0.4"]
 
 ## Context
 
-<!-- Why this task, which wave it belongs to, and what "done" means for the wave's "Ends with". -->
+[plan-006](../../plans/plan-006-release-v0.4.md), triage row 9, and [rel-v0-3](../release/rel-v0-3.md)'s Retrospective ("What to change" 8): about
+fourteen follow-ups were left in task notes, and plan-005's test-gap and cleanup tasks were never filed. The ones
+that belong elsewhere are placed by the triage (classifier v2's gaps and the `ambiguous` hook answer with W25; the
+Resource's size under Codex dropped as a stated limit; `memory amend`/`park` as a feedback note).
+
+**Done** means: every follow-up of the list below is fixed, or closed with its reason in this task's notes.
 
 ## Acceptance criteria
 
-<!-- One line per criterion (Gherkin scenario or requirement), each classified as red-first
-     (new behaviour: a failing test precedes the code) or characterization (existing behaviour). -->
+1. The list: the follow-ups left in v0.3's task notes, collected by script (its command quoted) and checked by
+   hand, each with its source task.
+2. `.prettierignore`'s `results/` (no leading slash) hides `src/results/` from Prettier: anchored, and the files it
+   hid formatted.
+3. The review loop's hold-out branch (task-150): a test for the case REQ-RES-02 excludes.
+4. `docs/evaluate.md` after publication (task-155): its figures checked against the published v0.3 site.
+5. Each other item fixed with a test (red first for behaviour) or closed with its reason.
+6. Checks: `scripts/pre-review.sh main`, the docs and traceability tests, the full suites on the approver's go; an
+   independent review (dl-020).
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+<!-- To be written when the task starts. -->
 
 ## Execution notes
 

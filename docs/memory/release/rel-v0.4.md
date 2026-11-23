@@ -28,7 +28,7 @@ W22–W24, and v1.0's waves become W26–W28.
 | Wave | Features | High unc. | Ends with | Verified |
 |---|---|---|---|---|
 | W20 — Foundations | the governance adoption (task-127, bug-046); the retrospective's fixes; the quota wait (dl-037 F) | the runner as governance | the pilot's exit criteria read; the suites green on the new methodology | |
-| W21 — Step B | F2.8 the wingfoil arm's step B (dl-037, dl-021); the arms' pin (dl-037 G); repetitions (dl-023); costs by component (dl-033, to be confirmed) | the step-B spike | an S1 dry run driven by the runner in its container, measured like every arm | |
+| W21 — Step B | F2.8 the wingfoil arm's step B (dl-037, dl-021); the arms' pin (dl-037 G); repetitions (dl-023); costs by component (dl-033); the release watch (dl-034) | the step-B spike | an S1 dry run driven by the runner in its container, measured like every arm | |
 | W22 — Knowledge and legacy | F6.4 S4 · F6.7 S7 | — | F and D covered with two more scenarios | |
 | W23 — Specification | F6.5 S5 · F4.6 blind rubric judge | F6.5 | category A covered | |
 | W24 — Planning | F6.6 S6 | F6.6 | category B covered | |
