@@ -2,7 +2,7 @@
 id: task-170-sync-the-wingfoil-feedback-inbox-after-the-approver-files-f-040-to-f-047
 type: task
 title: "Sync the WingFoil feedback inbox after the approver files F-040 to F-047"
-status: draft
+status: pending
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
