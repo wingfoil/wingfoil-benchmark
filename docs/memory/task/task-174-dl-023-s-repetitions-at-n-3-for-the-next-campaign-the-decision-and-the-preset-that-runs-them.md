@@ -2,7 +2,7 @@
 id: task-174-dl-023-s-repetitions-at-n-3-for-the-next-campaign-the-decision-and-the-preset-that-runs-them
 type: task
 title: "dl-023's repetitions at n = 3 for the next campaign: the decision and the preset that runs them"
-status: pending
+status: backlog
 release: v0.4
 wave: W21
 features: []          # e.g. [F1.1, F3.1]
