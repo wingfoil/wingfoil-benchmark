@@ -2,7 +2,7 @@
 id: task-168-dl-037-f-campaigns-wait-out-the-quota-send-notices-and-check-the-machine-before-they-start
 type: task
 title: "dl-037 F: campaigns wait out the quota, send notices and check the machine before they start"
-status: pending
+status: backlog
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
