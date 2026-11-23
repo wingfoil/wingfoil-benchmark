@@ -2,7 +2,7 @@
 id: task-161-v0.3-errata-campaign-008-s-headline-under-the-variance-rule-and-campaign-004-s-runs-in-the-ledger
 type: task
 title: "v0.3 errata: campaign-008's headline under the variance rule, and campaign-004's runs in the ledger"
-status: in-progress
+status: in-review
 release: v0.3
 wave: retrospective
 features: []
@@ -10,7 +10,6 @@ acceptance: []
 requirements: [REQ-RES-03]
 fixes: []
 tags: ["errata","v0.3","retrospective"]
-rejection_reason: "Full suites at 4b151dc0 red on test/unit/site/method-approver-policies.test.ts: main's method page omits 1f70fcaf2ec2/1 under approver policy v5 (red on main since 1e3b2338); fixed in this task as one more erratum, back to in-progress for its review round and a new full-suites run"
 ---
 
 ## Context
