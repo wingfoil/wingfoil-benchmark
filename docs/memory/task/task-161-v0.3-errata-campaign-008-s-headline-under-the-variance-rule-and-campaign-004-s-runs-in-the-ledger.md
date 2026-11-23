@@ -118,3 +118,7 @@ changes.
   chose in chat (2026-11-23) to fix it here, as one more erratum published with this task's site: **fixed**
   (`397d9569`), the method page naming `1f70fcaf2ec2/1` beside `33b54dd89e8b/1` under v5. The site's tests: 210
   passed. The task goes back to in-progress for a review round of that diff and a new run of the full suites.
+- **Round 3** (an independent read-only subagent, in a temporary clone, on `4b151dc0..f28362b1`; the main checkout's
+  reflog unchanged): clean. It checked every catalogued execution's policy against its `results/<id>/<n>/campaign.yaml`
+  (v1: four, v2: two, v5: `33b54dd89e8b/1` and `1f70fcaf2ec2/1`), that no other page lists them wrongly, the notes
+  entry, and the site's tests (210 passed). The review closes here; the full suites run again at the commit offered.
