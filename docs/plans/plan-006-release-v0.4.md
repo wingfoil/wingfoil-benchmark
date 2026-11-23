@@ -11,8 +11,9 @@ tags: ["release","v0.4"]
 ## Context
 
 Release v0.3 is `released` (2026-11-21, tag `v0.3`) and plan-005 is `done` (2026-11-23); its retrospective's
-immediate action is done (task-161, published). The `release-cycle` phase of `sw-life-cycle` runs its fourth
-iteration, on [rel-v0.4](../memory/release/rel-v0.4.md).
+immediate action is done (task-161, published). The fourth release, [rel-v0.4](../memory/release/rel-v0.4.md), runs
+through `release-cycle` until task-127, then through `sw-life-cycle`'s `delivery` (the steps below map to it as
+task-127's key mapping says).
 
 **Scope, the approver's choices in chat (2026-11-23):**
 

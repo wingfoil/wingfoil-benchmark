@@ -220,14 +220,45 @@ followed a commit):
   is full: in the trial copy, a second `memory submit` from backlog was refused at the limit, as the pack declares.
   The frontier itself does not apply the limit; noted for the pilot.
 
-**Test, red first.** `test/unit/docs/workflows-config.test.ts` (`f3cf879c`): with the composer's `end-of-life.yaml`
-copied over the custom one, `names only states of the element machine it selects` failed on `in-discussion`; green
-with the custom copy. The docs and traceability tests unchanged and green.
+**Test, red first.** `test/unit/docs/workflows-config.test.ts` (`f3cf879c`) was written after the composition's
+commit (`61a27b6a`), so its red was shown by mutation: with the composer's `end-of-life.yaml` copied over the custom
+one, `names only states of the element machine it selects` failed on `in-discussion`; green with the custom copy. The
+two checks added in review round 1 (`set_state`, an include's element) failed on a fallback set to `rework` and on
+`release-flow`'s `work` iterated over `bug`, then passed once both were restored. The docs and traceability tests
+unchanged and green.
+
+**Acceptance criterion 1** still lists `kanban-delivery` "kept beside `work-item`": the approver's choice 3
+(2026-11-23) removed it instead, its rules carried into `work-item` (D3). Criterion 4: the adopted versions are recorded
+in [rel-v0.4](../release/rel-v0.4.md)'s Scope. Criterion 5: the frictions are
+[F-048](../../wingfoil-feedback/F-048-the-frontier-lists-starts-the-wip-limit-refuses.md) (the frontier lists starts
+the WIP limit refuses) and
+[F-049](../../wingfoil-feedback/F-049-a-workflow-that-names-a-state-its-element-lacks-loads-with-no-diagnostic.md) (a
+state the element lacks loads with no diagnostic), both reproduced in a throwaway clone; the pack's two submits from a
+gated planning are this repository's deviation (D2), not a WingFoil defect.
 
 **Slip, recorded.** task-162 to task-177 were submitted with `requirements: []`, and `required-lists.test.ts` went red
 on main: the docs tests had run while the tasks were still drafts. Fixed on main in `a20c993d`, pushed with the
 approver's consent. The lesson, for the review practice (task-167): rerun the docs tests after every Memory verb that
 moves an element out of draft.
 
-**After the merge** (on main, Memory verbs): `memory add --type release-line` for `rl-1` (v0.4's line), then
-`release-line: rl-1` on `rel-v0.4`; the pilot starts with the next W20 task.
+**After the merge** (on main, Memory verbs): `memory add --type release-line` for `rl-1` (v0.4's line, `version`
+filled), `memory submit` to planning and the approver's `memory approve` to active; then `release-line: rl-1` on
+`rel-v0.4`, needed before its submit to releasing, which refuses a missing required field. The pilot starts with the
+next W20 task.
+
+### Review
+
+- **Round 1** (an independent read-only subagent, in a temporary clone; the main checkout's reflog unchanged after
+  it). No blocker; seven should-fix and five nits, all fixed on the branch:
+  - should-fix: `release.yaml`'s calibration `produces` used `{release}`, a field the release element lacks
+    (WingFoil's `resolveTokens`), now `{version}`; `memory.yaml` lacked the packs' `not_applicable_allowed:
+    [release]` on task, which the `kanban` directive relies on, `waiting: [active]` on plan, which `workflow end`
+    needs, `amendable`, and `tech-spec`'s machine, all adopted and listed in D1; v6 rules missing from `work-item`
+    (the post-fix checklist, the 1 200-line split, the nit quick check, the full suites' contents, the reviewer's
+    tools, the lowest priority, the bug commit format, the real-agent check's record) restored; rules that are the
+    practice since v0.3, not v6's, credited to task-167; `release-cycle`'s planning, validation and publishing rules
+    restored in `delivery` and `release`, and D7's "nothing lost" corrected; criteria 4 and 5 met (above).
+  - nits: the test widened to `set_state` and an include's element; `pack-deviations.md` names `workflows.yaml`,
+    `dna.yaml`, the dropped `release-submit` and `release-publishing`, the retrospective's rewritten steps and
+    end-of-life's source; stale references in plan-006, the README and `memory.yaml`; a long line in `delivery.yaml`;
+    rl-1's gate in the steps above.

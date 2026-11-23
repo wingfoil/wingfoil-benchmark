@@ -4,7 +4,8 @@ This repository's governance is composed from three packs of wingfoil-templates:
 `methodology/kanban` 1.0.0, run on WingFoil 0.3.2 (task-127, the approver's choices 1–7 in chat, 2026-11-23). This
 file lists every place where `.wingfoil/` differs from the reference composer's output, and why. A file under
 `.wingfoil/workflows/built-in/` and `.wingfoil/directives/built-in/` is the composer's output, byte for byte; every
-difference lives in a `custom/` file or in `memory.yaml`, `roles.yaml` and the templates.
+difference lives in a `custom/` file or in `workflows.yaml`, `memory.yaml`, `roles.yaml`, `dna.yaml` and the
+templates.
 
 **The composition.** The reference composer of wingfoil-templates, at `main` (whose three packs are byte-identical to
 their tags), with `base`'s required parameters and the paths and ids this repository already used, so that no element
@@ -13,7 +14,8 @@ a new composition, run the same command and compare.
 
 **Test.** `test/unit/docs/workflows-config.test.ts` holds the composition together: every included file exists, no
 two included workflows share a name, every `include` names a loaded sub-workflow, every fallback names a step of its
-own workflow, and no workflow names a state its element's machine lacks.
+own workflow, an included sub-workflow is iterated over its own element type, and no workflow names a state its
+element's machine lacks, in a `where` status filter, a `set_state` action or a fallback.
 
 ## D1 — the Memory machines of `bug`, `decision-log` and `adr` stay this repository's
 
@@ -23,7 +25,13 @@ own workflow, and no workflow names a state its element's machine lacks.
 | `decision-log` | `base`'s: draft, in-discussion, ready | the default machine: draft, pending, approved |
 | `adr` | `software`'s: draft, pending, accepted, superseded | the default machine: draft, pending, approved |
 | `task` | `kanban`'s, with `returns` and the two WIP limits | the same, set to this repository's WIP of 1 and 1 |
-| `campaign` | — | this repository's type, unchanged |
+| `release` | `software`'s, with no gate | this repository's two gates (D2) |
+| `plan`, `tech-spec`, `release-line` | the packs' | the packs': `plan` waits at `active`, which `workflow end` finalizes |
+| `campaign` | — | this repository's type, not amendable |
+
+The other properties of the types are the packs': every pack type is `amendable` (a correction through
+`memory amend`, the approver's) except `release-line`, and a task may carry `release: "n/a — <reason>"`
+(`not_applicable_allowed`), as the `kanban` directive says.
 
 **Why.** No element changes state, the traceability test and `fixes`/`fixed_by` stay as they are, and the pilot's
 rollback stays a revert. The migration is weighed when the pilot ends.
@@ -49,10 +57,13 @@ refuses (WingFoil reports `W_PHASE_EXIT_STATE_UNDETERMINED`).
 find their keys: `start`, `build`, `review`, `approve`, `done`. Each step carries the rules of the retired
 `kanban-delivery` (version 6): the Design and the classification of the criteria in `start`; test-first in `build`;
 in `review`, `scripts/pre-review.sh main`, an independent read-only review with severities and a re-review (dl-020),
-and the full suites before in-review; in `approve`, the approver's gate, with `build` as its fallback; in `done`, the
-`--no-ff` merge, the fixed bugs moved to `fixed` and the wave's "Ends with" recorded. The real-agent check is a manual,
-optional step with the approver's approval (dl-006). A task's pending → backlog gate stays outside the flow, as in the
-pack.
+the post-fix checklist and the diff under about 1 200 lines; in `approve`, the full suites at the commit offered for
+approval (dl-016) and the approver's gate, with `build` as its fallback; in `done`, the `--no-ff` merge, the fixed
+bugs moved to `fixed` and the wave's "Ends with" recorded. The real-agent check is a manual, optional step with the
+approver's approval (dl-006); its `produces` (the release's ledger) is dropped, for the reason of D5. A task's
+pending → backlog gate stays outside the flow, as in the pack. The review step also names the practice since v0.3
+that is not v6's (a reviewer in a temporary directory, the reflog after each round, a final review of the last
+diff), credited to task-167, which writes it down.
 
 | `kanban-delivery` (v6) | `work-item` |
 |---|---|
@@ -70,18 +81,23 @@ pack.
 |---|---|---|
 | `inception` | `software`'s | `custom/inception.yaml`, from `benchmark-inception` (plan-001) |
 | `specification` | `software`'s, which writes a tech-spec | `custom/specification.yaml`, from `benchmark-specification` (plan-002) |
-| `release` | `software`'s submit and publishing | `custom/release.yaml`: calibration, validation and the campaign before the submit and publishing |
+| `release` | `software`'s `release`, which includes `release-submit` and `release-publishing` | `custom/release.yaml`: calibration, validation and the campaign, then the checks, releasing and publishing, as its own steps; `release-submit` and `release-publishing` are not included |
 | `end-of-life` | `software`'s | `custom/end-of-life.yaml`, its decision-log state `pending` (D1) |
 
 `release-cycle` retires. Its phases map to `delivery`'s `plan-release` and `release-flow`'s `work`, `release` and
-`retrospective`; plan-006 names `sw-life-cycle`, phase `delivery`. `campaign-cycle` and `scenario-authoring` stay
+`retrospective`, and their rules are carried into `plan-release` (the scope from the sequencer, the new features'
+specification, the triage, the first tasks) and `release.yaml` (calibration's ledger, validation's scenario and its
+tie-break, the runs from the main checkout, the README link the approver makes); plan-006 names `sw-life-cycle`,
+phase `delivery`. `campaign-cycle` and `scenario-authoring` stay
 this repository's main workflows: a release's campaign launches `campaign-cycle` rather than including it (dl-022).
 
 ## D5 — `retrospective` and `governance-evolution` have no `produces`
 
 Both are custom copies with every `produces` removed. WingFoil 0.3 reads a completed step's evidence from the whole
 repository (WingFoil bug-488, F-043): with `produces`, a new instance would find the evidence of an earlier release
-and close its steps at once. `retrospective`'s approve selects `pending` decision-logs tagged `retrospective` (D1).
+and close its steps at once. `retrospective`'s approve selects `pending` decision-logs tagged `retrospective` (D1),
+and its capture and decide steps name this repository's inputs: the WingFoil feedback inbox and the release
+element's Retrospective section.
 The copies go back to the pack's files once WingFoil scopes the evidence to the instance.
 
 ## D6 — `init`'s built-in directives stay
@@ -96,11 +112,14 @@ the packs'. This repository's own directives that were `init`'s stubs (`traceabi
 `sw-life-cycle`, `bug-ingest`, `decision-log-ingest` and `adr-ingest` had custom versions whose names the packs also
 use, and WingFoil refuses every `workflow` command when two included workflows share a name. They are removed; their
 record stays in git. The composed versions add the approver's gate to the three ingests and replace
-`sw-life-cycle`'s `release-cycle` and `sunset` phases with `delivery` and `end-of-life`: nothing the custom versions
-held is lost. `kanban-delivery`, `release-cycle`, `benchmark-inception` and `benchmark-specification` are removed or
-renamed by D3 and D4.
+`sw-life-cycle`'s `release-cycle` and `sunset` phases with `delivery` and `end-of-life`; what the custom
+`sw-life-cycle` said about later releases' specification is carried into `plan-release` (D4). `kanban-delivery`,
+`release-cycle`, `benchmark-inception` and `benchmark-specification` are removed or renamed by D3 and D4.
 
 ## Left out on purpose
+
+- **The composer's `dna.yaml`** is not adopted: this repository's keeps its project description, stacks, paths,
+  modules and team; the packs' role descriptions are not copied into it.
 
 - **The composer's `AGENTS.region.md`**, a region meant for an `AGENTS.md`, is not written: this repository has never
   had one, and its agents read `.wingfoil/` and the directives, which say the same. Adding it is weighed when the

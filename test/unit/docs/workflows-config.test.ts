@@ -1,6 +1,7 @@
 // task-127 — the composed methodology (software 1.0.0, methodology/kanban 1.0.0, base 2.0.1) runs on this
 // repository's own state machines (docs/pack-deviations.md). WingFoil 0.3.2 loads a workflow that names a state
-// its element's machine lacks, and only stops when an instance reaches it; this test catches it at commit time.
+// its element's machine lacks, and only stops when an instance reaches it; this test catches it at commit time, in a
+// `where` status filter, a `set_state` action and a fallback's `set_state`, and checks every include's element.
 import { existsSync, readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
@@ -8,7 +9,14 @@ import { parse } from 'yaml';
 
 import { repoPath } from '../../support/paths.js';
 
-type Phase = { name: string; include?: string; iterate_over?: string; where?: Record<string, unknown>; fallback?: { step: string } };
+type Phase = {
+  name: string;
+  include?: string;
+  iterate_over?: string;
+  where?: Record<string, unknown>;
+  actions?: unknown[];
+  fallback?: { step: string; set_state?: string };
+};
 type Workflow = { name: string; kind: string; element?: string; phases: Phase[] };
 type Machine = { sequence: string[] };
 
@@ -58,6 +66,32 @@ describe('the composed workflows fit this repository (task-127)', () => {
       const keys = workflow.phases.map((phase) => phase.name);
       for (const phase of workflow.phases) {
         if (phase.fallback !== undefined) expect(keys, `${path} ${phase.name}`).toContain(phase.fallback.step);
+      }
+    }
+  });
+
+  it('iterates an included sub-workflow over its own element type', () => {
+    const byName = new Map(workflows.map(({ workflow }) => [workflow.name, workflow]));
+    for (const { path, workflow } of workflows) {
+      for (const phase of workflow.phases) {
+        const sub = phase.include === undefined ? undefined : byName.get(phase.include);
+        if (sub?.element === undefined) continue;
+        expect(phase.iterate_over ?? workflow.element, `${path} ${phase.name}`).toBe(sub.element);
+      }
+    }
+  });
+
+  it('sets only states of its own element machine', () => {
+    for (const { path, workflow } of workflows) {
+      for (const phase of workflow.phases) {
+        const targets = (phase.actions ?? [])
+          .map((action) => /set_state\(\s*([\w-]+)\s*\)/.exec(String(action))?.[1])
+          .concat(phase.fallback?.set_state)
+          .filter((state): state is string => state !== undefined);
+        if (targets.length === 0) continue;
+        expect(workflow.element, `${path} ${phase.name}: set_state needs the workflow's element`).toBeDefined();
+        const known = states(workflow.element as string);
+        for (const state of targets) expect(known, `${path} ${phase.name}`).toContain(state);
       }
     }
   });

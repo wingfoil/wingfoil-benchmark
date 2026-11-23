@@ -93,6 +93,8 @@ stays `needs-info` until the next sync reads them.
 | [F-045](F-045-the-0-3-upgrade-list-omits-two-changes-that-break-a-0-2-configuration.md) | The 0.3 upgrade list omits two changes that break a 0.2 configuration | defect | open | |
 | [F-046](F-046-listings-print-each-record-in-full-which-an-agent-re-reads-at-every-later-call.md) | Listings print each record in full, which an agent re-reads at every later call | request | open | |
 | [F-047](F-047-an-agent-that-carries-the-process-by-hand-pays-for-it-in-its-own-context.md) | An agent that carries the process by hand pays for it in its own context | request | open | |
+| [F-048](F-048-the-frontier-lists-starts-the-wip-limit-refuses.md) | The frontier lists starts that the WIP limit refuses | gap | open | |
+| [F-049](F-049-a-workflow-that-names-a-state-its-element-lacks-loads-with-no-diagnostic.md) | A workflow that names a state its element lacks loads with no diagnostic | gap | open | |
 
 ## Context
 
