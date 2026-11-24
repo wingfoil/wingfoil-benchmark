@@ -30,20 +30,21 @@ approver can enable it to carry the next W20 tasks through `work-item`.
 
 ## Acceptance criteria
 
-1. The runner's common files at its tag copied unchanged, their manifest checked (`manifest.mjs --digest`), and none
-   of them naming a private project (the anonymity check, counts only, run on the copied tree).
+1. The runner's common files at its tag copied unchanged, their manifest checked (`manifest.mjs --digest`), and none of
+   them naming a private project (the anonymity check, counts only, run on the copied tree).
 2. `config/runner.yaml`: one `trunk` line, its checkout and worktrees outside the main checkout, in a git-ignored
    `config/runner.local.yaml`; `launch.allow: [work-item]`; `launch.manual` naming `work-item.real-agent-check`;
-   `phases.integrate: [work-item.done]`; `integration.task_branch: task/{id}`, `merge: no-ff`; Claude as the
-   reviewer too, in another session; `paths.runs: [docs/runs/]`; `weekly_token_budget` set after the pilot's first
-   task.
+   `phases.integrate: [work-item.done]`; `integration.task_branch: task/{id}`, `merge: no-ff`; Claude as the reviewer
+   too, in another session; `paths.runs: [docs/runs/]`; `weekly_token_budget` provisional (20000000) until the pilot's
+   first task sets it.
 3. Red first: a test fails when `config/runner.yaml` allows `campaign-cycle`, the release slot, `*` or any step that
    spends, or when the runner's identity can approve.
 4. **The runner's identity** (the approver, 2026-11-23): a `team.agents` entry "WingFoil Benchmark Runner"
-   (`runner@wingfoil-benchmark.invalid`), `approval_authority: false`, named as the trunk line's `agent`; the
-   launched model credited by `Co-Authored-By`; gates ruled only by the approver through `gate.mjs`.
-5. The adapters in `.wingfoil/agents/custom/`; `docs/notices.md` with its markers; the runner's home and the line's
-   clone prepared outside every working checkout; `run.mjs --line trunk --doctor` answers `ok` and `--dry-run`
+   (`runner@wingfoil.github.io`, the approver's choice of 2026-11-24: WingFoil 0.3.2 refuses a reserved domain),
+   `approval_authority: false`, named as the trunk line's `agent`; the launched model credited by `Co-Authored-By`;
+   gates ruled only by the approver through `gate.mjs`.
+5. The Claude adapters in `.wingfoil/agents/custom/`; `docs/notices.md` with its markers; the runner's home and the
+   line's clone prepared outside every working checkout; `run.mjs --line trunk --doctor` answers `ok` and `--dry-run`
    proposes a `work-item` step.
 6. The systemd timer written disabled; the approver alone enables it. No real-agent session is started by this task.
 7. Every `wingfoil` and runner command declared against observed behaviour in the notes; friction as feedback notes.
