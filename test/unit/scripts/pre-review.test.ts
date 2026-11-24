@@ -80,7 +80,8 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
       'npx prettier --check --ignore-unknown docs/n.md src/cli/a.ts test/unit/x.test.ts',
       'npx eslint src/cli/a.ts test/unit/x.test.ts',
       'npx tsc --noEmit -p .',
-      'npx vitest run --maxWorkers=2 test/unit/x.test.ts test/acceptance/traceability.test.ts test/unit/docs/evaluate-page.test.ts',
+      'npx vitest run --maxWorkers=2 test/unit/x.test.ts',
+      'npx vitest run --maxWorkers=2 test/acceptance/traceability.test.ts test/unit/docs/evaluate-page.test.ts',
       'npx vitest related --run --maxWorkers=2 src/cli/a.ts',
       'npm run test:bin -- --maxWorkers=2',
     ]);
@@ -94,6 +95,51 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
     const prettier = recorded().filter((call) => call.startsWith('npx prettier'));
     expect(prettier).toHaveLength(3);
     expect(prettier.join(' ').match(/data\/f\d+\.json/g)).toEqual(names);
+  });
+
+  it('passes no call more than 200 file arguments or 60000 bytes of them, whichever check it is (bug-053)', () => {
+    const long = 'd'.repeat(200);
+    const tests = Array.from(
+      { length: 450 },
+      (_, i) => `test/unit/${long}/${long}/t${String(i).padStart(3, '0')}.test.ts`,
+    );
+    const sources = Array.from(
+      { length: 450 },
+      (_, i) => `src/core/${long}/${long}/s${String(i).padStart(3, '0')}.ts`,
+    );
+    const { run, recorded } = fixture([...tests, ...sources]);
+    const result = run();
+    expect(result.status, result.stderr).toBe(0);
+    const fixedTests = ['test/acceptance/traceability.test.ts', 'test/unit/docs/evaluate-page.test.ts'];
+    for (const call of recorded()) {
+      const files = call.split(' ').filter((word) => /^(src|test|data)\//.test(word));
+      expect(files.length, call.slice(0, 80)).toBeLessThanOrEqual(200);
+      expect(files.join(' ').length, call.slice(0, 80)).toBeLessThanOrEqual(60000);
+    }
+    const run1 = recorded().filter((call) => call.startsWith('npx vitest run'));
+    expect(run1.filter((call) => fixedTests.every((file) => call.includes(file)))).toHaveLength(1);
+    const covered = (prefix: string) =>
+      recorded()
+        .filter((c) => c.startsWith(prefix))
+        .join(' ');
+    expect(covered('npx vitest run').match(/test\/unit\/d{200}\/d{200}\/t\d+\.test\.ts/g)).toEqual(tests);
+    expect(covered('npx vitest related').match(/src\/core\/d{200}\/d{200}\/s\d+\.ts/g)).toEqual(sources);
+  });
+
+  it('prints a line for every stage, run or skipped, in a branch that triggers none of the conditional ones', () => {
+    const stages = ['markdown', 'prettier', 'eslint', 'tsc', 'tests', 'tests-related', 'test:bin'];
+    for (const files of [['data/a.json'], ['src/cli/a.ts', 'test/unit/x.test.ts', 'docs/n.md']]) {
+      const out = fixture(files).run().stdout;
+      for (const stage of stages) {
+        expect(out, `${stage} in ${files.join(',')}`).toMatch(
+          new RegExp(`^pre-review: ${stage}( skipped: .+)?$`, 'm'),
+        );
+      }
+    }
+    const out = fixture(['data/a.json']).run().stdout;
+    for (const stage of ['markdown', 'eslint', 'tests-related', 'test:bin']) {
+      expect(out).toMatch(new RegExp(`^pre-review: ${stage} skipped: .+$`, 'm'));
+    }
   });
 
   it('names a red batch and exits non-zero rather than stopping silently (bug-053)', () => {

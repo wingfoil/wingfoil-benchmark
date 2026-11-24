@@ -9,16 +9,25 @@ set -uo pipefail
 base="${1:?usage: scripts/pre-review.sh <base>}"
 low() { nice -n 19 ionice -c3 "$@" < /dev/null; }
 batch_size=200 # files per command: one argument list holds only so many (bug-053)
+batch_bytes=60000 # bytes of file names per command, well under the 131072 one argument may hold (bug-053)
 batched() { # $1 = the check's name, $2.. = the command; the files on stdin, one per line, passed in batches
   local name="$1"; shift
   local -a files=() chunk=()
+  local file size=0
   mapfile -t files
-  local i=0
-  while [ "$i" -lt "${#files[@]}" ]; do
-    chunk=("${files[@]:i:batch_size}")
-    check "$name" "$@" "${chunk[@]}"
-    i=$((i + batch_size))
+  for file in "${files[@]}"; do
+    # Close the batch before it passes either bound: a count of files and a count of bytes.
+    if [ "${#chunk[@]}" -gt 0 ] && { [ "${#chunk[@]}" -ge "$batch_size" ] \
+      || [ $((size + ${#file} + 1)) -gt "$batch_bytes" ]; }; then
+      check "$name" "$@" "${chunk[@]}"; chunk=(); size=0
+    fi
+    chunk+=("$file"); size=$((size + ${#file} + 1))
   done
+  if [ "${#chunk[@]}" -gt 0 ]; then check "$name" "$@" "${chunk[@]}"; fi
+}
+stage_if() { # $1 = the stage's name, $2 = why it may be skipped, $3 = a function (true: run), $4.. = the stage
+  local name="$1" reason="$2" condition="$3"; shift 3
+  if "$condition"; then "$@"; else echo "pre-review: $name skipped: $reason"; fi
 }
 check() { # $1 = the check's name, then its command
   local name="$1"; shift
@@ -41,7 +50,7 @@ if [ "${#changed[@]}" -eq 0 ]; then echo "pre-review: nothing changed over $base
 # and the finding notes `bench finding` generates (findings/, task-133), their hand-written lines kept short by hand.
 mapfile -t markdown < <(printf '%s\n' "${changed[@]}" | grep -E '\.md$' \
   | grep -vE '^(scenarios/[^/]+/[^/]+/|test/fixtures/wingfoil-config/|results/|findings/)' || true)
-if [ "${#markdown[@]}" -gt 0 ]; then
+markdown_stage() {
   echo "pre-review: markdown"
   red=0
   for file in "${markdown[@]}"; do
@@ -66,22 +75,28 @@ if [ "${#markdown[@]}" -gt 0 ]; then
     fi
   done
   if [ "$red" -ne 0 ]; then echo "pre-review: markdown is red" >&2; exit 1; fi
-fi
+}
+has_markdown() { [ "${#markdown[@]}" -gt 0 ]; }
+stage_if markdown "no changed Markdown to check" has_markdown markdown_stage
 batched prettier npx prettier --check --ignore-unknown < <(printf '%s\n' "${changed[@]}")
 mapfile -t sources < <(printf '%s\n' "${changed[@]}" | grep -E '\.(ts|mts|js|mjs)$' || true)
-if [ "${#sources[@]}" -gt 0 ]; then batched eslint npx eslint < <(printf '%s\n' "${sources[@]}"); fi
+has_sources() { [ "${#sources[@]}" -gt 0 ]; }
+eslint_stage() { batched eslint npx eslint < <(printf '%s\n' "${sources[@]}"); }
+stage_if eslint "no changed source (.ts, .mts, .js, .mjs)" has_sources eslint_stage
 check tsc npx tsc --noEmit -p .
+# The changed test files go in batches too; the two fixed tests run once, outside them.
 mapfile -t tests < <(printf '%s\n' "${changed[@]}" | grep -E '^test/.*\.test\.ts$' || true)
-check tests npx vitest run --maxWorkers=2 "${tests[@]}" test/acceptance/traceability.test.ts \
-  test/unit/docs/evaluate-page.test.ts
+tests_stage() {
+  if [ "${#tests[@]}" -gt 0 ]; then batched tests npx vitest run --maxWorkers=2 < <(printf '%s\n' "${tests[@]}"); fi
+  check tests npx vitest run --maxWorkers=2 test/acceptance/traceability.test.ts test/unit/docs/evaluate-page.test.ts
+}
+tests_stage
 # Every test that imports a changed file, directly or through another module (bug-053): vitest follows the import graph.
 mapfile -t related < <(printf '%s\n' "${sources[@]}" | grep -E '^(src|scripts|test/(support|fixtures))/' || true)
-if [ "${#related[@]}" -gt 0 ]; then
-  batched tests-related npx vitest related --run --maxWorkers=2 < <(printf '%s\n' "${related[@]}")
-else
-  echo "pre-review: tests-related skipped: no changed source outside the test files"
-fi
-if printf '%s\n' "${changed[@]}" | grep -qE '^(src/(cli|site)|test/bin)/'; then
-  check test:bin npm run test:bin -- --maxWorkers=2
-fi
+has_related() { [ "${#related[@]}" -gt 0 ]; }
+related_stage() { batched tests-related npx vitest related --run --maxWorkers=2 < <(printf '%s\n' "${related[@]}"); }
+stage_if tests-related "no changed source outside the test files" has_related related_stage
+has_bin() { printf '%s\n' "${changed[@]}" | grep -qE '^(src/(cli|site)|test/bin)/'; }
+bin_stage() { check test:bin npm run test:bin -- --maxWorkers=2; }
+stage_if test:bin "no change under src/cli, src/site or test/bin" has_bin bin_stage
 echo "pre-review: green"
