@@ -53,3 +53,44 @@ bump as the doc-versioning directive asks. Later waves' requirements stay out of
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
+
+### Review
+
+**Round 1** (2026-11-24, reviewer: a fresh headless session of the runner's reviewer role, claude-opus-5-5, not the
+building session), on branch `task/task-162-…` at `e1dccadb` (4 commits, 5 files, 172 insertions and 37 deletions by
+`git diff --stat main...HEAD`, under the 1 200-line bound). Outcome: **accepted**, no blocker and no should-fix.
+
+Checks run on the branch:
+
+- `nice -n 19 npm run test -- test/acceptance/traceability.test.ts test/unit/docs`: 6 files, 64 tests passed (the
+  coverage threshold's error is the targeted run's, not a failure).
+- `nice -n 19 npm run lint` (eslint and `prettier --check .`): clean.
+- `scripts/pre-review.sh main` was not run by the reviewer (a headless step runs checks only through `npm run`);
+  its lint and the docs and traceability tests above cover a documentation-only diff.
+
+Acceptance criteria, read against the diff and the sources:
+
+1. Sequencer 1.3: W20 Foundations, W21 Step B and W25 Role isolation inserted; 1.2's W20–W22 renumbered W22–W24,
+   v1.0's W26–W28, decision 4 renamed W27; dl-035 moved to v1.0; the reasons are items 9–11 under "Decisions from the
+   sequencer review", Amendment 1.3. Met.
+2. Features 1.7: F2.8 (reported apart, hypothesis first, spike first) and F6.14 (S11, dl-036), each with release and
+   wave; amendment 12. Met.
+3. Experiment design 1.14: the `wingfoil-runner` arm and step B's hypothesis, quoted from dl-037 ("Decision", R1–R6);
+   Q-E4, M-E5 to M-E8, H12 and H13 match dl-036's "The question and the metrics" word for word; n = 3 in §4.6; T1 and
+   T12; version entry 19. Met.
+4. Requirements 1.61: REQ-CLI-03 (campaign gates), REQ-NFR-06 (ledger line), REQ-RUN-13 (quota wait), REQ-NFR-07 and
+   REQ-NFR-08 (new), REQ-NFR-03, REQ-NFR-04 (review practice, test file named), REQ-RUN-22 (new), REQ-RES-03 (joining
+   rule), each with acceptance or a test named; every cited id exists. Traceability 1.9 gains F2.8 and F6.14. Met.
+5. rel-v0.4's Scope and plan-006's wave table list W20–W25 with the sequencer's features, uncertainties and
+   "Ends with". Met (no change needed).
+6. This review is the independent one (dl-020); the full suites stay for the approve step on the approver's go.
+
+Findings:
+
+- **nit** (process record): the start step's `wingfoil memory submit` (backlog → in-progress) has no declared-vs-observed
+  note. Recorded here: declared — moves the task to in-progress; observed — commit `a6dd45a5`, status `in-progress`.
+- **nit** (wording): `requirements.md`'s **Traces to** header still names only v0.2's release, as v0.3 left it; not
+  changed, since 1.61's amendment cites plan-006 and the sequencer.
+- **nit** (wording): "extending `docs/calibration/v0.1.md` §11" (experiment design §4.4) repeats dl-036; §11 there is
+  "Hypotheses for v0.2" and H10 lives in `v0.3.md`. Kept as the decision words it; W25's specification task numbers
+  H12 and H13 where the calibration places them.
