@@ -42,10 +42,15 @@ run() { # $1 = worktree, $2 = branch
     low npm run build; echo "BUILD $?"
     low npm run test:bin -- --maxWorkers=2; echo "BIN $?"
     low npm run test:docker; echo "DOCKER $?"
-    low npm run test:runner; echo "RUNNER $?"
+    # A branch from before task-177 has no runner and no test:runner: its stage is "-", not a failure.
+    if grep -q '"test:runner"' package.json 2> /dev/null; then
+      low npm run test:runner; echo "RUNNER $?"
+    else
+      echo "RUNNER -"
+    fi
     echo "== end $(date -Is)"
   } > "$log" 2>&1
-  local codes changed=''; codes="$(grep -E '^(LINT|TEST|BUILD|BIN|DOCKER|RUNNER) [0-9]+$' "$log" | tr '\n' ' ')"
+  local codes changed=''; codes="$(grep -E '^(LINT|TEST|BUILD|BIN|DOCKER|RUNNER) ([0-9]+|-)$' "$log" | tr '\n' ' ')"
   # A commit or an edit in the shared worktree during the run: the log no longer names what it tested.
   local now
   if [ "$dirty" = ' GIT-ERROR' ]; then

@@ -11,9 +11,20 @@ import { repoPath } from '../../support/paths.js';
 
 type Phase = { name: string; include?: string };
 type Workflow = { name: string; phases: Phase[] };
-type Line = { branch?: string; agent?: string; reviewer_agent?: string; release_line?: string };
+type Line = {
+  branch?: string;
+  agent?: string;
+  reviewer_agent?: string;
+  release_line?: string;
+  tiers?: Record<string, string>;
+  reviewer_tiers?: Record<string, string>;
+};
 type RunnerConfig = {
   push?: boolean;
+  weekly_mains?: string[];
+  live_checks?: unknown;
+  life_cycle_start?: unknown;
+  roles?: Record<string, string>;
   launch?: { allow?: string[]; manual?: string[]; optional?: string[] };
   phases?: { integrate?: string[] };
   lines?: Record<string, Line>;
@@ -22,11 +33,13 @@ type Dna = {
   team: {
     members: { name: string; email?: string }[];
     agents: { name: string; email?: string; approval_authority?: boolean }[];
+    roles: { name: string; human_only?: boolean }[];
   };
   paths: { runs?: string[] };
 };
 
 const configFile = repoPath('config', 'runner.yaml');
+const localFile = repoPath('config', 'runner.local.yaml');
 const load = (file: string): unknown => parse(readFileSync(file, 'utf8'));
 const config = (existsSync(configFile) ? load(configFile) : {}) as RunnerConfig;
 const dna = load(repoPath('.wingfoil', 'dna.yaml')) as Dna;
@@ -66,7 +79,20 @@ function matches(pattern: string, step: { workflow: string; step: string }): boo
   return regex.test(step.workflow) || regex.test(step.step);
 }
 
+/** Whether a workflow includes, at any depth, the workflow `target`. */
+function includes(name: string, target: string, seen = new Set<string>()): boolean {
+  if (seen.has(name)) return false;
+  seen.add(name);
+  return (workflows.get(name)?.phases ?? []).some(
+    (phase) => phase.include !== undefined && (phase.include === target || includes(phase.include, target, seen)),
+  );
+}
+
 describe('the runner launches only what spends nothing and the release does not own (task-177)', () => {
+  it('guards workflows that exist', () => {
+    for (const name of OWNED) expect([...workflows.keys()], name).toContain(name);
+  });
+
   it('has a configuration that names a trunk line on main', () => {
     expect(existsSync(configFile), 'config/runner.yaml').toBe(true);
     expect(config.lines?.['trunk']?.branch).toBe('main');
@@ -84,6 +110,51 @@ describe('the runner launches only what spends nothing and the release does not 
         steps.some((step) => matches(pattern, step)),
         `${pattern} names no step`,
       ).toBe(true);
+    }
+  });
+
+  it('launches an allowed workflow only where no owned workflow includes it', () => {
+    // The runner matches a frontier step by its innermost workflow: a work-item included by the release would run.
+    for (const pattern of config.launch?.allow ?? []) {
+      for (const owned of OWNED) expect(includes(owned, pattern), `${owned} includes ${pattern}`).toBe(false);
+    }
+  });
+
+  it('starts no workflow by itself and runs no command outside the sandbox', () => {
+    expect(config.weekly_mains ?? []).toEqual([]);
+    expect(config.live_checks, 'live_checks').toBeUndefined();
+    expect(config.life_cycle_start, 'life_cycle_start').toBeUndefined();
+  });
+
+  it('keeps only machine paths in the git-ignored local file, which the drift check does not read', () => {
+    if (!existsSync(localFile)) return;
+    const local = load(localFile) as { lines?: Record<string, Record<string, unknown>>; paths?: unknown };
+    expect(Object.keys(local).filter((key) => key !== 'lines' && key !== 'paths')).toEqual([]);
+    for (const [name, line] of Object.entries(local.lines ?? {})) {
+      expect(
+        Object.keys(line).filter((key) => key !== 'checkout' && key !== 'worktrees'),
+        `local lines.${name}`,
+      ).toEqual([]);
+    }
+  });
+
+  it('maps every role but the approver to a tier, and every tier to an adapter that names its model', () => {
+    // runner.test.mjs checks the same, but its test also names the agents claude and codex: npm run test:runner skips it.
+    for (const role of dna.team.roles) {
+      if (role.name === 'approver' || role.human_only === true) continue;
+      expect(config.roles?.[role.name], `role ${role.name}`).toBeDefined();
+    }
+    for (const [name, line] of Object.entries(config.lines ?? {})) {
+      for (const tier of new Set(Object.values(config.roles ?? {}))) {
+        const adapter = line.tiers?.[tier];
+        expect(adapter, `line ${name}: tier ${tier}`).toBeDefined();
+        const file = repoPath('.wingfoil', 'agents', 'custom', `${adapter ?? ''}.yaml`);
+        expect(existsSync(file), `${adapter} adapter`).toBe(true);
+        const manifest = load(file) as { name?: string; launch?: { headless?: { args?: string[] } } };
+        expect(manifest.name).toBe(adapter);
+        const args = manifest.launch?.headless?.args ?? [];
+        expect(args[args.indexOf('--model') + 1] ?? '', `${adapter} names its model`).toMatch(/^claude-/);
+      }
     }
   });
 
