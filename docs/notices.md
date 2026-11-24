@@ -8,17 +8,6 @@ runner's home; a notice is never edited by hand.
 
 <!-- runner:open -->
 
-<!-- key:failure-trunk-git_fetch_-q_origin_ssh_Could_not_resolve_hostname_github. -->
-### N-012 · 2026-11-24 · trunk:runner
-
-- **Status:** open
-- **Kind:** failure
-- **Opened:** 2026-11-24T17:24:47Z
-- **Line:** trunk
-- **Element:** trunk:runner
-- **Reason:** runner failure: git fetch -q origin: ssh: Could not resolve hostname github.com: Temporary failure in name resolution (the notice closes by itself once the line runs again without a failure)
-- **Unblock:** `cd <runner home> && node scripts/runner/run.mjs --line trunk --dry-run`
-
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it -->
 ### N-009 · 2026-11-24 · trunk:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it
 
@@ -78,6 +67,17 @@ runner's home; a notice is never edited by hand.
 ## Closed
 
 <!-- runner:closed -->
+
+<!-- key:failure-trunk-git_fetch_-q_origin_ssh_Could_not_resolve_hostname_github. -->
+### N-012 · 2026-11-24 · trunk:runner
+
+- **Status:** closed 2026-11-24T18:27:38Z — the line ran again without a failure
+- **Kind:** failure
+- **Opened:** 2026-11-24T17:24:47Z
+- **Line:** trunk
+- **Element:** trunk:runner
+- **Reason:** runner failure: git fetch -q origin: ssh: Could not resolve hostname github.com: Temporary failure in name resolution (the notice closes by itself once the line runs again without a failure)
+- **Unblock:** `cd <runner home> && node scripts/runner/run.mjs --line trunk --dry-run`
 
 <!-- key:halt-trunk-rejected-task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file -->
 ### N-011 · 2026-11-24 · trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
