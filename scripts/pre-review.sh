@@ -2,28 +2,34 @@
 # The checks before a review round (dl-020 option C, task-098, bug-053): changed Markdown checked for width and a final
 # newline; Prettier on every file the branch changed; eslint on changed sources; tsc; the touched test files with the
 # traceability and evaluation-page tests; the tests that import a changed source, directly or through another module
-# (vitest related). Every file-list check runs in batches of 200 files or 60000 bytes, and every skipped stage prints
-# 'pre-review: <stage> skipped: <why>'. test:bin when the CLI, the site or a bin test changed (the default vitest config excludes
-# test/bin/ and test/docker/). At the lowest priority, vitest with 2 workers (dl-016); it stops at the first red
-# check and names it. No agent, no credential, nothing written. The full suites stay scripts/full-suites.sh's.
+# (vitest related, which uses the default config: tests under test/bin/ and test/docker/ are not selected, so test:bin
+# covers the first). Every file-list check runs in batches of 200 files or 60000 bytes (counted in bytes, not
+# characters), and every skipped stage prints 'pre-review: <stage> skipped: <why>'. test:bin when the CLI, the site or
+# a bin test changed. At the lowest priority, vitest with 2 workers (dl-016); it stops at the first red check and names
+# it. No agent, no credential, nothing written. The full suites stay scripts/full-suites.sh's.
 # Usage: scripts/pre-review.sh <base>   (the branch the task's branch forks from, usually main)
 set -uo pipefail
 base="${1:?usage: scripts/pre-review.sh <base>}"
 low() { nice -n 19 ionice -c3 "$@" < /dev/null; }
 batch_size=200 # files per command: one argument list holds only so many (bug-053)
 batch_bytes=60000 # bytes of file names per command, well under the 131072 one argument may hold (bug-053)
+byte_length() { # $1 = a string; REPLY = its length in bytes (the C locale counts bytes; only here, never in the checks)
+  local LC_ALL=C
+  REPLY=${#1}
+}
 batched() { # $1 = the check's name, $2.. = the command; the files on stdin, one per line, passed in batches
   local name="$1"; shift
   local -a files=() chunk=()
   local file size=0
   mapfile -t files
   for file in "${files[@]}"; do
+    byte_length "$file"
     # Close the batch before it passes either bound: a count of files and a count of bytes.
     if [ "${#chunk[@]}" -gt 0 ] && { [ "${#chunk[@]}" -ge "$batch_size" ] \
-      || [ $((size + ${#file} + 1)) -gt "$batch_bytes" ]; }; then
+      || [ $((size + REPLY + 1)) -gt "$batch_bytes" ]; }; then
       check "$name" "$@" "${chunk[@]}"; chunk=(); size=0
     fi
-    chunk+=("$file"); size=$((size + ${#file} + 1))
+    chunk+=("$file"); size=$((size + REPLY + 1))
   done
   if [ "${#chunk[@]}" -gt 0 ]; then check "$name" "$@" "${chunk[@]}"; fi
 }

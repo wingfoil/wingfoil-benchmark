@@ -63,7 +63,7 @@ function fixture(
     );
     chmodSync(join(bin, tool), 0o755);
   }
-  const env = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}` };
+  const env = { ...process.env, LC_ALL: 'C.UTF-8', PATH: `${bin}:${process.env.PATH ?? ''}` };
   const run = Object.assign(() => spawnSync('bash', [SCRIPT, 'main'], { cwd: repo, env, encoding: 'utf8' }), {
     cwd: repo,
   });
@@ -114,7 +114,7 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
     for (const call of recorded()) {
       const files = call.split(' ').filter((word) => /^(src|test|data)\//.test(word));
       expect(files.length, call.slice(0, 80)).toBeLessThanOrEqual(200);
-      expect(files.join(' ').length, call.slice(0, 80)).toBeLessThanOrEqual(60000);
+      expect(Buffer.byteLength(files.join(' ')), call.slice(0, 80)).toBeLessThanOrEqual(60000);
     }
     const run1 = recorded().filter((call) => call.startsWith('npx vitest run'));
     expect(run1.filter((call) => fixedTests.every((file) => call.includes(file)))).toHaveLength(1);
@@ -124,6 +124,23 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
         .join(' ');
     expect(covered('npx vitest run').match(/test\/unit\/d{200}\/d{200}\/t\d+\.test\.ts/g)).toEqual(tests);
     expect(covered('npx vitest related').match(/src\/core\/d{200}\/d{200}\/s\d+\.ts/g)).toEqual(sources);
+  });
+
+  it('bounds a batch by the bytes of its paths, not their characters, under a UTF-8 locale (bug-053)', () => {
+    // A name holds at most 255 bytes: 60 four-byte characters per level. 130 paths of about 135 characters and 490 bytes
+    // are 17500 characters (under the bound) and 64000 bytes (over it).
+    const wide = '\u{1F600}'.repeat(60);
+    const names = Array.from({ length: 130 }, (_, i) => `data/${wide}/${wide}/${String(i).padStart(3, '0')}.json`);
+    const { run, recorded } = fixture(names);
+    const result = run();
+    expect(result.status, result.stderr).toBe(0);
+    const prettier = recorded().filter((call) => call.startsWith('npx prettier'));
+    expect(prettier).toHaveLength(2);
+    for (const call of prettier) {
+      const files = call.split(' ').filter((word) => word.startsWith('data/'));
+      expect(Buffer.byteLength(files.join(' '))).toBeLessThanOrEqual(60000);
+    }
+    expect(prettier.join(' ').match(/data\/\S+\.json/g)).toEqual(names);
   });
 
   it('prints a line for every stage, run or skipped, in a branch that triggers none of the conditional ones', () => {
