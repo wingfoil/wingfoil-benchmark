@@ -2,7 +2,7 @@
 id: task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
 type: task
 title: "Fix bug-053: pre-review.sh runs Prettier in batches and selects every test that imports a changed file"
-status: backlog
+status: in-progress
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
@@ -38,9 +38,13 @@ tests) in batches of at most 200 files and 60000 bytes of paths (well under the 
 through `check`, which names a red stage and exits 1 (process substitution, so the exit reaches the script). The bytes
 are counted by `byte_length` in the C locale, so a multibyte path counts its bytes, not its characters; the locale is
 set only inside that function, never for the checks. The traceability and evaluation-page tests run once, outside the
-batches. Related tests: `npx vitest related --run` on every changed source that is not a test file, which follows the
-import graph, so a module imported only through another selects its tests; it uses the default config, so tests under
-`test/bin/` and `test/docker/` are never selected (`test:bin` covers the first). Every skipped stage prints
+batches. The changed test files drop `test/bin/`, `test/docker/` and `test/fixtures/`, which `vitest.config.ts`
+excludes (a `vitest run` whose filter selects only excluded files exits 1, 'No test files found'), with a
+`pre-review: tests skipped for N file(s)` line naming them; the batched call also passes `--passWithNoTests`, so a
+config that drifts from the list cannot turn a correct branch red (the fixed-tests call still runs). Related tests:
+`npx vitest related --run` on every changed source that is not a test file, which follows the import graph, so a module
+imported only through another selects its tests; it uses the default config, so tests under `test/bin/`, `test/docker/`
+and `test/fixtures/` are never selected (`test:bin` covers the first). Every skipped stage prints
 `pre-review: <stage> skipped: <why>`. Tests in `test/unit/scripts/pre-review.test.ts`; README's Pre-review section
 updated.
 
@@ -61,5 +65,9 @@ script header searched for every term the fix changed (200 files, bytes, charact
 | 2 | `1ed5779a` | independent review | `vitest related` fed a folder list that drifted from the layout | fixed: every changed non-test source |
 | 3 | `89a16f9d` | claude-opus-5-5 | should-fix: a byte bound measured in characters; should-fix: Design and notes stale; should-fix: claim wider than the selection (`test/bin/`, `test/docker/`); nit: header line of 129 characters | fixed: `byte_length` in the C locale and a 4-byte-path test, Design and notes updated, scope stated in README and header, header rewrapped |
 
+| 4 | `bfbe5517` | runner re-review of `89a16f9d` | blocker (class: a `vitest run` filter that can select no test exits 1): changed tests all under `test/bin/` made the batched call red; the fixture's fake npx could not see it | fixed: excluded folders dropped with a skipped line, `--passWithNoTests` on the batched call, the fake npx fails such a run, a test for both |
+
 Rounds 1 and 2 are recorded from the commit messages; their findings' wording and severities were not kept in the
-session, so they are summarised. The fix diff of round 3 awaits its re-review.
+session, so they are summarised. Class checked in round 4: of the calls taking a file filter, `vitest related` passes
+with no test (default `passWithNoTests`), Prettier and eslint count named files as results, and the batched `vitest run`
+is the only one that could select nothing. The fix diff of round 4 awaits its re-review.
