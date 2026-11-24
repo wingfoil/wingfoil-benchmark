@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# The checks before a review round (dl-020 option C, task-098): changed Markdown checked for width and a final
+# The checks before a review round (dl-020 option C, task-098, bug-053): changed Markdown checked for width and a final
 # newline; Prettier on every file the branch changed; eslint on changed sources; tsc; the touched test files with the
-# traceability and evaluation-page tests; test:bin when the CLI, the site or a bin test changed (the default vitest config excludes
+# traceability and evaluation-page tests; the tests that import a changed source, directly or through another module
+# (vitest related). Every file-list check runs in batches of 200 files or 60000 bytes, and every skipped stage prints
+# 'pre-review: <stage> skipped: <why>'. test:bin when the CLI, the site or a bin test changed (the default vitest config excludes
 # test/bin/ and test/docker/). At the lowest priority, vitest with 2 workers (dl-016); it stops at the first red
 # check and names it. No agent, no credential, nothing written. The full suites stay scripts/full-suites.sh's.
 # Usage: scripts/pre-review.sh <base>   (the branch the task's branch forks from, usually main)
@@ -92,10 +94,12 @@ tests_stage() {
 }
 tests_stage
 # Every test that imports a changed file, directly or through another module (bug-053): vitest follows the import graph.
-mapfile -t related < <(printf '%s\n' "${sources[@]}" | grep -E '^(src|scripts|test/(support|fixtures))/' || true)
+# Every changed source that is not a test file, wherever it sits: no folder list to drift from the layout. vitest
+# related passes when no test imports a file.
+mapfile -t related < <(printf '%s\n' "${sources[@]}" | grep -vE '^$|\.test\.ts$' || true)
 has_related() { [ "${#related[@]}" -gt 0 ]; }
 related_stage() { batched tests-related npx vitest related --run --maxWorkers=2 < <(printf '%s\n' "${related[@]}"); }
-stage_if tests-related "no changed source outside the test files" has_related related_stage
+stage_if tests-related "no changed source besides test files" has_related related_stage
 has_bin() { printf '%s\n' "${changed[@]}" | grep -qE '^(src/(cli|site)|test/bin)/'; }
 bin_stage() { check test:bin npm run test:bin -- --maxWorkers=2; }
 stage_if test:bin "no change under src/cli, src/site or test/bin" has_bin bin_stage

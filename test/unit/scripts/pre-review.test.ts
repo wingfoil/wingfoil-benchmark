@@ -151,10 +151,27 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
     expect(recorded()).toHaveLength(1);
   });
 
-  it('selects the tests that import a changed source, directly or through another module (bug-053)', () => {
-    const { run, recorded } = fixture(['src/core/deep.ts']);
+  it('passes every changed source that is not a test file to vitest related, wherever it sits (bug-053)', () => {
+    const { run, recorded } = fixture(['src/core/deep.ts', 'eslint/module-boundaries.js', 'test/unit/x.test.ts']);
     expect(run().status).toBe(0);
-    expect(recorded()).toContain('npx vitest related --run --maxWorkers=2 src/core/deep.ts');
+    expect(recorded()).toContain(
+      'npx vitest related --run --maxWorkers=2 eslint/module-boundaries.js src/core/deep.ts',
+    );
+  });
+
+  it('selects a test that imports a changed file only through another module, with the real vitest (bug-053)', () => {
+    const root = tempDir('bench-related-');
+    writeFileSync(join(root, 'c.ts'), 'export const c = 1;\n');
+    writeFileSync(join(root, 'b.ts'), "import { c } from './c.js';\nexport const b = c;\n");
+    // Globals (--globals) so the temporary project needs no node_modules to import vitest from.
+    writeFileSync(join(root, 'a.test.ts'), "import { b } from './b.js';\nit('a', () => expect(b).toBe(1));\n");
+    writeFileSync(join(root, 'other.test.ts'), "it('other', () => undefined);\n");
+    const vitest = repoPath('node_modules/vitest/vitest.mjs');
+    const args = [vitest, 'related', '--run', '--globals', '--reporter=verbose', 'c.ts'];
+    const out = spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8' });
+    expect(out.status, out.stderr).toBe(0);
+    expect(out.stdout).toMatch(/a\.test\.ts/);
+    expect(out.stdout).not.toMatch(/other\.test\.ts/);
   });
 
   it('says so when no related-test selection applies (bug-053)', () => {
