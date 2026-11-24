@@ -8,6 +8,17 @@ runner's home; a notice is never edited by hand.
 
 <!-- runner:open -->
 
+<!-- key:failure-trunk-git_fetch_-q_origin_git_github.com_Permission_denied_publ -->
+### N-013 · 2026-11-24 · trunk:runner
+
+- **Status:** open
+- **Kind:** failure
+- **Opened:** 2026-11-24T18:30:23Z
+- **Line:** trunk
+- **Element:** trunk:runner
+- **Reason:** runner failure: git fetch -q origin: git@github.com: Permission denied (publickey). (the notice closes by itself once the line runs again without a failure)
+- **Unblock:** `cd <runner home> && node scripts/runner/run.mjs --line trunk --dry-run`
+
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it -->
 ### N-009 · 2026-11-24 · trunk:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it
 
