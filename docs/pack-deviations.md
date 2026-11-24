@@ -126,8 +126,8 @@ Prettier and ESLint ignore the copied folders: the manifest is their check, and 
 `config/runner.yaml` launches only `work-item`, never `campaign-cycle` or the release slot; the real-agent check
 waits for the approver as an optional step, and the manual entry guards it a second time
 (`test/unit/docs/runner-config.test.ts`). The copied `scripts/checks/` run only when a step binds them
-(`.wingfoil/workflows/bindings.yaml`, which this repository does not have yet). The runner signs as its own `team.agents` identity,
-which cannot approve; gates stay the approver's, through `gate.mjs`. `npm run test:runner` runs the runner's own
+(`.wingfoil/workflows/bindings.yaml`, which this repository does not have yet). The runner signs as its own
+`team.agents` identity, which cannot approve; gates stay the approver's, through `gate.mjs`. `npm run test:runner` runs the runner's own
 tests, a stage of the full suites, but for two that assume one project's trunk (an agent named `claude` written,
 `codex` reviewing): they are skipped by name until a runner version drops the assumption.
 
