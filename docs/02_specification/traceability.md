@@ -1,7 +1,7 @@
 # Traceability (v0.1, v0.2, v0.3)
 
-**Version:** 1.8
-**Date:** 2026-11-13
+**Version:** 1.9
+**Date:** 2026-11-24
 **Status:** Approved
 **Traces to:** [06_features.md](../01_vision/06_features.md) 1.2, [07_sequencer.md](../01_vision/07_sequencer.md) 1.1, [09_experiment-design.md](../01_vision/09_experiment-design.md) 1.1, [scenarios/](scenarios/), [acceptance/](acceptance/), [requirements.md](requirements.md)
 
@@ -83,6 +83,9 @@ scheduled), G-A, G-B (v0.4 from sequencer 1.2) and G-G (v1.0) have no v0.1 scena
 | F7.2 setup contest process (v0.2) | J6.3 | competitors.feature | REQ-FMT-01, 06, 13; REQ-RES-10 | W13 |
 | F7.5 configured variants (v0.3) | J6.1 | campaign.feature, competitors.feature, scenarios.feature, runner.feature, scoring.feature, results.feature (W18's tasks) | REQ-ARC-03; REQ-FMT-01, 04, 05, 08, 13; REQ-RUN-03, 11, 20; REQ-SCO-08; REQ-RES-02, 10; REQ-CLI-11, 14 | W18 |
 | F4.9 review loop per arm (v0.3) | J2.5 | campaign.feature, runner.feature, scoring.feature, results.feature (W19's tasks) | REQ-FMT-01, 06, 08; REQ-RUN-01, 02, 08, 09, 13, 19, 21; REQ-SCO-14, 16; REQ-RES-02, 06; REQ-CLI-02, 03, 05, 11 | W19 |
+
+| F2.8 the wingfoil arm's step B (v0.4) | J3.3, J6.1 | runner.feature, results.feature (W21's tasks) | REQ-FMT-01, 05, 12; REQ-RUN-09, 22; REQ-RES-02 | W21 |
+| F6.14 S11 role isolation (v0.4) | — | scenarios.feature (W25's tasks; Q-E4, M-E5 to M-E8 in experiment design 1.14) | scenarios/S11.md and its requirements, written by W25's specification task; REQ-FMT-04 | W25 |
 
 **Coverage:**
 
@@ -202,3 +205,10 @@ Source: [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-con
 the amendments) and its acceptance files, whose scenarios W19's implementing tasks write; **§3** gains T16 and T17
 (experiment design 1.13). Source:
 [task-147](../memory/task/task-147-w19-s-requirements-and-acceptance-the-review-loop-f4.9.md).
+
+## Amendment 1.9 (v0.4, W20 task-162, 2026-11-24)
+
+**§2** gains F2.8, the wingfoil arm's step B (REQ-RUN-22 and requirements 1.61), and F6.14, S11 role isolation, whose
+scenario specification and requirements are W25's first task; the acceptance scenarios of both are written by the
+implementing tasks. Q-E4 (experiment design 1.14) has no scenario until S11 exists. Source:
+[task-162](../memory/task/task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design.md).
