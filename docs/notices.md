@@ -8,6 +8,17 @@ runner's home; a notice is never edited by hand.
 
 <!-- runner:open -->
 
+<!-- key:blocked-trunk-task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/review/1 -->
+### N-003 · 2026-11-24 · trunk:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
+
+- **Status:** open
+- **Kind:** blocked
+- **Opened:** 2026-11-24T09:50:52Z
+- **Line:** trunk
+- **Element:** trunk:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
+- **Reason:** blocked (run task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/review/1): the permission layer refused `npx --no-install wingfoil memory submit task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design` ("This command requires approval"); the review accepts the work and is recorded in commit 9eddfdbe, and only that in-progress → in-review submit is left.
+- **Unblock:** `cd <runner home> && node scripts/runner/run.mjs --line trunk --close N-003 --how "<what solved it>"`
+
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-177-the-external-workflow-runner-as-this-repository-s-governance-its-configuration-its-identity-and-its-doctor-the-pilot-s-runner-half -->
 ### N-002 · 2026-11-24 · trunk:task-177-the-external-workflow-runner-as-this-repository-s-governance-its-configuration-its-identity-and-its-doctor-the-pilot-s-runner-half
 
