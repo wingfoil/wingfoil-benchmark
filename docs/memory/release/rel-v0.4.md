@@ -6,6 +6,7 @@ status: in-development
 version: v0.4
 waves: [W20, W21, W22, W23, W24, W25]
 features: [F6.4, F6.7, F6.5, F4.6, F6.6, F2.8, F6.14]
+release-line: rl-001
 ---
 
 ## Goal
