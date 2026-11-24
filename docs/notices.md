@@ -8,17 +8,6 @@ runner's home; a notice is never edited by hand.
 
 <!-- runner:open -->
 
-<!-- key:halt-trunk-rejected-task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file -->
-### N-010 · 2026-11-24 · trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
-
-- **Status:** open
-- **Kind:** halt
-- **Opened:** 2026-11-24T15:36:17Z
-- **Line:** trunk
-- **Element:** trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
-- **Reason:** trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file rejected 2 times in review: rule it first (npx wingfoil memory history task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file)
-- **Unblock:** `cd <runner home> && node scripts/runner/run.mjs --line trunk --resume`
-
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it -->
 ### N-009 · 2026-11-24 · trunk:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it
 
@@ -78,6 +67,17 @@ runner's home; a notice is never edited by hand.
 ## Closed
 
 <!-- runner:closed -->
+
+<!-- key:halt-trunk-rejected-task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file -->
+### N-010 · 2026-11-24 · trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
+
+- **Status:** closed 2026-11-24T15:38:09Z — resumed by the approver
+- **Kind:** halt
+- **Opened:** 2026-11-24T15:36:17Z
+- **Line:** trunk
+- **Element:** trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
+- **Reason:** trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file rejected 2 times in review: rule it first (npx wingfoil memory history task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file)
+- **Unblock:** `cd <runner home> && node scripts/runner/run.mjs --line trunk --resume`
 
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design -->
 ### N-005 · 2026-11-24 · trunk:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
