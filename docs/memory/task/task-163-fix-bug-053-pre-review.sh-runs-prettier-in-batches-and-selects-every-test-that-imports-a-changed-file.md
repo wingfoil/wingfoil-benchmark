@@ -2,7 +2,7 @@
 id: task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
 type: task
 title: "Fix bug-053: pre-review.sh runs Prettier in batches and selects every test that imports a changed file"
-status: backlog
+status: in-progress
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
@@ -33,12 +33,33 @@ suites went red after a green pre-review in six v0.3 tasks. Third in W20's order
 
 ## Design
 
-`batched` in `scripts/pre-review.sh` passes Prettier, eslint and the related tests 200 files at a time through `check`,
-which names a red stage and exits 1 (process substitution, so the exit reaches the script). Related tests: `npx vitest
-related --run`, which follows the import graph, so a module imported only through another selects its tests. A skipped
-selection prints a line. Tests in `test/unit/scripts/pre-review.test.ts`; README's Pre-review section updated.
+`batched` in `scripts/pre-review.sh` passes every file-list check (Prettier, eslint, the changed test files, the related
+tests) in batches of at most 200 files and 60000 bytes of paths (well under the 131072 bytes one argument may hold),
+through `check`, which names a red stage and exits 1 (process substitution, so the exit reaches the script). The bytes
+are counted by `byte_length` in the C locale, so a multibyte path counts its bytes, not its characters; the locale is
+set only inside that function, never for the checks. The traceability and evaluation-page tests run once, outside the
+batches. Related tests: `npx vitest related --run` on every changed source that is not a test file, which follows the
+import graph, so a module imported only through another selects its tests; it uses the default config, so tests under
+`test/bin/` and `test/docker/` are never selected (`test:bin` covers the first). Every skipped stage prints
+`pre-review: <stage> skipped: <why>`. Tests in `test/unit/scripts/pre-review.test.ts`; README's Pre-review section
+updated.
 
 ## Execution notes
 
-Red first not run separately: the new tests were written with the fix; the full suites and the independent review
-(dl-020) are left to the review step. `wingfoil workflow next` behaved as declared.
+Red first not run separately: the new tests were written with the fix. `wingfoil workflow next` behaved as declared.
+`scripts/pre-review.sh main` could not be run in the headless session (refused); the targeted tests (pre-review,
+traceability, docs: 7 files, 85 tests) are green. The full suites are left to the approver's go.
+
+### Review
+
+Post-fix checklist (work-item review step, dl-020) run before each round: the Design, the notes, the README and the
+script header searched for every term the fix changed (200 files, bytes, characters, related, test/docker).
+
+| Round | Fix commit | Reviewer | Findings | Outcome |
+| ----- | ---------- | -------- | -------- | ------- |
+| 1 | `1d85e7d4` | independent review | batching only by count; skipped stages silent; fixed tests run per batch | fixed: bytes bound, a line per skipped stage, fixed tests once |
+| 2 | `1ed5779a` | independent review | `vitest related` fed a folder list that drifted from the layout | fixed: every changed non-test source |
+| 3 | `89a16f9d` | claude-opus-5-5 | should-fix: a byte bound measured in characters; should-fix: Design and notes stale; should-fix: claim wider than the selection (`test/bin/`, `test/docker/`); nit: header line of 129 characters | fixed: `byte_length` in the C locale and a 4-byte-path test, Design and notes updated, scope stated in README and header, header rewrapped |
+
+Rounds 1 and 2 are recorded from the commit messages; their findings' wording and severities were not kept in the
+session, so they are summarised. The fix diff of round 3 awaits its re-review.
