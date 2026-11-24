@@ -6,7 +6,8 @@
 # Run on demand, when the machine is free (the approver's choice of 2026-10-09: never from a cron on a machine that
 # sleeps). Each branch's log is $WFB_OUT/<date>/<branch>-<commit>-<hhmmss>.txt, never overwritten; summary.txt gets a
 # line per branch: the commit the run started on, DIRTY when the worktree had changes not committed, GIT-ERROR when
-# git could not say, each stage's exit code and the log's name. A run holds a lock, and a second one runs nothing.
+# git could not say, each stage's exit code (`-` for a stage the branch does not have) and the log's name. A run
+# holds a lock, and a second one runs nothing.
 # No agent, no credential.
 # Usage: scripts/full-suites.sh [branch…]
 set -uo pipefail

@@ -180,7 +180,6 @@ the paid launch a manual step; AC3 keeps `campaign-cycle` out of `launch.allow`.
 change of its own, with the test changed first. Every `wingfoil` command above ran as `npx --no-install wingfoil`
 (0.3.2): the `wingfoil` on the machine's PATH is an older global install.
 
-
 ### Review
 
 - **Round 1** (an independent read-only subagent, in a temporary clone, on `main...1e9143f8`; the main checkout's
@@ -205,3 +204,12 @@ change of its own, with the test changed first. Every `wingfoil` command above r
     name and `AI-Model`); F-050's notice was announced by a dry run, not written; D8 back among the deviations, and
     the copied checks run only once a step binds them. Left as is: `scripts/setup/` in the ignore lists, harmless and
     ready for the machine file if a Codex line comes.
+- **Round 2, the re-review of the fixes** (an independent read-only subagent, in a temporary clone, on
+  `1e9143f8..06a9badf`; the main checkout's reflog unchanged). Every fix of round 1 confirmed against the runner's
+  and WingFoil's code (S1: work-item's developer and reviewer steps still launch, the approver's stays human; S3: a
+  review step writes only under `docs/`; S4: the argv runs with no shell, and Claude Code strips `nice` before
+  matching its allowlist); each new assertion red alone by mutation. No blocker, no should-fix; five nits, fixed:
+  the trunk's comment wrapped; `dna.yaml`'s comment states that WingFoil takes any agent's roles; the local-file
+  check also reads the committed example, so it checks something where the suites run, and allows only `runner`,
+  `setup` and `trusted_ref` under `paths`; the full suites' header names `-`; a double blank line. A wildcard in
+  `launch.allow` (its N-d) is already refused by the launch test. The review closes.

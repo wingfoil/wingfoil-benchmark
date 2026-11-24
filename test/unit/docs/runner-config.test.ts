@@ -126,15 +126,25 @@ describe('the runner launches only what spends nothing and the release does not 
     expect(config.life_cycle_start, 'life_cycle_start').toBeUndefined();
   });
 
-  it('keeps only machine paths in the git-ignored local file, which the drift check does not read', () => {
-    if (!existsSync(localFile)) return;
-    const local = load(localFile) as { lines?: Record<string, Record<string, unknown>>; paths?: unknown };
-    expect(Object.keys(local).filter((key) => key !== 'lines' && key !== 'paths')).toEqual([]);
-    for (const [name, line] of Object.entries(local.lines ?? {})) {
-      expect(
-        Object.keys(line).filter((key) => key !== 'checkout' && key !== 'worktrees'),
-        `local lines.${name}`,
-      ).toEqual([]);
+  it('keeps only machine paths in the local file and its committed example, which the drift check does not read', () => {
+    // The local file exists only on a machine that runs the runner (its home); the example is checked everywhere.
+    const files = [repoPath('config', 'runner.local.example.yaml'), localFile].filter((file) => existsSync(file));
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      const local = load(file) as {
+        lines?: Record<string, Record<string, unknown>>;
+        paths?: Record<string, unknown>;
+      };
+      expect(Object.keys(local).filter((key) => key !== 'lines' && key !== 'paths'), file).toEqual([]);
+      for (const [name, line] of Object.entries(local.lines ?? {})) {
+        expect(
+          Object.keys(line).filter((key) => key !== 'checkout' && key !== 'worktrees'),
+          `${file}: lines.${name}`,
+        ).toEqual([]);
+      }
+      // paths.trusted_ref only while a change to the runner's files is unmerged (task-177's notes).
+      const allowed = ['runner', 'setup', 'trusted_ref'];
+      expect(Object.keys(local.paths ?? {}).filter((key) => !allowed.includes(key)), `${file}: paths`).toEqual([]);
     }
   });
 
