@@ -101,6 +101,10 @@ describe('the runner launches only what spends nothing and the release does not 
         expect(entry?.email, `line ${name}: ${agent}'s email is on a reserved domain`).not.toMatch(
           /\.(test|example|invalid|localhost)$/i,
         );
+        // Nor a GitHub noreply address without an account's numeric id (`<id>+<login>@…`).
+        expect(entry?.email, `line ${name}: ${agent}'s GitHub noreply email names no account`).not.toMatch(
+          /^(?![0-9]+\+)[^@]*@users\.noreply\.github\.com$/i,
+        );
         expect(entry?.approval_authority, `line ${name}: ${agent} can approve`).toBe(false);
         expect(
           dna.team.members.map((member) => member.name),
