@@ -8,6 +8,20 @@ runner's home; a notice is never edited by hand.
 
 <!-- runner:open -->
 
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it -->
+### N-009 · 2026-11-24 · trunk:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it
+
+- **Status:** open
+- **Kind:** gate
+- **Opened:** 2026-11-24T15:04:25Z
+- **Line:** trunk
+- **Element:** trunk:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it
+- **Reason:** work-item.real-agent-check@task:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it waits for the approver
+- **Ready:** yes
+- **Head:** 284c33bc
+- **Evidence:** no run recorded on this element
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-009 --reason 'Approved work-item.real-agent-check@task:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it at 284c33bc: no run recorded on this element'`
+
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-177-the-external-workflow-runner-as-this-repository-s-governance-its-configuration-its-identity-and-its-doctor-the-pilot-s-runner-half -->
 ### N-008 · 2026-11-24 · trunk:task-177-the-external-workflow-runner-as-this-repository-s-governance-its-configuration-its-identity-and-its-doctor-the-pilot-s-runner-half
 
