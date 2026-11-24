@@ -1,7 +1,7 @@
 # Features — WingFoil Benchmark
 
-**Version:** 1.6
-**Date:** 2026-11-06
+**Version:** 1.7
+**Date:** 2026-11-24
 **Status:** Approved
 **Traces to:** [05_journeys.md](05_journeys.md), [03_is-isnot.md](03_is-isnot.md); input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md)
 
@@ -40,6 +40,7 @@ decision in the experiment design.
 | F2.5 | **Arm setups**: scripted setup for the baseline, baseline-docs and wingfoil arms, and later for each competitor arm. Setup cost is measured apart from step cost. Every setup choice that deviates from a tool's defaults (for example disabling OpenSpec's telemetry) is part of the published setup. | J6.1 | H | M | M |
 | F2.7 | **Arm activation**: each arm ships a fixed, published operating manual in its environment (its `CLAUDE.md` / `AGENTS.md`) that maps a step's intent to the harness's commands (WingFoil's CLI + MCP, a competitor's slash commands). Its cost counts as setup. Step prompts stay identical and harness-neutral. | J3.3, J6.1 | H | M | M |
 | F2.6 | **WingFoil under test**: installs the WingFoil version pinned by the campaign inside the container, independently of the WingFoil that manages this repository. | J2.1, J4.4 | H | L | L |
+| F2.8 | **The wingfoil arm's step B** (v0.4, W21): WingFoil driven step by step, one launch per role, by an external workflow runner that runs in the run's container on the WingFoil the campaign pins; the benchmark prepares the environment and a wrapper answers the runner's gates as the fixed approver. The arm is **reported apart**: its result is WingFoil driven by that runner, never the wingfoil arm's headline and never a replacement for step A. Its hypothesis is written before its first run, and it starts with a spike. | J3.3, J6.1 | M | H | **H** |
 
 ## F3 — Scenarios
 
@@ -99,6 +100,7 @@ phase. The IDs below are the candidates from the brief.
 | F6.11 | M2 — Macro: bookmarks dashboard (web app, backend, database) | C Development | M | H | M |
 | F6.12 | M3 — Macro: situation awareness with synthetic, seeded data ingestion | F Knowledge & Continuity | M | H | **H** |
 | F6.13 | S10 — Gates and roles: approvals, a rejection and an absent approver | E Governance & Compliance | M | M | M |
+| F6.14 | S11 — Role isolation (v0.4, W25; number provisional): a rule only the reviewer receives, frozen changes to review by two reviewers (one bound to the rule, one not), and a developer who applies the rule once rejected (dl-036); answers Q-E4 | E Governance & Compliance | M | M | **H** |
 
 ## F7 — Competitors and contributions
 
@@ -119,8 +121,10 @@ phase. The IDs below are the candidates from the brief.
     what a fixed policy says.
   - **F4.5 (determinism metric):** what "substantially equivalent" means in numbers.
   - **F4.6 (blind judge):** its cost against the budget, and its bias.
+  - **F2.8 (step B)** and **F6.14 (S11)**, added in 1.7: whether the external runner can take the benchmark's needs
+    (R1–R6 of dl-037), and whether Spec Kit and OpenSpec can bind a rule to a role (dl-036). Each starts with a spike.
 
-  All three must be settled in the experiment design before the specification phase.
+  The first three must be settled in the experiment design before the specification phase.
 - **Budget pressure:** F4.6 spends tokens on every run it scores. With a 20–30 € budget it competes
   directly with repetitions.
 - **Category bias (threat from the input landscape):** WingFoil's unique points sit mostly in
@@ -190,3 +194,11 @@ phase. The IDs below are the candidates from the brief.
     README" left the installed harness out, which the agent needs to configure it. Source:
     [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md)
     (requirements 1.50, REQ-RUN-20).
+
+12. **Amendment 1.7 (v0.4, release-planning, 2026-11-24) — F2.8 and F6.14 added.** The approver's choices of 2026-11-23,
+    planned in [plan-006](../plans/plan-006-release-v0.4.md): **F2.8 the wingfoil arm's step B on the external
+    runner** ([dl-037](../memory/decision-log/dl-037-an-external-workflow-runner-as-a-candidate-for-the-wingfoil-arm-s-step-b-and-campaigns-that-wait-out-the-quota.md),
+    dl-021 amended), in wave W21, reported apart from step A; **F6.14 S11 role isolation**
+    ([dl-036](../memory/decision-log/dl-036-a-role-isolation-scenario-for-v0.4-s-planning-a-rule-only-the-reviewer-receives.md)),
+    primary category E, in wave W25, answering Q-E4. Both in v0.4 (sequencer 1.3). Source:
+    [task-162](../memory/task/task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design.md).

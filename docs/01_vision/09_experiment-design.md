@@ -1,9 +1,9 @@
 # Experiment Design (GQM) — WingFoil Benchmark
 
-**Version:** 1.13
-**Date:** 2026-11-13
+**Version:** 1.14
+**Date:** 2026-11-24
 **Status:** Approved
-**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2); [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) (1.3); [task-094](../memory/task/task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike.md) (1.4); [task-095](../memory/task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md) (1.5); [dl-018](../memory/decision-log/dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md), [task-096](../memory/task/task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget.md) (1.6); [task-103](../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md) (1.7); [task-116](../memory/task/task-116-s10-gates-and-roles-scenario-dl-029.md) (1.8); [task-117](../memory/task/task-117-approver-policy-v3-scripted-verdicts-per-gate-on-classifier-v2-dl-029.md) (1.9); [task-118](../memory/task/task-118-a-separate-approver-identity-the-agent-never-the-approver-verdicts-executed-by-the-runner-dl-029.md) (1.10); [task-126](../memory/task/task-126-w16-s-requirements-and-acceptance-the-method-corrected-bug-025-bug-026-bug-028-to-bug-032.md) (1.11), [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md) (1.12), [task-147](../memory/task/task-147-w19-s-requirements-and-acceptance-the-review-loop-f4.9.md) (1.13)
+**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2); [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) (1.3); [task-094](../memory/task/task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike.md) (1.4); [task-095](../memory/task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md) (1.5); [dl-018](../memory/decision-log/dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md), [task-096](../memory/task/task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget.md) (1.6); [task-103](../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md) (1.7); [task-116](../memory/task/task-116-s10-gates-and-roles-scenario-dl-029.md) (1.8); [task-117](../memory/task/task-117-approver-policy-v3-scripted-verdicts-per-gate-on-classifier-v2-dl-029.md) (1.9); [task-118](../memory/task/task-118-a-separate-approver-identity-the-agent-never-the-approver-verdicts-executed-by-the-runner-dl-029.md) (1.10); [task-126](../memory/task/task-126-w16-s-requirements-and-acceptance-the-method-corrected-bug-025-bug-026-bug-028-to-bug-032.md) (1.11), [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md) (1.12), [task-147](../memory/task/task-147-w19-s-requirements-and-acceptance-the-review-loop-f4.9.md) (1.13); [task-162](../memory/task/task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design.md) (1.14: [dl-036](../memory/decision-log/dl-036-a-role-isolation-scenario-for-v0.4-s-planning-a-rule-only-the-reviewer-receives.md), [dl-037](../memory/decision-log/dl-037-an-external-workflow-runner-as-a-candidate-for-the-wingfoil-arm-s-step-b-and-campaigns-that-wait-out-the-quota.md), [dl-023](../memory/decision-log/dl-023-three-repetitions-per-scenario-and-arm-run-as-campaigns-of-their-own-from-a-preset.md))
 
 ---
 
@@ -35,7 +35,7 @@ The same object and the same viewpoint apply to every goal:
 |---|---|---|---|---|---|
 | **G-C Development** | Does the harness improve how well an agent implements a specification? | Q-C1 Does the result conform to the spec? · Q-C2 At what cost? | M-Q1 hidden-test pass rate · M-Q2 static quality · M-K1 cost · M-K2 time and turns | S1 | v0.1 |
 | **G-D Maintenance & Quality** | Does the harness improve finding and fixing defects without regressions? | Q-D1 How many real defects are fixed? · Q-D2 Are non-defects rejected? · Q-D3 How many regressions? | M-Q1 · M-D1 defects fixed / injected · M-D2 false-report handling · M-D3 regressions | S2 (later S7) | v0.1 |
-| **G-E Governance & Compliance** | Does the harness keep the work within declared rules? | Q-E1 Are directives respected across steps? · Q-E2 Is an illegal state transition prevented? · Q-E3 Can who approved what, and why, be reconstructed from the repository? | M-E1 directive violations · M-E2 illegal transitions prevented · M-E3 approval reconstructibility · M-E3a attribution · M-E4 rejection honoured (1.8) | S8, S10 (1.8) | Q-E1 in v0.1; Q-E2 and Q-E3 deferred (§4.4, 1.2), then S10, first run in v0.3's W17 campaign (1.8) |
+| **G-E Governance & Compliance** | Does the harness keep the work within declared rules? | Q-E1 Are directives respected across steps? · Q-E2 Is an illegal state transition prevented? · Q-E3 Can who approved what, and why, be reconstructed from the repository? · Q-E4 Does a rule reach only the role it is bound to, and does that role apply it? (1.14) | M-E1 directive violations · M-E2 illegal transitions prevented · M-E3 approval reconstructibility · M-E3a attribution · M-E4 rejection honoured (1.8) · M-E5 exposure · M-E6 leakage · M-E7 detection · M-E8 false alarms (1.14) | S8, S10 (1.8), S11 (1.14) | Q-E1 in v0.1; Q-E2 and Q-E3 deferred (§4.4, 1.2), then S10, first run in v0.3's W17 campaign (1.8); Q-E4 in v0.4's W25 (1.14) |
 | **G-F Knowledge & Continuity** | Does the harness carry decisions and domain knowledge across fresh sessions? | Q-F1 Are earlier decisions respected, or explicitly revised? · Q-F2 What does the next change cost? | M-F1 decision consistency · M-F2 next-change cost | S3 (later S4) | v0.1 |
 | **G-A Inception & Specification** | Does the harness improve turning ambiguous input into requirements? | Q-A1 Coverage of the expected requirements · Q-A2 Ambiguities flagged | expected-items coverage · blind-judge rubric | S5 | v0.4 (1.7) |
 | **G-B Planning & Management** | Does the harness produce plans that another session can execute? | Q-B1 Is the plan executable by a fresh session? | downstream pass rate and cost | S6 | v0.4 (1.7) |
@@ -60,6 +60,7 @@ Two goals cut across all categories:
 | **competitor arms** (v0.2: **speckit**, **openspec**) | as baseline, plus the tool at a pinned version, set up from its official documentation, and the arm's operating manual | fair comparison |
 | **docs controls** (v0.2: **speckit-docs**, **openspec-docs**) | as baseline, plus the **same information** as their harness arm, rendered as free-form Markdown. `baseline-docs` keeps its name and stays the wingfoil arm's control | a control per harness: "more context" versus "this harness" (1.2) |
 | **configured variants** (v0.3, 1.7: **wingfoil-configured**, **speckit-configured**, **openspec-configured**, each with its configured docs control) | as their harness arm, plus a configuration for the project written by a configuring agent that sees only the seed, its README included, and the harness as its setup installs it (1.12) | the harness as its users would configure it, not only on its defaults (F7.5) |
+| **wingfoil-runner** (v0.4, 1.14, provisional name; step B, F2.8) | as the wingfoil arm, plus an external workflow runner, at a pinned release, that drives the scenario's steps one launch per role through WingFoil's commands, in the run's container; a wrapper answers its gates as the fixed approver | WingFoil as its projects drive it, read apart from the wingfoil arm |
 
 **Parity rules:**
 
@@ -103,7 +104,29 @@ Two goals cut across all categories:
   a gate.** `baseline-docs` then carries every role's directives, labelled by role. Each step is a new arm version,
   read through a bridge or a recalibration. Steps B
   (WingFoil 0.4, the runner launching through `wingfoil agent execute`) and C (1.0, the engine executing the steps)
-  are not commitments.
+  are not commitments; from 1.14, step B is amended as the next bullet states.
+- **The wingfoil arm, step B** (1.14, v0.4, F2.8,
+  [dl-037](../memory/decision-log/dl-037-an-external-workflow-runner-as-a-candidate-for-the-wingfoil-arm-s-step-b-and-campaigns-that-wait-out-the-quota.md),
+  amending dl-021's step B): the steps are launched one per role by an external workflow runner, on the WingFoil the
+  campaign pins, from the next campaign, without waiting for WingFoil 0.4. The benchmark's campaign runner still
+  prepares the run's environment (the container, the arm's setup, the seed) and scores it; it writes no driver of its
+  own (dl-021's option A stays rejected, T1, T12). The runner needs R1–R6 of dl-037 (a run mode for one project in a
+  container; gates answered by a caller's policy; one adapter for every tier and role; each launch measured; a
+  published, versioned release; a changelog line for every change to the step loop), and a wrapper answers its gates as
+  the fixed approver, with an approver identity of its own listed only in the campaign clone. On 0.4, WingFoil's
+  headless launch (`agent execute`, option D) stays the reference and the runner's arm is read against it. The
+  runner's files at its tag are published in the campaign's harness archive (T12).
+  - **It is reported apart.** Its result is WingFoil driven by that runner, never the wingfoil arm's headline and never
+    a replacement for step A; the runner's own records are not results (dl-037, "Not in this decision").
+  - **Its hypothesis is written before its first run** (T1: the runner and WingFoil come from the benchmark's
+    maintainer): *per-role launches with a distinct reviewer catch more of the scenario's checks than step A's single
+    session, at a cost not above step A's by more than the variance.* It holds when the arm's M-Q1 and its scenario's
+    content checks are above step A's beyond the variance and M-K1 is not above step A's by more than the variance (§4.6). A failure is
+    published as a finding. It is numbered with the hypotheses of `docs/calibration` when the arm is calibrated.
+  - **It starts with a spike**: a task, at most one dry run, with the approver's spending consent, which shows that R1–R6
+    hold in the run's container on the campaign's WingFoil. If more than a thin wrapper is needed and the runner cannot
+    take the rest in time, the benchmark's own minimal step-B runner (dl-037's option E) is weighed, its deviation from
+    dl-021 stated on the method page, or the arm waits for the following campaign.
 - **Configured variants** (1.7, F7.5): the configuring agent runs once per scenario version and harness, before any
   campaign, from the seed (its README included) and the harness as its setup installs it, nothing else (1.12); its
   configuration is versioned in the scenario (1.1) and published; its cost is the arm's one-off setup cost (M-K3). Each
@@ -244,6 +267,29 @@ Two goals cut across all categories:
 - **M-E2 and M-E3 in S10** (1.8): M-E2 counts a release without approval and a forged approval (a commit authored as
   the approver's identity that the ledger does not list); M-E3 reads the verdict's identity, its own word and its
   subject, by content.
+- **Q-E4 and S11** (1.14, F6.14, [dl-036](../memory/decision-log/dl-036-a-role-isolation-scenario-for-v0.4-s-planning-a-rule-only-the-reviewer-receives.md)):
+  does a rule reach only the role it is bound to, and does that role apply it? S11's rule is a TSDoc `@since <next
+  minor>` tag on every export a change adds, read from the AST; its reviewers work on frozen changes from their own
+  snapshots and write a verdict to one neutral file, `review-verdict.json`, in every arm. The scenario's specification
+  task fixes the details (W25).
+  - **M-E5 exposure:** whether a session not bound to the rule read its text, from the session's transcript, scored
+    when the run is scored so that the result is published without the transcript. The rule's file name does not
+    reveal the rule.
+  - **M-E6 leakage:** the share of the exports the developer's first step adds that keep the rule, read from the AST.
+  - **M-E7 detection:** the frozen violations that the bound reviewer rejects, citing the rule and the file.
+  - **M-E8 false alarms:** the unbound reviewer's findings on the rule, and the bound reviewer's rejections of the
+    clean change.
+  - **Reused:** M-E4 (rejection honoured), M-Q1 with hidden tests, M-K1 and M-K2.
+  - **Hypotheses**, written before the scenario exists and extending `docs/calibration/v0.1.md` §11: **H12** a rule
+    bound to a role stays with that role (in every `wingfoil` run the developer and the unbound reviewer are not
+    exposed to the rule, and M-E6 is at `baseline`'s level); **H13** the bound reviewer applies the rule (in every
+    `wingfoil` run M-E7 is complete and M-E8 is zero, at `baseline-docs`' level or above). A failure is published as a
+    finding about WingFoil and how agents use it; the scenario is built around a capability WingFoil has natively,
+    and the benchmark's maintainer also builds WingFoil (T1).
+  - **Delivery by arm:** `baseline` nowhere; `baseline-docs` and the other docs controls in one rules file with a
+    reviewer section every role can read; `wingfoil` as a directive bound to the reviewer's role; Spec Kit and OpenSpec
+    bound to a role if W25's spike finds a native way, otherwise in their usual single place, stated on the method
+    page.
 
 ### 4.5 Determinism (operational)
 
@@ -288,6 +334,10 @@ campaign produces the reference values, and a threshold is proposed only after t
   [dl-023](../memory/decision-log/dl-023-three-repetitions-per-scenario-and-arm-run-as-campaigns-of-their-own-from-a-preset.md)):
   a group may reach n = 3 through a repetition campaign of the same key (scenario version, arm digest, harness pin,
   model and effort), run from a preset, and then leaves "preliminary".
+- **The reference campaign at n = 3** (1.14, v0.4): the reference campaign reads every group at n = 3, through
+  dl-023's repetition campaigns of the same key, or a preset that runs them; the decision and the preset are W21's,
+  before the campaign's estimate. Each repetition campaign is a line of the release's ledger with its own consent.
+  The wingfoil-runner arm (§2) is reported apart and read at n = 3 like every group.
 
 ### 4.7 Review loop (F4.9, 1.7)
 
@@ -315,7 +365,7 @@ with the harness's own files stripped, as F4.6's judge would (T16, T17).
 
 | # | Threat | Kind | Mitigation |
 |---|---|---|---|
-| T1 | **Maintainer bias:** the benchmark is designed by WingFoil's maintainer | construct, conclusion | GQM fixed before any run; losses published equally; tool-neutral metrics (§4.4); scenarios where competitors are strong (S2, S3, S7 for OpenSpec; S6 for Spec Kit); public setups and a contest process (F7.2) |
+| T1 | **Maintainer bias:** the benchmark is designed by WingFoil's maintainer | construct, conclusion | GQM fixed before any run; losses published equally; tool-neutral metrics (§4.4); scenarios where competitors are strong (S2, S3, S7 for OpenSpec; S6 for Spec Kit); public setups and a contest process (F7.2); from 1.14, the step-B arm's and S11's hypotheses written before their first run, and the step-B arm reported apart (§2, §4.4) |
 | T2 | **Category bias:** WingFoil's unique features sit in category E | construct | E is one category among seven, with no overall score; M-E2 and M-E3 (deferred, 1.2) measure outcomes, not formats |
 | T3 | **More context, not harness** | internal | a docs control per harness, generated mechanically, each harness compared with its own (1.2); operating-manual size reported |
 | T4 | **Prompt leakage or asymmetry** | internal | identical prompts, a leak scan, and published operating manuals |
@@ -326,7 +376,7 @@ with the harness's own files stripped, as F4.6's judge would (T16, T17).
 | T9 | **Neutral-approver policy favours some tools** (for example, tools that ask more questions) | internal | one versioned policy for every arm; interventions reported per arm; a classifier settled on a corpus of every agent's final messages, its changed readings pinned (v2, 1.7) |
 | T10 | **Harness capability gap:** the WingFoil under development (v0.2 pre-release, `3df305e`) has no workflow engine; workflows are followed by hand | construct | expected failures (F3.6), published as losses; public campaign on the latest release (sequencer decision 3); from v0.3, the wingfoil arm's step A drives the engine (dl-021, 1.7) |
 | T11 | **Oracle validity:** hidden tests capture the spec only partly | construct | multiple metrics per goal; a published human rubric from v0.3 (F4.1, bug-026); the blind rubric judge from v0.4 (1.7) |
-| T12 | **Setup effort unequal across tools** | internal | setup from official documentation only; scripted and published; deviations published, telemetry off for every tool (1.2); a setup can be contested, and a corrected one runs as a new campaign (F7.2); the configured variants' configuring agent, model and prompt the same for every harness, and published (1.7) |
+| T12 | **Setup effort unequal across tools** | internal | setup from official documentation only; scripted and published; deviations published, telemetry off for every tool (1.2); a setup can be contested, and a corrected one runs as a new campaign (F7.2); the configured variants' configuring agent, model and prompt the same for every harness, and published (1.7); the step-B runner's files at its tag published in the campaign's harness archive (1.14) |
 | T13 | **Answer lookup:** with internet access, an agent may fetch public material that overlaps the oracle, for example S1's official conformance suite | internal, construct | web requests logged and reported per arm; hold-out tests added to public oracles; fictional domains (S4) where lookup cannot help. Access is the same for every arm, so it is not an arm asymmetry |
 | T14 | **Model sensitivity:** a harness's effect may depend on the model | external | model slices (§6): from v0.2 a ladder of models read per step (dl-007, dl-008); cross-model numbers are shown as a separate comparison, never mixed with same-model ones; a comparison between campaigns on different models is marked cross-model (1.2) |
 | T15 | **Tool drift:** competitors release every few days, so a result describes one version only (1.2) | external | every harness pinned per campaign, assessed for eligibility at that version, and its artifact published; the version shown beside every value; across campaigns only deltas against each campaign's own baseline are compared (T7) |
@@ -522,3 +572,13 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
     later round sees the whole copy. §5: T16 and T17. Source:
     [task-147](../memory/task/task-147-w19-s-requirements-and-acceptance-the-review-loop-f4.9.md)
     (requirements 1.58, REQ-RUN-21, REQ-SCO-16).
+19. **Amendment 1.14 (v0.4, release-planning, 2026-11-24).** v0.4 as planned in
+    [plan-006](../plans/plan-006-release-v0.4.md), with the decisions of 2026-11-23:
+    - **§2:** the wingfoil arm's step B on an external workflow runner (F2.8, dl-037 B, amending dl-021's step B), the
+      arm `wingfoil-runner`, reported apart, its hypothesis first, a spike first.
+    - **§1 and §4.4:** Q-E4 and M-E5 to M-E8, with H12 and H13 (F6.14, dl-036), measured by S11 in W25.
+    - **§4.6:** the reference campaign reads every group at n = 3 (dl-023), decided in W21.
+    - **§5:** T1 notes the arm's and S11's maintainer overlap; T12 publishes the runner's files at its tag.
+
+    Source: [task-162](../memory/task/task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design.md);
+    dl-023, dl-036, dl-037; the approver's review decision at the task's review.
