@@ -2,7 +2,7 @@
 id: task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer
 type: task
 title: "Fix bug-052: the review loop's usage.json and loop.json written by a tested writer"
-status: backlog
+status: in-progress
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
@@ -30,9 +30,18 @@ so their reader is tested only against a fixture. Placed in W20 by the approver'
 
 ## Design
 
-<!-- To be written when the task starts. -->
+One module, `src/runner/review-records.ts`, builds the loop's three records: `loopRecord` (`review/loop.json`),
+`reviewerUsageRecord` (`review/<n>/reviewer-usage.json`) and `fixerUsageRecord` (moved from `review-loop.ts`, as
+task-153 made it). `writeLoop` and `reviewRound` call them; `test/support/loop-records.ts` writes `loop.json` and
+`reviewer-usage.json` through them too. `test/unit/runner/review-records.test.ts` round-trips the records through
+`readLoop` and compares the writer's output with the stored dry runs 261 (`loop.json`) and 251 (`reviewer-usage.json`).
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- Red first was not shown as a failing run: the writer module and its tests were written in one pass, so the test
+  never ran against a tree without the module. The tests pass now; the round trip is the evidence.
+- `scripts/pre-review.sh main` needs an approval a headless run cannot get; `npm run format`, `typecheck` and `lint`
+  were run instead, and pass. The review (dl-020) and the approver's go for the full suites remain.
+- Full suite (`nice -n 19 npm test -- --maxWorkers=2`): 2574 passed, 1 failed:
+  `test/unit/docs/required-lists.test.ts > gives every task past draft at least one requirement`. It reads the
+  worktree's docs, which this task did not touch; not investigated further.
