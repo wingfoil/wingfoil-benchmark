@@ -49,7 +49,8 @@ whose review is the first real kanban review on 1.2.4 the maintainers asked to h
 
 ## Design
 
-**The update.** `git apply` of the runner package's `patches/from-1.2.2-to-1.2.4.patch` (tag `ec5c08b`): it changes
+**The update.** `git apply` of the runner package's `patches/from-1.2.2-to-1.2.4.patch` (package commit `e46e32d`, made after
+the tag `runner-1.2.4`, `ec5c08b`): it changes
 six of the copied files (`scripts/runner/{MANIFEST.sha256,VERSION,gate.mjs,lib.mjs,run.mjs,runner.test.mjs}`); no
 machine file has changed since 1.2.1, and the two Claude adapters and the package's config for this repository are
 unchanged between the tags. No key `config/runner.yaml` sets changes meaning, and 1.2.3 and 1.2.4 add none that the
@@ -94,7 +95,7 @@ dictionary words; the token's lines: 0.
 runner's own skip: this repository binds no checks).
 
 **The config (AC3).** `git -C <runner package> diff runner-1.2.2 runner-1.2.4` adds no `config.<key>` read in
-`lib.mjs` or `run.mjs`, and changes neither the Claude adapters nor the package's config for this repository.
+`lib.mjs` or `run.mjs`; `gate.mjs` (1.2.3, F-10) reads `limits.lock_stale_minutes`, already set to 120, and changes neither the Claude adapters nor the package's config for this repository.
 `test/unit/docs/runner-config.test.ts` and the other docs tests on 1.2.4: 76 passed; `npx --no-install wingfoil
 workflow list`: no diagnostics. `scripts/pre-review.sh main`: green.
 
@@ -120,3 +121,17 @@ work-item.build@task:task-178-…` (built by hand, F-050); from the home, `run.m
 and `N-005`, each `--how "opened unsigned by runner-1.2.2; the runner reopens it signed (task-178)"`; the doctor and
 a dry run. The console loop's filter then skips the real-agent-check gates; the new loop is handed over in chat.
 
+### Review
+
+- **Round 1** (an independent read-only subagent, in a temporary clone, on `main...6c17ad8e`; the main checkout's
+  reflog unchanged). No blocker, no should-fix; four nits, fixed. It verified the 17 copied files against the tag by
+  sha256 and mode, the digest, the red commit (93/2/1) and the green branch (103/0/1), and the new code paths against
+  `work-item`: `runnerSubmits` fires only on the review step and moves the task to in-review, `resolvedRuns` lifts
+  only blocked runs whose notice the approver closed, the done step's install runs before the niced tests; and that
+  `run.mjs --close` on an unsigned notice is not refused and the runner reopens it signed with a new N-id.
+  - The patch's source named: package commit `e46e32d`, after the tag.
+  - The AC3 note names `gate.mjs`'s one new read, `limits.lock_stale_minutes`, already set.
+  - rel-v0.4's point: the home must equal its trusted ref, `origin/main` outside a pilot.
+  - Red first by mutation: the config test also fails on `integration.setup_command` or `install_scripts: true`,
+    since 1.2.4 runs the install outside the sandbox in the done step too.
+  The review closes.
