@@ -45,7 +45,7 @@ const day = (out: string) =>
   join(out, readdirSync(out).find((name) => /^\d{4}-\d{2}-\d{2}$/.test(name)) ?? '');
 
 describe('scripts/full-suites.sh (dl-016, task-075)', () => {
-  it('runs the five stages on main and on every task/* worktree, one at a time, and summarizes their codes', () => {
+  it('runs the six stages on main and on every task/* worktree, one at a time, and summarizes their codes', () => {
     const { out, calls, env } = fixture();
     const run = spawnSync('bash', [SCRIPT], { env, encoding: 'utf8' });
     expect(run.status, run.stderr).toBe(0);
@@ -56,11 +56,13 @@ describe('scripts/full-suites.sh (dl-016, task-075)', () => {
       'main run build',
       'main run test:bin -- --maxWorkers=2',
       'main run test:docker',
+      'main run test:runner',
       'task-x run lint',
       'task-x test -- --maxWorkers=2',
       'task-x run build',
       'task-x run test:bin -- --maxWorkers=2',
       'task-x run test:docker',
+      'task-x run test:runner',
     ]);
     const logs = day(out);
     // One log per branch and commit: a later run of the same day never overwrites the log an approval names.
@@ -70,10 +72,10 @@ describe('scripts/full-suites.sh (dl-016, task-075)', () => {
     expect(names.some((name) => name.startsWith('other'))).toBe(false);
     const summary = readFileSync(join(logs, 'summary.txt'), 'utf8');
     expect(summary).toMatch(
-      /^main [0-9a-f]+: LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0 \(log main-[0-9a-f]+-\d{6}\.txt\)$/m,
+      /^main [0-9a-f]+: LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0 RUNNER 0 \(log main-[0-9a-f]+-\d{6}\.txt\)$/m,
     );
     expect(summary).toMatch(
-      /^task\/x [0-9a-f]+: LINT 0 TEST 1 BUILD 0 BIN 0 DOCKER 0 \(log task_x-[0-9a-f]+-\d{6}\.txt\)$/m,
+      /^task\/x [0-9a-f]+: LINT 0 TEST 1 BUILD 0 BIN 0 DOCKER 0 RUNNER 0 \(log task_x-[0-9a-f]+-\d{6}\.txt\)$/m,
     );
   });
 
