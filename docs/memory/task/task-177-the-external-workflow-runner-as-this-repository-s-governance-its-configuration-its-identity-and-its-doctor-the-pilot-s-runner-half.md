@@ -121,5 +121,62 @@ now, replaced after the first task, or AC5's `ok` read as "ok but for the budget
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+**The copy (AC1).** `git -C <runner package> archive runner-1.2.2 common | tar -x --strip-components=1
+--exclude=common/scripts/setup`, and `adapters/claude-opus.yaml`, `adapters/claude-sonnet.yaml` to
+`.wingfoil/agents/custom/`. In the worktree, `node scripts/runner/manifest.mjs --digest
+sha256:8b0c1fd20fd6191d1e4e14725911fe6431237f17ac15a5174cd45e945b12ffbe`: "ok: runner 1.2.2, the 16 common files
+match the manifest, 1 machine file(s) left out: scripts/setup/codex-apparmor.sh", "ok: manifest sha256 …", exit 0.
+The anonymity check on the copied files (the folder names of the machine's workspaces, counts only): two hits, both
+dictionary words already common in the published tree; the `DFD_`/`dfd-` strings are the runner's aliases of its
+1.2.1 names (its ADOPTION.md, "Nomi del runner"), no project's name.
+
+**Red first (AC3, AC4).** `test/unit/docs/runner-config.test.ts`: 5 of 5 red before `config/runner.yaml` existed
+(`e7b51326`), green after. By mutation, each one red alone: allowing `campaign-cycle`, `"*"`, `release-flow`,
+`delivery`, `release.calibration`; integrating `release-flow.release`; `work-item.real-agent-check` not manual; the
+runner's `approval_authority: true`; the approver as the line's agent. Allowing `bug-ingest` stays green. Two more
+red-first cases came from WingFoil's refusals below (`b4b5912c`, the next one). The full suites' sixth stage:
+`test/unit/scripts/full-suites.test.ts` red first (`923067da`), then `RUNNER` in `scripts/full-suites.sh`.
+
+**The identity (AC4), as built.** AC4's `runner@wingfoil-benchmark.invalid` is refused by WingFoil 0.3.2:
+`workflow list` fails, "an agent email may not be on a reserved top-level domain (.test, .example, .invalid,
+.localhost …, bug-261)". The approver chose a GitHub noreply address (2026-11-24); WingFoil refuses that too, "a
+GitHub noreply agent email must be id-qualified, <id>+<login>@users.noreply.github.com", and the runner has no
+account. The approver then chose `runner@wingfoil.github.io` (2026-11-24). The runner's doctor also wants every
+`team.agents` entry with an email ("agent Claude Code has no email"): Claude Code gets `noreply@anthropic.com`, the
+address of its `Co-Authored-By` trailer. AC4's address needs the approver's amend of this task.
+
+**The budget (AC2).** The doctor refuses a line with no positive `weekly_token_budget` ("set it from a pilot task").
+The approver chose a provisional 20000000 (2026-11-24), to be replaced after the pilot's first task.
+
+**The runner's own tests.** `node --test scripts/runner/runner.test.mjs`: 92 pass, 3 fail, 1 skipped as shipped.
+Test 26 (every line's agent in `team.agents` with an email) passed once `dna.yaml` had the entry. Tests 25 and 27
+assume one project's trunk: the line's agent named `claude` or `codex` from its adapter's command, and a trunk
+written by `claude` and reviewed by `codex`. They contradict the maintainers' answer that a line's `agent` is an
+identity only. `npm run test:runner` skips them by name (`--test-skip-pattern`): 93 pass. Sent to the coordination
+session for the maintainers on 2026-11-24, with the approver's OK, asking for a 1.2.3.
+
+**The home and the line (AC5).** The home: a clone of `origin` under `~/Workspaces/runner-homes/`, `npm ci`. The
+line: a clone under `~/Workspaces/runner-lines/`, worktrees beside it, `npm ci`. Their paths are only in the home's
+`config/runner.local.yaml` (git-ignored; `config/runner.local.example.yaml` is committed with placeholders). While
+this task is unmerged, the task branch is fetched into both (`git fetch <worktree> <branch>`, `merge --ff-only`): the
+home's `paths.trusted_ref` is a local branch `task-177-pilot`, the line's `main` is the task branch, never pushed.
+
+| Command (from the home) | Declared | Observed |
+|---|---|---|
+| `run.mjs --line trunk --doctor`, line on `origin/main` | the project's problems | 5 FAIL: the runner's agent, `paths.runs`, the budget, `docs/notices.md`, Claude Code's email (the line had none of this task's files) |
+| the same, line on the task branch | `ok` | first `workflow list` failing (the emails above), then the budget; after both, "ok: the project can run under the runner", exit 0 |
+| `run.mjs --line trunk --dry-run` | the step it would launch, nothing written | `work-item.build@task:task-127-…`, a task already done (F-050); nothing written in the home or the line |
+| `wingfoil workflow finalize plan-006-release-v0.4 --step work-item.build@task:task-127-… --reason …` | the step recorded complete, an empty commit | `50f7c651`; the frontier then shows task-127's `real-agent-check` as "human needed", routed to the approver |
+| `run.mjs --line trunk --dry-run`, again | the next step | `work-item.build@task:task-177-…`, agent "WingFoil Benchmark Runner", adapter `claude-sonnet`, model `claude-sonnet-5-5`, in the line's worktrees; notice N-001 for task-127's real-agent check (not written in a dry run); task-168's start "held by a WIP limit" |
+| `scripts/runner/install-schedule.sh` | the units written, every timer disabled | `wingfoil-benchmark-runner@.service` and `.timer` in `~/.config/systemd/user`; `is-enabled`: disabled, `is-active`: inactive; a warning that `scripts/setup/codex-apparmor.sh` is missing (no Codex step runs) |
+
+**For the done step.** After the merge and the approver's push: the home back on `origin/main` (its local
+`trusted_ref` line removed), the line's `main` fast-forwarded to `origin/main`, the doctor again;
+`workflow finalize --step work-item.build@task:task-177-…`, since this task too is built by hand. Then the
+approver may enable the timer: `systemctl --user enable --now wingfoil-benchmark-runner@trunk.timer`.
+
+**Not in this task.** The governance ruling of 2026-11-23 has the runner also run `campaign-cycle`'s agent steps,
+the paid launch a manual step; AC3 keeps `campaign-cycle` out of `launch.allow`. Allowing its agent steps is a
+change of its own, with the test changed first. Every `wingfoil` command above ran as `npx --no-install wingfoil`
+(0.3.2): the `wingfoil` on the machine's PATH is an older global install.
+

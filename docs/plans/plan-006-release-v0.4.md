@@ -44,10 +44,10 @@ specification task.
   the approver's rulings of 2026-11-23): the campaign uses the runner as WingFoil's projects do. The Benchmark
   prepares the run's environment and the runner drives the scenario through WingFoil's commands; a wrapper answers its
   gates as the fixed approver, with an approver identity of its own listed only in the campaign clone. The arm is
-  reported apart, its hypothesis written first, a spike first. `runner-1.2.0` (`db9467b`, manifest sha256
-  `7deb889e…c47749`, 2026-11-23) holds R1 to R6; its files at the tag are published in the campaign's
-  `harnesses.tar.gz` (T12). The spike exercises a subagent (the usage fix is covered only by a fixture) and, on
-  WingFoil 0.4, a doctor pass, a dry run and a scripted end-to-end story first.
+  reported apart, its hypothesis written first, a spike first. `runner-1.2.2` (`ac98a68`, manifest sha256
+  `8b0c1fd2…2ffbe`, 2026-11-23; the approver waited for it, task-177) holds R1 to R6; its files at the tag are
+  published in the campaign's `harnesses.tar.gz` (T12). The spike exercises a subagent (the usage fix is covered
+  only by a fixture) and, on WingFoil 0.4, a doctor pass, a dry run and a scripted end-to-end story first.
 - **The governance adoption** (task-127, the approver's rulings of 2026-11-22 and 2026-11-23): with the runner, at
   this release-planning; one pilot on W20, in which the runner runs the adopted methodology, with exit and rollback
   criteria written apart for the two; the runner also runs `campaign-cycle`'s agent steps, the paid launch and the
@@ -106,7 +106,7 @@ runner's project is never named in this repository ("an external workflow runner
    step B, the requirements each wave needs first) → bug-053 → bug-052 → bug-055 → the campaign gates → the review
    practice → dl-037 F → the test gaps and cleanups → the `wingfoil-sync`. The pilot's exit criteria are read when
    W20's last task is done.
-2. W21: dl-037 G (the arms' pin, re-run when the campaign is prepared) → the step-B spike on `runner-1.2.0` (one dry
+2. W21: dl-037 G (the arms' pin, re-run when the campaign is prepared) → the step-B spike on `runner-1.2.2` (one dry
    run at most, with the approver's spending consent) → the `wingfoil-runner` arm, its hypothesis first → dl-023's
    repetition preset → dl-033 → dl-034.
 3. W22 → W24: each wave's specification first (its scenario, its requirements and acceptance), then the scenario; S5

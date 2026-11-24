@@ -125,5 +125,15 @@ record stays in git. The composed versions add the approver's gate to the three 
 - **The composer's `AGENTS.region.md`**, a region meant for an `AGENTS.md`, is not written: this repository has never
   had one, and its agents read `.wingfoil/` and the directives, which say the same. Adding it is weighed when the
   pilot ends.
-- **The external workflow runner** is not adopted here: task-177 adopts it, when a runner version names no private
-  project in its common files.
+
+## D8 — the external workflow runner runs the governance (task-177)
+
+The runner's common files at `runner-1.2.2` are copied unchanged into `scripts/runner/`, `scripts/checks/` and
+`scripts/lib/` (manifest digest `sha256:8b0c1fd2…2ffbe`, checked with `node scripts/runner/manifest.mjs --digest`);
+the machine file `scripts/setup/codex-apparmor.sh` and the Codex adapters are left out, as no line runs Codex.
+Prettier and ESLint ignore the copied folders: the manifest is their check, and an update is the runner's patch.
+`config/runner.yaml` launches only `work-item`, its real-agent check as a manual step, and never `campaign-cycle` or
+the release slot (`test/unit/docs/runner-config.test.ts`). The runner signs as its own `team.agents` identity,
+which cannot approve; gates stay the approver's, through `gate.mjs`. `npm run test:runner` runs the runner's own
+tests, a stage of the full suites, but for two that assume one project's trunk (an agent named `claude` written,
+`codex` reviewing): they are skipped by name until a runner version drops the assumption.
