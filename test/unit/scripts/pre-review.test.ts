@@ -81,8 +81,39 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
       'npx eslint src/cli/a.ts test/unit/x.test.ts',
       'npx tsc --noEmit -p .',
       'npx vitest run --maxWorkers=2 test/unit/x.test.ts test/acceptance/traceability.test.ts test/unit/docs/evaluate-page.test.ts',
+      'npx vitest related --run --maxWorkers=2 src/cli/a.ts',
       'npm run test:bin -- --maxWorkers=2',
     ]);
+  });
+
+  it('runs Prettier in batches when the branch changes more files than one argument list holds (bug-053)', () => {
+    const names = Array.from({ length: 450 }, (_, i) => `data/f${String(i).padStart(3, '0')}.json`);
+    const { run, recorded } = fixture(names);
+    const result = run();
+    expect(result.status, result.stderr).toBe(0);
+    const prettier = recorded().filter((call) => call.startsWith('npx prettier'));
+    expect(prettier).toHaveLength(3);
+    expect(prettier.join(' ').match(/data\/f\d+\.json/g)).toEqual(names);
+  });
+
+  it('names a red batch and exits non-zero rather than stopping silently (bug-053)', () => {
+    const names = Array.from({ length: 450 }, (_, i) => `data/f${String(i).padStart(3, '0')}.json`);
+    const { run, recorded } = fixture(names, 'npx prettier');
+    const result = run();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/pre-review: prettier is red/);
+    expect(recorded()).toHaveLength(1);
+  });
+
+  it('selects the tests that import a changed source, directly or through another module (bug-053)', () => {
+    const { run, recorded } = fixture(['src/core/deep.ts']);
+    expect(run().status).toBe(0);
+    expect(recorded()).toContain('npx vitest related --run --maxWorkers=2 src/core/deep.ts');
+  });
+
+  it('says so when no related-test selection applies (bug-053)', () => {
+    const { run } = fixture(['docs/n.md']);
+    expect(run().stdout).toMatch(/tests-related skipped/);
   });
 
   it('runs test:bin only when files under src/cli/ or src/site/ changed', () => {

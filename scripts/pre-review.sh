@@ -8,6 +8,18 @@
 set -uo pipefail
 base="${1:?usage: scripts/pre-review.sh <base>}"
 low() { nice -n 19 ionice -c3 "$@" < /dev/null; }
+batch_size=200 # files per command: one argument list holds only so many (bug-053)
+batched() { # $1 = the check's name, $2.. = the command; the files on stdin, one per line, passed in batches
+  local name="$1"; shift
+  local -a files=() chunk=()
+  mapfile -t files
+  local i=0
+  while [ "$i" -lt "${#files[@]}" ]; do
+    chunk=("${files[@]:i:batch_size}")
+    check "$name" "$@" "${chunk[@]}"
+    i=$((i + batch_size))
+  done
+}
 check() { # $1 = the check's name, then its command
   local name="$1"; shift
   echo "pre-review: $name"
@@ -55,13 +67,20 @@ if [ "${#markdown[@]}" -gt 0 ]; then
   done
   if [ "$red" -ne 0 ]; then echo "pre-review: markdown is red" >&2; exit 1; fi
 fi
-check prettier npx prettier --check --ignore-unknown "${changed[@]}"
+batched prettier npx prettier --check --ignore-unknown < <(printf '%s\n' "${changed[@]}")
 mapfile -t sources < <(printf '%s\n' "${changed[@]}" | grep -E '\.(ts|mts|js|mjs)$' || true)
-if [ "${#sources[@]}" -gt 0 ]; then check eslint npx eslint "${sources[@]}"; fi
+if [ "${#sources[@]}" -gt 0 ]; then batched eslint npx eslint < <(printf '%s\n' "${sources[@]}"); fi
 check tsc npx tsc --noEmit -p .
 mapfile -t tests < <(printf '%s\n' "${changed[@]}" | grep -E '^test/.*\.test\.ts$' || true)
 check tests npx vitest run --maxWorkers=2 "${tests[@]}" test/acceptance/traceability.test.ts \
   test/unit/docs/evaluate-page.test.ts
+# Every test that imports a changed file, directly or through another module (bug-053): vitest follows the import graph.
+mapfile -t related < <(printf '%s\n' "${sources[@]}" | grep -E '^(src|scripts|test/(support|fixtures))/' || true)
+if [ "${#related[@]}" -gt 0 ]; then
+  batched tests-related npx vitest related --run --maxWorkers=2 < <(printf '%s\n' "${related[@]}")
+else
+  echo "pre-review: tests-related skipped: no changed source outside the test files"
+fi
 if printf '%s\n' "${changed[@]}" | grep -qE '^(src/(cli|site)|test/bin)/'; then
   check test:bin npm run test:bin -- --maxWorkers=2
 fi
