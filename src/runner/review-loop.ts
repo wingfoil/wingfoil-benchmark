@@ -7,6 +7,8 @@ import type { SessionUsage, StepOutcome } from '../agents/index.js';
 import { parseFindings, reasonOf } from '../core/index.js';
 import type { ApproverPolicy, Arm, Finding, ReviewLoop, Scenario } from '../core/index.js';
 import { buildReviewCopy, setupAddedPaths } from './review-copy.js';
+import { fixerUsageRecord, loopRecord, reviewerUsageRecord } from './review-records.js';
+import type { RoundRecord } from './review-records.js';
 import {
   CAP_REACHED,
   combine,
@@ -41,15 +43,6 @@ export interface LoopSummary {
   readonly costEur: number;
   /** The campaign's ceiling ended the loop (REQ-RUN-08 as amended in 1.58): no new run starts. */
   readonly ceiling?: true;
-}
-
-/** One round as `loop.json` records it. */
-interface RoundRecord {
-  readonly n: number;
-  /** The round's findings by severity; `null` for a round whose reviewer session ran and ended the loop. */
-  readonly findings: Readonly<Record<Finding['severity'], number>> | null;
-  /** Whether a fixer session followed the round. */
-  readonly fixed: boolean;
 }
 
 /** What a run gives its loop: where the run is, and the trees and commit its last step left. */
@@ -132,17 +125,7 @@ function writeLoop(
 ): LoopSummary {
   const dir = join(outputDir, 'review');
   mkdirSync(dir, { recursive: true });
-  const record = {
-    reviewer: { agent: loop.agent, model: loop.model, effort: loop.effort },
-    prompt_sha256: loop.prompt.sha256,
-    fixer_prompt_sha256: loop.fixer_prompt.sha256,
-    max_rounds: loop.max_rounds,
-    outcome: summary.outcome,
-    ...(summary.reason === undefined ? {} : { reason: scrub(summary.reason, secrets) }),
-    cost_eur: summary.costEur,
-    rounds,
-  };
-  writeFileSync(join(dir, 'loop.json'), `${JSON.stringify(record, undefined, 2)}\n`);
+  writeFileSync(join(dir, 'loop.json'), loopRecord(loop, summary, rounds, secrets));
   return summary;
 }
 
@@ -446,15 +429,7 @@ async function reviewRound(n: number, input: RoundInput, options: RunnerOptions)
   const costEur = bounded && container !== undefined ? Math.max(usage.costEur, boundEur) : usage.costEur;
   writeFileSync(
     join(roundDir, 'reviewer-usage.json'),
-    `${JSON.stringify(
-      {
-        ...usage,
-        ...(bounded && container !== undefined ? { cost_bound_eur: boundEur } : {}),
-        ...(waits.length === 0 ? {} : { rate_limit_waits_s: waits }),
-      },
-      undefined,
-      2,
-    )}\n`,
+    reviewerUsageRecord(usage, bounded && container !== undefined ? boundEur : undefined, waits),
   );
   writeFileSync(
     join(roundDir, 'reviewer.jsonl'),
@@ -539,28 +514,6 @@ interface FixInput {
 type FixResult =
   | { readonly tree: string; readonly commit: string; readonly costEur: number }
   | { readonly end: Omit<LoopSummary, 'costEur'>; readonly costEur: number };
-
-/**
- * A fixer round's `fixer-usage.json` (REQ-FMT-06 as amended in 1.58): the session's usage, its bound when it reported
- * none, its interventions as the list of the approver's replies (a step's are counted by that list's length), its
- * outcome, and its error scrubbed of credentials. `readLoop` reads it back (bug-051).
- */
-export function fixerUsageRecord(
-  result: Pick<StepResult, 'usage' | 'costBoundUsd' | 'interventions' | 'outcome' | 'error'>,
-  secrets: readonly string[],
-): string {
-  return `${JSON.stringify(
-    {
-      usage: result.usage,
-      ...(result.costBoundUsd === undefined ? {} : { cost_bound_usd: result.costBoundUsd }),
-      interventions: result.interventions,
-      outcome: result.outcome,
-      ...(result.error === undefined ? {} : { error: scrub(result.error, secrets) }),
-    },
-    undefined,
-    2,
-  )}\n`;
-}
 
 /**
  * One fixer session (REQ-RUN-21): the run's own agent and model in the run's container and workspace, with the arm's

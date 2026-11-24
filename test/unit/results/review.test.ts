@@ -8,7 +8,7 @@ import { aggregateExecution, fixLines, readMetric } from '../../../src/results/i
 import type { AggregateFile, Group } from '../../../src/results/index.js';
 import { CAMPAIGN, execution } from '../../support/aggregate-fixture.js';
 import type { RunSpec } from '../../support/aggregate-fixture.js';
-import { fixerUsageRecord } from '../../../src/runner/review-loop.js';
+import { fixerUsageRecord } from '../../../src/runner/review-records.js';
 import { cleanAt, loopFinding, notCleanAt5, patchChanging, writeReviewLoop } from '../../support/loop-records.js';
 
 const PINS = 'models:\n  default: model-a\ncurrency:\n  usd_to_eur: 0.5\n';

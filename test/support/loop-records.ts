@@ -3,6 +3,10 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import type { ReviewLoop } from '../../src/core/index.js';
+import type { LoopOutcome } from '../../src/runner/review-loop.js';
+import { loopRecord, reviewerUsageRecord } from '../../src/runner/review-records.js';
+
 /** One finding as `findings.json` holds it. */
 export interface LoopFinding {
   readonly severity: 'blocker' | 'should-fix' | 'nit';
@@ -83,10 +87,7 @@ export function writeReviewLoop(runDir: string, spec: LoopSpec): void {
     cost += Math.max(reviewerEur, round.reviewerBoundEur ?? 0);
     writeFileSync(
       join(roundDir, 'reviewer-usage.json'),
-      JSON.stringify({
-        ...usage(reviewerEur),
-        ...(round.reviewerBoundEur === undefined ? {} : { cost_bound_eur: round.reviewerBoundEur }),
-      }),
+      reviewerUsageRecord(usage(reviewerEur), round.reviewerBoundEur, []),
     );
     if (round.findings !== null) {
       const findings = round.findings.map((finding) => ({ ...finding, why: `Because of ${finding.title}.` }));
@@ -116,26 +117,31 @@ export function writeReviewLoop(runDir: string, spec: LoopSpec): void {
     'should-fix': findings.filter((f) => f.severity === 'should-fix').length,
     nit: findings.filter((f) => f.severity === 'nit').length,
   });
+  // The pins the loop records; only the fields the record reads are filled.
+  const loop = {
+    agent: spec.pins?.agent ?? { name: 'claude-code', version: '2.1.0' },
+    model: spec.model ?? 'reviewer-model',
+    effort: spec.pins?.effort ?? 'high',
+    prompt: { sha256: spec.pins?.prompt ?? 'a'.repeat(64) },
+    fixer_prompt: { sha256: spec.pins?.fixerPrompt ?? 'b'.repeat(64) },
+    max_rounds: spec.maxRounds ?? 5,
+  } as ReviewLoop;
   writeFileSync(
     join(dir, 'loop.json'),
-    JSON.stringify({
-      reviewer: {
-        agent: spec.pins?.agent ?? { name: 'claude-code', version: '2.1.0' },
-        model: spec.model ?? 'reviewer-model',
-        effort: spec.pins?.effort ?? 'high',
+    loopRecord(
+      loop,
+      {
+        outcome: spec.outcome as LoopOutcome,
+        ...(spec.reason === undefined ? {} : { reason: spec.reason }),
+        costEur: Math.round(cost * 1e6) / 1e6,
       },
-      prompt_sha256: spec.pins?.prompt ?? 'a'.repeat(64),
-      fixer_prompt_sha256: spec.pins?.fixerPrompt ?? 'b'.repeat(64),
-      max_rounds: spec.maxRounds ?? 5,
-      outcome: spec.outcome,
-      ...(spec.reason === undefined ? {} : { reason: spec.reason }),
-      cost_eur: Math.round(cost * 1e6) / 1e6,
-      rounds: rounds.map((round, index) => ({
+      rounds.map((round, index) => ({
         n: index + 1,
         findings: round.findings === null ? null : count(round.findings),
         fixed: round.fix !== undefined,
       })),
-    }),
+      [],
+    ),
   );
 }
 
