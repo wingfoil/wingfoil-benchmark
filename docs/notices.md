@@ -8,20 +8,6 @@ runner's home; a notice is never edited by hand.
 
 <!-- runner:open -->
 
-<!-- key:gate-trunk-plan-006-release-v0.4-work-item.approve@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design -->
-### N-004 · 2026-11-24 · trunk:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
-
-- **Status:** open
-- **Kind:** gate
-- **Opened:** 2026-11-24T09:58:36Z
-- **Line:** trunk
-- **Element:** trunk:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
-- **Reason:** work-item.approve@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design waits for the approver
-- **Ready:** no: the last run task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/review/1 ended blocked
-- **Head:** 1f30d536
-- **Evidence:** run task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/review/1 blocked
-- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-004 --reason 'Approved work-item.approve@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design at 1f30d536: run task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/review/1 blocked'`
-
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-177-the-external-workflow-runner-as-this-repository-s-governance-its-configuration-its-identity-and-its-doctor-the-pilot-s-runner-half -->
 ### N-002 · 2026-11-24 · trunk:task-177-the-external-workflow-runner-as-this-repository-s-governance-its-configuration-its-identity-and-its-doctor-the-pilot-s-runner-half
 
@@ -53,6 +39,20 @@ runner's home; a notice is never edited by hand.
 ## Closed
 
 <!-- runner:closed -->
+
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.approve@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design -->
+### N-004 · 2026-11-24 · trunk:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
+
+- **Status:** closed 2026-11-24T11:45:24Z — the approver ruled the gate
+- **Kind:** gate
+- **Opened:** 2026-11-24T09:58:36Z
+- **Line:** trunk
+- **Element:** trunk:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
+- **Reason:** work-item.approve@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design waits for the approver
+- **Ready:** no: the last run task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/review/1 ended blocked
+- **Head:** 1f30d536
+- **Evidence:** run task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/review/1 blocked
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-004 --reason 'Approved work-item.approve@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design at 1f30d536: run task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/review/1 blocked'`
 
 <!-- key:blocked-trunk-task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/review/1 -->
 ### N-003 · 2026-11-24 · trunk:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
