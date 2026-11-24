@@ -2,7 +2,7 @@
 id: task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it
 type: task
 title: "The external workflow runner moved to runner-1.2.4: the patch, its digest, the skipped tests restored and the notices opened before it"
-status: in-progress
+status: in-review
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
