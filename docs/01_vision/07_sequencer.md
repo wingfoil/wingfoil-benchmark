@@ -1,9 +1,9 @@
 # Sequencer — WingFoil Benchmark
 
-**Version:** 1.2
-**Date:** 2026-10-27
+**Version:** 1.3
+**Date:** 2026-11-24
 **Status:** Approved
-**Traces to:** [06_features.md](06_features.md) (decisions 1–3), [05_journeys.md](05_journeys.md), [04_personas.md](04_personas.md); 1.2: [plan-005](../plans/plan-005-release-v0-3.md), [rel-v0-3](../memory/release/rel-v0-3.md)
+**Traces to:** [06_features.md](06_features.md) (decisions 1–3), [05_journeys.md](05_journeys.md), [04_personas.md](04_personas.md); 1.2: [plan-005](../plans/plan-005-release-v0-3.md), [rel-v0-3](../memory/release/rel-v0-3.md); 1.3: [plan-006](../plans/plan-006-release-v0.4.md), [rel-v0.4](../memory/release/rel-v0.4.md)
 
 ---
 
@@ -26,8 +26,8 @@ A **release** is a group of waves that ends in a result someone can use.
 | **v0.1 — First preliminary result** | A WingFoil-only campaign (baseline, baseline-docs, wingfoil) on S1–S3 and S8, published as preliminary. The repository becomes public. | Riley (primary), Maintainer | 33 |
 | **v0.2 — Competitors** | Spec Kit and OpenSpec arms under the same rules; campaign comparison; filters for Dana. | Avery, Dana, Maintainer | 7 |
 | **v0.3 — WingFoil as designed, harnesses as configured** | Re-measure S1, S2, S3 and S8 at 1.1 with a corrected oracle and metrics; the wingfoil arm driving WingFoil 0.3.1's workflow engine; every harness also configured for the project; the review loop measured per arm; campaigns composed from presets, Codex among the agents (1.2). | Riley, Avery, Dana, Maintainer | 2 new (F7.5, F4.9); F1.1, F2.6, F2.7, F4.1, F4.3 revisited |
-| **v0.4 — Broader categories** | Cover A and B: S4, S5 (with the blind judge), S6, S7 (from v0.3 in 1.2). | Dana, Maintainer | 5 |
-| **v1.0 — Macro projects** | M1–M3 and S9, run for WingFoil's major releases; contributions from external authors. | all | 5 |
+| **v0.4 — Broader categories, and WingFoil driven step by step** | Cover A and B: S4, S5 (with the blind judge), S6, S7 (from v0.3 in 1.2); the wingfoil arm's step B on an external workflow runner, reported apart; the role-isolation scenario; n = 3 on the reference campaign (1.3). | Dana, Avery, Riley, Maintainer | 7 (5 + F2.8, F6.14) |
+| **v1.0 — Macro projects** | M1–M3 and S9, run for WingFoil's major releases; contributions from external authors; mirrors and provider arms (dl-035, from v0.4 in 1.3). | all | 5 |
 
 Every feature of `06_features.md` is assigned to exactly one release; a later release may revisit it (1.2), and says so.
 
@@ -81,15 +81,23 @@ Codex campaign of the step-A arm (campaign-007,
 [dl-027](../memory/decision-log/dl-027-step-a-brought-ahead-with-a-codex-campaign-of-the-step-a-arm-before-2026-11-13.md)).
 The waves keep their features; only their order of delivery moves.
 
-## v0.4 — Broader categories
+## v0.4 — Broader categories, and WingFoil driven step by step
 
-v0.3's waves of 1.1, renumbered (1.2).
+Planned in [plan-006](../plans/plan-006-release-v0.4.md) (1.3). The waves hold the features of 1.2's "Broader categories"
+(its W20–W22, renumbered W22–W24) and what the approver added on 2026-11-23: a foundation wave, step B, and role
+isolation.
 
 | Wave | Features | High unc. | Ends with |
 |---|---|---|---|
-| W20 — Knowledge and legacy | F6.4 S4 fictional domain · F6.7 S7 legacy refactoring | — | F and D covered with two more scenarios |
-| W21 — Specification | F6.5 S5 spec authoring · F4.6 blind rubric judge | F6.5 | category A covered |
-| W22 — Planning | F6.6 S6 plan-then-execute | F6.6 | category B covered |
+| W20 — Foundations | no feature: the governance adoption (task-127, task-177), the retrospective's fixes, the campaign gates, the review practice, the quota wait, the notices and the machine preflight (dl-037 F), v0.4's specification | the runner as governance | the pilot's exit criteria read; the suites green on the new methodology |
+| W21 — Step B | F2.8 the wingfoil arm's step B on the external runner (dl-037 B, dl-021 amended); the arms' pin (dl-037 G); dl-023's repetitions as a preset; costs by component (dl-033); the release watch (dl-034) | the step-B spike | an S1 dry run driven by the runner in its container, measured like every arm |
+| W22 — Knowledge and legacy | F6.4 S4 fictional domain · F6.7 S7 legacy refactoring | — | F and D covered with two more scenarios |
+| W23 — Specification | F6.5 S5 spec authoring · F4.6 blind rubric judge | F6.5 | category A covered |
+| W24 — Planning | F6.6 S6 plan-then-execute | F6.6 | category B covered |
+| W25 — Role isolation | F6.14 S11 role isolation (dl-036); S10's self-approval temptation (H5) | the Spec Kit and OpenSpec spike | Q-E4 measured in a dry run |
+
+W20 and W21 hold work that is not a scenario; the "at most 3 features" rule counts features only. W22–W24 are 1.2's
+W20–W22 with their features unchanged.
 
 ## v1.0 — Macro projects
 
@@ -97,12 +105,12 @@ Run for WingFoil's major releases, with a reduced smoke run at each minor (brief
 
 | Wave | Features | High unc. | Ends with |
 |---|---|---|---|
-| W23 — First macros | F6.10 M1 calculator · F6.11 M2 bookmarks dashboard | — | two macro projects run end to end |
-| W24 — Hard ones | F6.12 M3 situation awareness · F6.9 S9 parallel agents | F6.12 | categories F and G covered at scale |
-| W25 — Openness | F7.3 external contribution guide | — | external scenario authors supported |
+| W26 — First macros | F6.10 M1 calculator · F6.11 M2 bookmarks dashboard | — | two macro projects run end to end |
+| W27 — Hard ones | F6.12 M3 situation awareness · F6.9 S9 parallel agents | F6.12 | categories F and G covered at scale |
+| W28 — Openness | F7.3 external contribution guide | — | external scenario authors supported |
 
-W24 (W19 until 1.2) holds two high-uncertainty features (F6.12 and F6.9). This breaks the one-per-wave rule. It is
-accepted for v1.0, because it is far away and will be re-planned (sequencer decision 4).
+W27 (W24 in 1.2, W19 until 1.2) holds two high-uncertainty features (F6.12 and F6.9). This breaks the one-per-wave rule.
+It is accepted for v1.0, because it is far away and will be re-planned (sequencer decision 4).
 
 ---
 
@@ -116,7 +124,7 @@ accepted for v1.0, because it is far away and will be re-planned (sequencer deci
 3. **WingFoil version:** the benchmark is developed against the pinned WingFoil v0.2 pre-release
    (commit `3df305e`; amended in 1.1). The first public campaign runs on the latest released
    WingFoil at that time.
-4. **W24** (W19 until 1.2): accepted with two high-uncertainty features.
+4. **W27** (W24 in 1.2, W19 until 1.2): accepted with two high-uncertainty features.
 
 ### Amendment 1.1 (specification phase, 2026-09-22)
 
@@ -142,3 +150,23 @@ accepted for v1.0, because it is far away and will be re-planned (sequencer deci
 
 Source: [task-103](../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md);
 [plan-005](../plans/plan-005-release-v0-3.md); the approver's review decision at the task's review.
+
+### Amendment 1.3 (v0.4, release-planning, 2026-11-24)
+
+9. **v0.4 is "Broader categories, and WingFoil driven step by step"**, the approver's choices in chat of 2026-11-23: the
+   sequencer's content stays (S4, S7, S5 with the blind judge, S6), and v0.4 also takes the wingfoil arm's step B on an
+   external workflow runner ([dl-037](../memory/decision-log/dl-037-an-external-workflow-runner-as-a-candidate-for-the-wingfoil-arm-s-step-b-and-campaigns-that-wait-out-the-quota.md),
+   F2.8), the role-isolation scenario ([dl-036](../memory/decision-log/dl-036-a-role-isolation-scenario-for-v0.4-s-planning-a-rule-only-the-reviewer-receives.md),
+   F6.14) and dl-023's repetitions, so that the reference campaign reads every group at n = 3. Three waves are
+   inserted: **W20 Foundations**, **W21 Step B** and **W25 Role isolation**; the waves of 1.2's v0.4 are renumbered
+   W22–W24 and v1.0's W26–W28. Decision 4 now names W27.
+10. **dl-035 moves to v1.0** (mirrors on Hugging Face, provider arms): the approver's choice of 2026-11-23. v0.4 already
+    carries step B, role isolation and the governance adoption, and the mirrors serve publication at scale more than
+    the categories v0.4 adds.
+11. **The wave rules still hold:** W20 holds no feature and W21 one (F2.8); each of W20, W21 and W25 has one
+    high-uncertainty item. The order of delivery may still move within the release (decision 8), as plan-006 does by
+    starting with task-127 and task-177.
+
+Source: [task-162](../memory/task/task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design.md);
+[plan-006](../plans/plan-006-release-v0.4.md); [rel-v0.4](../memory/release/rel-v0.4.md); the approver's review decision
+at the task's review.
