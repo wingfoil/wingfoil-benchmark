@@ -2,7 +2,7 @@
 id: task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
 type: task
 title: "v0.4's specification: the sequencer's amendment 1.3, features F2.8 and F6.14, step B and Q-E4 in the experiment design"
-status: backlog
+status: in-progress
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
@@ -42,7 +42,12 @@ wave's task can cite its feature, its requirements and its acceptance.
 
 ## Design
 
-<!-- To be written when the task starts. -->
+Documentation only, in the order of the acceptance criteria: (1) sequencer amendment 1.3 (waves W20, W21, W25
+inserted; later waves renumbered; dl-035 to v1.0; reason under "Decisions from the sequencer review"); (2) F2.8 and
+F6.14 in the features; (3) step B's arm, Q-E4 and the n = 3 repetitions in the experiment design, each with a version
+entry; (4) the requirements W20 and W21 need, each with acceptance or a named test; (5) rel-v0.4 and plan-006 aligned
+with the sequencer; (6) pre-review, docs and traceability tests, independent review. Each document gets its version
+bump as the doc-versioning directive asks. Later waves' requirements stay out of this task.
 
 ## Execution notes
 
