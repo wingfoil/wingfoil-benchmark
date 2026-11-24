@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# The benchmark's full suites (dl-016, task-075): lint, `npm test` with coverage, the build, test:bin and test:docker,
+# The benchmark's full suites (dl-016, task-075): lint, `npm test` with coverage, the build, test:bin, test:docker and
+# the external workflow runner's own tests (test:runner, task-177),
 # on the main checkout and every task/* worktree — or only on the branches named as arguments — one at a time, niced
 # and at idle I/O priority (the containers test:docker starts are dockerd's, and keep their own), vitest with 2 workers.
 # Run on demand, when the machine is free (the approver's choice of 2026-10-09: never from a cron on a machine that
@@ -41,9 +42,10 @@ run() { # $1 = worktree, $2 = branch
     low npm run build; echo "BUILD $?"
     low npm run test:bin -- --maxWorkers=2; echo "BIN $?"
     low npm run test:docker; echo "DOCKER $?"
+    low npm run test:runner; echo "RUNNER $?"
     echo "== end $(date -Is)"
   } > "$log" 2>&1
-  local codes changed=''; codes="$(grep -E '^(LINT|TEST|BUILD|BIN|DOCKER) [0-9]+$' "$log" | tr '\n' ' ')"
+  local codes changed=''; codes="$(grep -E '^(LINT|TEST|BUILD|BIN|DOCKER|RUNNER) [0-9]+$' "$log" | tr '\n' ' ')"
   # A commit or an edit in the shared worktree during the run: the log no longer names what it tested.
   local now
   if [ "$dirty" = ' GIT-ERROR' ]; then
