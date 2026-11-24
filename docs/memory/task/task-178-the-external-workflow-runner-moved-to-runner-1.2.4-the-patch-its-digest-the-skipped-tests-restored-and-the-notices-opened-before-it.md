@@ -136,3 +136,7 @@ a dry run. The console loop's filter then skips the real-agent-check gates; the 
   - Red first by mutation: the config test also fails on `integration.setup_command` or `install_scripts: true`,
     since 1.2.4 runs the install outside the sandbox in the done step too.
   The review closes.
+- **Full suites** (`scripts/full-suites.sh`, 2026-11-24, at `f79a63fe`, worktree clean): LINT 0, TEST 0, BUILD 0,
+  BIN 0, DOCKER 0, RUNNER 0 (log `.cache/full-suites/2026-11-24/task_task-178-runner-1.2.4-f79a63fe-133224.txt` in
+  the main checkout; 158 test files, 2571 tests passed and 10 skipped; test:bin 22 passed; test:docker 22 passed and
+  2 skipped; test:runner 103 passed and 1 skipped).
