@@ -49,12 +49,12 @@ whose review is the first real kanban review on 1.2.4 the maintainers asked to h
 
 ## Design
 
-**The update.** `git apply` of the runner package's `patches/from-1.2.2-to-1.2.4.patch` (package commit `e46e32d`, made after
-the tag `runner-1.2.4`, `ec5c08b`): it changes
-six of the copied files (`scripts/runner/{MANIFEST.sha256,VERSION,gate.mjs,lib.mjs,run.mjs,runner.test.mjs}`); no
-machine file has changed since 1.2.1, and the two Claude adapters and the package's config for this repository are
-unchanged between the tags. No key `config/runner.yaml` sets changes meaning, and 1.2.3 and 1.2.4 add none that the
-config would set: `runner-config.test.ts` stays as it is (AC3 is shown by running it on 1.2.4).
+**The update.** `git apply` of the runner package's `patches/from-1.2.2-to-1.2.4.patch` (package commit `e46e32d`, made
+after the tag `runner-1.2.4`, `ec5c08b`): it changes six of the copied files
+(`scripts/runner/{MANIFEST.sha256,VERSION,gate.mjs,lib.mjs,run.mjs,runner.test.mjs}`); no machine file has changed since
+1.2.1, and the two Claude adapters and the package's config for this repository are unchanged between the tags. No key
+`config/runner.yaml` sets changes meaning, and 1.2.3 and 1.2.4 add none that the config would set:
+`runner-config.test.ts` stays as it is (AC3 is shown by running it on 1.2.4).
 
 **The criteria, classified.**
 
@@ -94,10 +94,11 @@ dictionary words; the token's lines: 0.
 27", 93 pass, 2 fail, 1 skipped (commit `test(task-178): red …`). On 1.2.4's files: 103 pass, 0 fail, 1 skipped (the
 runner's own skip: this repository binds no checks).
 
-**The config (AC3).** `git -C <runner package> diff runner-1.2.2 runner-1.2.4` adds no `config.<key>` read in
-`lib.mjs` or `run.mjs`; `gate.mjs` (1.2.3, F-10) reads `limits.lock_stale_minutes`, already set to 120, and changes neither the Claude adapters nor the package's config for this repository.
-`test/unit/docs/runner-config.test.ts` and the other docs tests on 1.2.4: 76 passed; `npx --no-install wingfoil
-workflow list`: no diagnostics. `scripts/pre-review.sh main`: green.
+**The config (AC3).** `git -C <runner package> diff runner-1.2.2 runner-1.2.4` adds no `config.<key>` read in `lib.mjs`
+or `run.mjs`; `gate.mjs` (1.2.3, F-10) reads `limits.lock_stale_minutes`, already set to 120, and changes neither the
+Claude adapters nor the package's config for this repository. `test/unit/docs/runner-config.test.ts` and the other docs
+tests on 1.2.4: 76 passed; `npx --no-install wingfoil workflow list`: no diagnostics. `scripts/pre-review.sh main`:
+green.
 
 **The state folder (AC6).** `~/.local/state/` holds only the old-name folder `dfd-runner` (5 entries, listed by
 count, nothing read); no `wingfoil-runner`. 1.2.3's guard does not apply; `--migrate-state` is not run (Design).
