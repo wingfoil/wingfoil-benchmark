@@ -213,3 +213,8 @@ change of its own, with the test changed first. Every `wingfoil` command above r
   check also reads the committed example, so it checks something where the suites run, and allows only `runner`,
   `setup` and `trusted_ref` under `paths`; the full suites' header names `-`; a double blank line. A wildcard in
   `launch.allow` (its N-d) is already refused by the launch test. The review closes.
+- **Full suites** (`scripts/full-suites.sh` from the main checkout, 2026-11-24, at `dd09c4b3`, worktree clean): LINT 0,
+  TEST 0, BUILD 0, BIN 0, DOCKER 0 (log `.cache/full-suites/2026-11-24/task_task-177-…-dd09c4b3-100134.txt` in the
+  main checkout; 158 test files, 2571 tests passed and 10 skipped; test:bin 22 passed; test:docker 22 passed and 2
+  skipped). The main checkout's script predates this branch's RUNNER stage, so `npm run test:runner` ran apart at the
+  same commit: 94 tests, 93 passed, 1 skipped, exit 0.
