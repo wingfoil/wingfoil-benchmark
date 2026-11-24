@@ -20,7 +20,10 @@ function fixture() {
   const git = (cwd: string, ...args: string[]) =>
     execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
   git(main, 'init', '-q', '-b', 'main');
-  git(main, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'seed');
+  // A package with the runner's test script (task-177), as every branch after it has.
+  writeFileSync(join(main, 'package.json'), JSON.stringify({ scripts: { 'test:runner': 'true' } }));
+  git(main, 'add', 'package.json');
+  git(main, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'seed');
   git(main, 'worktree', 'add', '-q', '-b', 'task/x', join(root, 'task-x'));
   git(main, 'worktree', 'add', '-q', '-b', 'other', join(root, 'other'));
   const bin = join(root, 'bin');
@@ -76,6 +79,28 @@ describe('scripts/full-suites.sh (dl-016, task-075)', () => {
     );
     expect(summary).toMatch(
       /^task\/x [0-9a-f]+: LINT 0 TEST 1 BUILD 0 BIN 0 DOCKER 0 RUNNER 0 \(log task_x-[0-9a-f]+-\d{6}\.txt\)$/m,
+    );
+  });
+
+  it('marks the runner stage "-" on a branch whose package has no test:runner, and runs nothing for it', () => {
+    const { root, out, calls, env } = fixture();
+    const worktree = join(root, 'task-x');
+    writeFileSync(join(worktree, 'package.json'), JSON.stringify({ scripts: {} }));
+    execFileSync('git', [
+      '-C',
+      worktree,
+      '-c',
+      'user.name=t',
+      '-c',
+      'user.email=t@t',
+      'commit',
+      '-qam',
+      'older',
+    ]);
+    expect(spawnSync('bash', [SCRIPT, 'task/x'], { env, encoding: 'utf8' }).status).toBe(0);
+    expect(readFileSync(calls, 'utf8')).not.toMatch(/test:runner/);
+    expect(readFileSync(join(day(out), 'summary.txt'), 'utf8')).toMatch(
+      /^task\/x [0-9a-f]+: .* DOCKER 0 RUNNER - \(log/m,
     );
   });
 
