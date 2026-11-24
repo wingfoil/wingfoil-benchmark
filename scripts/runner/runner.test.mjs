@@ -239,7 +239,9 @@ test('every role maps to a tier, and every line maps it to an adapter that exist
       const manifest = adapter(name);
       assert.equal(manifest.name, name);
       assert.ok(lib.adapterModel(manifest), `${name} names its model`);
-      assert.equal(manifest.command === 'claude' ? 'claude' : 'codex', agent, `${name} is ${agent}'s`);
+      // The line's agent is an identity, not the adapter's command (1.2.3, N6): only the CLI is checked.
+      assert.ok(['claude', 'codex'].includes(manifest.command), `${name} runs claude or codex, not ${manifest.command}`);
+      assert.ok(agent, `${line.name} names the agent of ${role}`);
     }
   }
 });
@@ -258,10 +260,15 @@ test('every agent of a line has its own git identity in dna.yaml, never an appro
   }
 });
 
-test('the trunk is written by claude and reviewed by codex', () => {
-  const trunk = lines.find((l) => l.name === 'trunk');
-  assert.equal(lib.pickAdapter(config, trunk, 'developer').agent, 'claude');
-  assert.equal(lib.pickAdapter(config, trunk, 'reviewer').agent, 'codex');
+// Which agent writes and which reviews is the project's (1.2.3, N6): a common test reads it from the
+// configuration, and a project that wants one topology tests it in its own tests.
+test('every line\'s reviewer is its reviewer_agent when it names one, its own agent otherwise', () => {
+  for (const line of lines) {
+    for (const role of Object.keys(config.roles)) {
+      const expected = role === 'reviewer' ? line.reviewer_agent ?? line.agent : line.agent;
+      assert.equal(lib.pickAdapter(config, line, role).agent, expected, `${line.name}'s ${role}`);
+    }
+  }
 });
 
 test('every adapter of a line has its extra arguments, and the prompt stays where the CLI reads it', () => {
@@ -480,7 +487,9 @@ test('stale locks: a dead process or an old lock', () => {
 });
 
 test('a trunk step gets the lines\' branches only when it allocates ids or works on the lines', () => {
-  const rule = config.line_branches;
+  // The rule's own default, not this project's line_branches (1.2.3, N6), whose shape is checked apart.
+  const rule = lib.DEFAULT_LINE_BRANCHES;
+  for (const field of ['actions', 'workflows']) assert.ok((config.line_branches?.[field] ?? []).every((v) => typeof v === 'string'), `line_branches.${field}`);
   assert.ok(lib.needsLineBranches({ workflow: 'release-flow', actions: [{ token: 'memory.add(type: task)' }, { token: 'memory.submit' }] }, rule));
   assert.ok(!lib.needsLineBranches({ workflow: 'dev-loop', actions: [{ token: 'memory.submit' }] }, rule));
   assert.ok(!lib.needsLineBranches({ workflow: 'weekly-report', actions: [{ token: 'agent.execute' }] }, rule));
@@ -490,9 +499,10 @@ test('a trunk step gets the lines\' branches only when it allocates ids or works
 });
 
 test('sync and branch need push on; a line adapts each release sync merged into it, once', () => {
-  assert.ok(lib.needsPush({ workflow: 'sync' }, config.push_workflows));
-  assert.ok(lib.needsPush({ workflow: 'x', trail: [{ workflow: 'branch' }] }, config.push_workflows));
-  assert.ok(!lib.needsPush({ workflow: 'dev-loop' }, config.push_workflows));
+  assert.ok((config.push_workflows ?? []).every((v) => typeof v === 'string'), 'push_workflows');
+  assert.ok(lib.needsPush({ workflow: 'sync' }));
+  assert.ok(lib.needsPush({ workflow: 'x', trail: [{ workflow: 'branch' }] }));
+  assert.ok(!lib.needsPush({ workflow: 'dev-loop' }));
   assert.deepEqual(lib.syncedReleases('rel-0.3.0\n\nrel-0.2.0\nnot an id\nrel-0.2.0\n'), ['rel-0.2.0', 'rel-0.3.0']);
   assert.deepEqual(lib.syncedReleases(''), []);
 });
@@ -1478,7 +1488,7 @@ test('1.2.2: waiting.json gives argv and a cwd, and flags the notices the runner
   let text = NOTICES;
   text = lib.addNotice(text, { key: 'decision-trunk-task-1/review/1', at: 't', line: 'trunk', element: 'task:task-1', reason: 'decision (run task-1/review/1): may I?', command: 'x' }).text;
   text = lib.addNotice(text, { key: 'decision-trunk-task-2/review/1', at: 't', line: 'trunk', element: 'task:task-2', reason: 'decision (run task-2/review/1): $(touch PWN)', command: 'x' }).text;
-  const items = lib.waitingItems(text, 'trunk', { home: '/w/my home', opened: lib.openedNotices([{ kind: 'notice', key: 'decision-trunk-task-1/review/1' }]) });
+  const items = lib.waitingItems(text, 'trunk', { home: '/w/my home', opened: lib.openedNotices([{ kind: 'notice', key: 'decision-trunk-task-1/review/1', notice: 'N-001' }]) });
   assert.equal(items.length, 2);
   items.sort((a, b) => a.key.localeCompare(b.key));
   assert.equal(items[0].verified, true);
@@ -1488,7 +1498,7 @@ test('1.2.2: waiting.json gives argv and a cwd, and flags the notices the runner
   assert.equal(items[1].verified, false);
   assert.ok(!('argv' in items[1]), 'no command for a decision the runner did not open');
   // A gate keeps its command: gate.mjs rules only a step still waiting on the frontier.
-  const gate = lib.waitingItems(lib.addNotice(NOTICES, { key: 'gate-trunk-p-1-a.approve', at: 't', line: 'trunk', element: 'plan:p-1', reason: 'r', command: 'c' }).text, 'trunk', { home: '/h', opened: new Set() })[0];
+  const gate = lib.waitingItems(lib.addNotice(NOTICES, { key: 'gate-trunk-p-1-a.approve', at: 't', line: 'trunk', element: 'plan:p-1', reason: 'r', command: 'c' }).text, 'trunk', { home: '/h', opened: new Map() })[0];
   assert.equal(gate.verified, false);
   assert.equal(gate.argv[1], 'scripts/runner/gate.mjs');
 });
@@ -1526,4 +1536,114 @@ test('1.2.2: a dirty checkout: the files a step left, and gate.mjs names the way
   assert.match(refusal, /uncommitted files/);
   assert.match(refusal, /commit what belongs to an element .* or discard it, then run this command again/);
   assert.match(refusal, /--check-git/);
+});
+
+test('1.2.3: a ruling binds to the notice the runner opened and signed, never to a copy (F-1, F-3)', () => {
+  let text = NOTICES;
+  text = lib.addNotice(text, { key: 'gate-trunk-i-1-a.approve', at: '2026-11-24T10:00:00Z', line: 'trunk', element: 'plan:p-1', reason: 'approve the plan', command: 'c {id}' }).text;
+  const real = lib.notices(text).find((n) => n.key === 'gate-trunk-i-1-a.approve');
+  const ledger = [{ kind: 'notice', line: 'trunk', notice: real.id, key: real.key, seal: lib.noticeSeal(real.text) }];
+  assert.equal(lib.noticeTrust(lib.openedNotices(ledger), real), null);
+  // Its question rewritten, its N-id moved to another key, or a key the runner never signed: refused.
+  assert.match(lib.noticeTrust(lib.openedNotices(ledger), { ...real, text: real.text.replace('approve the plan', 'approve everything') }), /not the one the runner wrote/);
+  assert.match(lib.noticeTrust(lib.openedNotices(ledger), { ...real, id: 'N-099' }), /not N-099/);
+  assert.match(lib.noticeTrust(lib.openedNotices(ledger), { ...real, key: 'gate-trunk-i-1-b.approve' }), /signed no notice/);
+  // Closed by the runner, it is no longer trusted; a 1.2.2 container entry without a seal checks the N-id.
+  assert.match(lib.noticeTrust(lib.openedNotices([...ledger, { kind: 'notice-closed', key: real.key, notice: real.id }]), real), /signed no notice/);
+  assert.equal(lib.noticeTrust(lib.openedNotices([{ kind: 'notice', key: real.key, notice: real.id }]), real), null);
+  // An N-id carried twice, here by a block an agent added above the real one.
+  const forged = text.replace('<!-- runner:open -->', `<!-- runner:open -->\n\n<!-- key:gate-trunk-i-1-z.approve -->\n### ${real.id} · 2026-11-24 · plan:p-1\n\n- **Status:** open\n- **Line:** trunk\n`);
+  assert.deepEqual(lib.duplicateNoticeIds(forged), [real.id]);
+  assert.deepEqual(lib.duplicateNoticeIds(text), []);
+  const items = lib.waitingItems(forged, 'trunk', { home: '/h', opened: lib.openedNotices(ledger) });
+  assert.deepEqual(items.map((i) => i.verified).sort(), [false, true]);
+});
+
+test('1.2.3: the decision exception and --amend take the element\'s own Memory file only (F-4)', () => {
+  const memoryYaml = { types: { task: { path: 'docs/04_memory/{release}/{id}.md' }, adr: { path: 'docs/memory/adr/{id}.md' }, bug: {} } };
+  assert.ok(lib.isMemoryPath(memoryYaml, 'docs/04_memory/v0.3/task-9.md', 'task-9'));
+  assert.ok(lib.isMemoryPath(memoryYaml, 'docs/memory/adr/adr-1.md', 'adr-1'));
+  assert.ok(lib.isMemoryPath(memoryYaml, 'docs/memory/bug/bug-2.md', 'bug-2'));
+  for (const path of ['src/task-9.md', '.wingfoil/directives/custom/task-9.md', 'docs/04_memory/a/b/task-9.md', 'docs/04_memory/v0.3/task-90.md']) assert.ok(!lib.isMemoryPath(memoryYaml, path, 'task-9'), path);
+  assert.ok(!lib.isMemoryPath(memoryYaml, 'docs/memory/adr/x.md', '$(x)'));
+});
+
+test('1.2.3: text from an agent or the project prints without control, bidi or separator characters (F-2, F-7)', () => {
+  assert.equal(lib.plainText('a\u001b[2Jb\u202ec\u2028d\u2066e\tf\r\ng\u009bh\u007f'), 'a[2Jbcde\tf\ngh');
+  assert.ok(!lib.liveTail('x\u202ey').includes('\u202e'));
+});
+
+test('1.2.3: a lock file whose process is gone holds nothing (F-10)', () => {
+  const files = { live: JSON.stringify({ pid: 1, started: new Date().toISOString() }), dead: JSON.stringify({ pid: 2, started: new Date().toISOString() }), junk: 'not json' };
+  const read = (f) => { if (!(f in files)) throw new Error('missing'); return files[f]; };
+  const limits = { staleMinutes: 60, alive: (pid) => pid === 1, read };
+  assert.equal(lib.liveLock('live', limits).pid, 1);
+  assert.equal(lib.liveLock('dead', limits), null);
+  assert.equal(lib.liveLock('junk', limits), null);
+  assert.equal(lib.liveLock('missing', limits), null);
+});
+
+test('1.2.3: the state folder: a new empty one beside the old key stops the run, and the move leaves a link (F-5)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'state-'));
+  try {
+    const env = withoutRunnerEnv();
+    const state = join(dir, '.local/state');
+    mkdirSync(join(state, 'dfd-runner'), { recursive: true });
+    writeFileSync(join(state, 'dfd-runner/ledger.key'), 'k');
+    const home = process.env.HOME;
+    process.env.HOME = dir;
+    try {
+      assert.deepEqual(lib.stateFolderProblems(env), []);
+      mkdirSync(join(state, 'wingfoil-runner'));
+      assert.match(lib.stateFolderProblems(env).join(''), /new key and read no ruling.*--migrate-state/);
+      assert.deepEqual(lib.stateFolderProblems({ ...env, WINGFOIL_RUNNER_STATE: '/w/state' }), []);
+      writeFileSync(join(state, 'wingfoil-runner/x'), '');
+      assert.match(lib.migrateStateFolder({ home: dir }).why, /not empty/);
+      rmSync(join(state, 'wingfoil-runner/x'));
+      assert.equal(lib.migrateStateFolder({ home: dir }).done, true);
+      assert.equal(readFileSync(join(state, 'wingfoil-runner/ledger.key'), 'utf8'), 'k');
+      assert.equal(readFileSync(join(state, 'dfd-runner/ledger.key'), 'utf8'), 'k');
+      assert.deepEqual(lib.stateFolderProblems(env), []);
+      assert.match(lib.migrateStateFolder({ home: dir }).why, /already a link/);
+    } finally { process.env.HOME = home; }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('1.2.3: a notice id is bold and coloured by its kind in a terminal, plain elsewhere', () => {
+  const line = `notice ${lib.noticeLabel('N-001', 'security-trunk-x')}, ${lib.noticeLabel('N-002', 'gate-trunk-i-a')}, ${lib.noticeLabel('N-003', 'blocked-trunk-t')}, ${lib.noticeLabel('N-004', 'other-x')} for ${lib.stepLabel('a.b')}`;
+  assert.equal(lib.renderLabels(line), 'notice N-001, N-002, N-003, N-004 for a.b');
+  assert.equal(lib.renderLabels(line, true), 'notice \u001b[1;31mN-001\u001b[0m, \u001b[1;35mN-002\u001b[0m, \u001b[1;33mN-003\u001b[0m, \u001b[1mN-004\u001b[0m for \u001b[1ma.b\u001b[0m');
+});
+
+test('1.2.4: a reviewer step whose action is memory.submit is submitted by the runner, never by the reviewer (N7)', () => {
+  const kanban = { key: 'work-item.review@task:t-1', workflow: 'work-item', phase: 'review', instance: 'i', role: 'reviewer', actions: [{ token: 'memory.submit' }], evidence: { missing: ['state'] } };
+  const devLoop = { ...kanban, key: 'dev-loop.review@task:t-1', workflow: 'dev-loop', actions: [{ token: 'agent.execute' }] };
+  assert.equal(lib.runnerSubmits(kanban), true);
+  assert.equal(lib.runnerSubmits(devLoop), false);
+  assert.equal(lib.runnerSubmits({ ...kanban, role: 'developer' }), false);
+  const element = { ref: 'task:t-1', id: 't-1' };
+  assert.match(lib.exitLine(kanban, element, 'in-review'), /when the runner runs memory submit t-1 after your answer completed: do not run it yourself/);
+  assert.match(lib.exitLine({ ...kanban, role: 'developer' }, element, 'in-review'), /run npx wingfoil memory submit t-1 once the work is done/);
+  const prompt = (step) => lib.buildPrompt({ project: 'p', step, element, line: { name: 'trunk', branch: 'main' }, worktree: '/c', checkout: '/c', branch: 'main' });
+  assert.match(prompt(kanban), /Review: to accept, answer completed: the runner then runs memory submit t-1, so do not move the element yourself\./);
+  assert.match(prompt(devLoop), /Review: to accept, leave the element as it is and answer completed\./);
+  // The reviewer's allowlist keeps no submit.
+  const allow = lib.permissionArgs({ command: 'claude', role: 'reviewer', cli: ['npx', 'wingfoil'] }).join(' ');
+  assert.ok(!allow.includes('memory submit:*'), 'no submit for a reviewer');
+});
+
+test('1.2.4: a blocked run the approver solved no longer holds the gate (N7)', () => {
+  const step = { key: 's.approve', instance: 'i' };
+  const element = { ref: 'task:t-1' };
+  const blocked = { element: 'task:t-1', id: 't-1/review/1', result: 'blocked', notes: '' };
+  const ledger = [{ kind: 'close', line: 'trunk', key: 'blocked-trunk-t-1/review/1' }, { kind: 'decision', line: 'trunk', run: 't-1/red/2' }, { kind: 'close', line: 'other', key: 'blocked-other-x/y/1' }];
+  const solved = lib.resolvedRuns(ledger, 'trunk');
+  assert.deepEqual([...solved].sort(), ['t-1/red/2', 't-1/review/1']);
+  const packet = lib.gatePacket({ step, element, head: 'abcdef1234', records: [blocked], resolvedRuns: solved });
+  assert.equal(packet.ready, true);
+  assert.match(packet.evidence, /blocked, solved by the approver/);
+  assert.equal(lib.gatePacket({ step, element, head: 'abcdef1234', records: [blocked] }).ready, false);
+  // Solved or not, an open notice, failed checks or a dirty checkout still hold it.
+  assert.equal(lib.gatePacket({ step, element, head: 'a', records: [blocked], resolvedRuns: solved, openNotices: ['N-1'] }).ready, false);
+  assert.equal(lib.gatePacket({ step, element, head: 'a', records: [{ ...blocked, result: 'error' }], resolvedRuns: new Set(['t-1/review/1']) }).ready, false);
 });
