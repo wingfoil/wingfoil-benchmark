@@ -24,6 +24,7 @@ type RunnerConfig = {
   weekly_mains?: string[];
   live_checks?: unknown;
   life_cycle_start?: unknown;
+  integration?: { setup_command?: unknown; install_scripts?: boolean };
   roles?: Record<string, string>;
   launch?: { allow?: string[]; manual?: string[]; optional?: string[] };
   phases?: { integrate?: string[] };
@@ -124,6 +125,9 @@ describe('the runner launches only what spends nothing and the release does not 
     expect(config.weekly_mains ?? []).toEqual([]);
     expect(config.live_checks, 'live_checks').toBeUndefined();
     expect(config.life_cycle_start, 'life_cycle_start').toBeUndefined();
+    // runner-1.2.4 installs the dependencies outside the sandbox in the done step too (task-178): npm ci only.
+    expect(config.integration?.setup_command, 'integration.setup_command').toBeUndefined();
+    expect(config.integration?.install_scripts ?? false, 'integration.install_scripts').toBe(false);
   });
 
   it('keeps only machine paths in the local file and its committed example, which the drift check does not read', () => {

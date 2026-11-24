@@ -2,7 +2,7 @@
 // choice, launch arguments, run records, budget, stop conditions, notices. No process is spawned
 // and no file is written here, so every rule is tested by scripts/runner/runner.test.mjs.
 // The same file runs in every project that adopts the runner: nothing in it names a project.
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { posix } from 'node:path';
@@ -219,6 +219,21 @@ export function memoryDir(memoryYaml, type) {
   if (!pattern) return `docs/memory/${type}`;
   const fixed = pattern.slice(0, pattern.includes('{') ? pattern.indexOf('{') : pattern.length);
   return fixed.replace(/\/[^/]*$/, '') || '.';
+}
+
+/**
+ * Whether a path is where Memory keeps the element `id` (1.2.3, F-4): one of the types' `path`
+ * patterns of memory.yaml, `{id}` as the id and every other placeholder as one folder name, or
+ * `docs/memory/<type>/<id>.md` for a type without a pattern.
+ */
+export function isMemoryPath(memoryYaml, path, id) {
+  if (!safeId(id)) return false;
+  const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return Object.entries(memoryYaml?.types ?? {}).some(([type, def]) => {
+    const pattern = def?.path ?? `docs/memory/${type}/{id}.md`;
+    const source = String(pattern).split(/(\{[^}]*\})/).map((part) => (part === '{id}' ? escape(id) : /^\{[^}]*\}$/.test(part) ? '[^/]+' : escape(part))).join('');
+    return new RegExp(`^${source}$`).test(path);
+  });
 }
 
 /** The run log's folder (`paths.runs` of dna.yaml). */
@@ -654,6 +669,49 @@ export function stateDir(env = process.env, exists = (f) => require('node:fs').e
   const legacy = `${homedir()}/.local/state/${LEGACY_MARK}`;
   return exists(own) || !exists(legacy) ? own : legacy;
 }
+/**
+ * Why the state folder cannot be trusted as it is (1.2.3, F-5): the folder named after the runner
+ * exists without a key while the one from before 1.2.1 holds one, so every run would sign with a new
+ * key and read an empty ledger. Nothing is said when WINGFOIL_RUNNER_STATE (or its alias) names the folder.
+ */
+export function stateFolderProblems(env = process.env, exists = (f) => require('node:fs').existsSync(f)) {
+  if (runnerEnv('STATE', env)) return [];
+  const own = `${homedir()}/.local/state/${MARK}`;
+  const legacy = `${homedir()}/.local/state/${LEGACY_MARK}`;
+  if (!exists(own) || !exists(legacy)) return [];
+  const fs = require('node:fs');
+  let same;
+  try { same = fs.realpathSync(own) === fs.realpathSync(legacy); } catch { same = false; }
+  if (same) return [];
+  if (!exists(`${own}/ledger.key`) && exists(`${legacy}/ledger.key`)) {
+    return [`${own} exists without a key, and ${legacy} holds the key and the ledgers: the runner would sign with a new key and read no ruling. Remove the empty ${own} (rmdir ${own}), or move the old folder into its place with: node scripts/runner/run.mjs --migrate-state`];
+  }
+  return [];
+}
+
+/**
+ * The state folder moved to its own name (1.2.3, F-5): dfd-runner becomes wingfoil-runner, and the old
+ * name is left as a link to it, so a project still on a runner older than 1.2.1 keeps its key and its
+ * ledger. Refused when the new folder holds anything, or when the old one is already a link.
+ */
+const STATE_FOLDER = '.local/state';
+export function migrateStateFolder({ home = homedir(), fs = require('node:fs') } = {}) {
+  const own = [home, STATE_FOLDER, MARK].join('/');
+  const legacy = [home, STATE_FOLDER, LEGACY_MARK].join('/');
+  let st;
+  try { st = fs.lstatSync(legacy); } catch { return { done: false, why: `${legacy} does not exist: nothing to move` }; }
+  if (st.isSymbolicLink()) return { done: false, why: `${legacy} is already a link (to ${fs.readlinkSync(legacy)}): nothing to move` };
+  if (!st.isDirectory()) return { done: false, why: `${legacy} is not a folder` };
+  if (fs.existsSync(own)) {
+    if (fs.lstatSync(own).isSymbolicLink() || !fs.lstatSync(own).isDirectory()) return { done: false, why: `${own} exists and is not a plain folder: move it away by hand first` };
+    if (fs.readdirSync(own).length) return { done: false, why: `${own} is not empty: move what it holds by hand, then run this again` };
+    fs.rmdirSync(own);
+  }
+  fs.renameSync(legacy, own);
+  fs.symlinkSync(MARK, legacy);
+  return { done: true, why: `${legacy} moved to ${own}; ${legacy} is now a link to it, for the projects on a runner older than 1.2.1` };
+}
+
 export function ledgerFile(project, env = process.env) {
   return `${stateDir(env)}/${String(project).replace(/[^\w.@-]+/g, '_')}/rulings.jsonl`;
 }
@@ -707,6 +765,29 @@ export function appendLedger(project, entry, env = process.env) {
   const keyFile = ledgerKeyFile(env);
   try { fs.writeFileSync(keyFile, require('node:crypto').randomBytes(32).toString('hex'), { flag: 'wx', mode: 0o600 }); } catch (error) { if (error.code !== 'EEXIST') throw error; }
   fs.appendFileSync(ledgerFile(project, env), ledgerLine(fs.readFileSync(keyFile, 'utf8').trim(), { at: new Date().toISOString(), project, ...entry }), { mode: 0o600 });
+}
+
+/**
+ * The runs the approver solved after they ended blocked (1.2.4, N7): their blocked notice closed with
+ * run.mjs --close, or their decision ruled with gate.mjs, from the ledger.
+ */
+export function resolvedRuns(entries, line) {
+  const prefix = `blocked-${line}-`;
+  return new Set((entries ?? []).flatMap((e) => {
+    if (e.line !== line) return [];
+    if (e.kind === 'close' && String(e.key ?? '').startsWith(prefix)) return [e.key.slice(prefix.length)];
+    if (e.kind === 'decision' && e.run) return [e.run];
+    return [];
+  }));
+}
+
+/**
+ * Whether the runner moves the element after the step (1.2.4, N7): a reviewer step whose action is
+ * `memory.submit`, as kanban's work-item review is. The reviewer never holds submit, so the runner
+ * runs it after an answer completed, as it does when it integrates.
+ */
+export function runnerSubmits(step) {
+  return step?.role === 'reviewer' && (step.actions ?? []).some((a) => a.token === 'memory.submit');
 }
 
 /** The gate rulings for a step's instance and element since a moment, from the ledger: [{ step, reason, at }]. */
@@ -960,7 +1041,7 @@ export function launchRecord({ record, line, step, adapter, model, stdout = '', 
 export function waitingItems(noticesText, lineName, { home, opened = null }) {
   return notices(noticesText).filter((n) => n.open && (/\*\*Line:\*\* (\S+)/.exec(n.text)?.[1] ?? null) === lineName).map((n) => {
     const kind = noticeKind(n.key);
-    const verified = opened === null || opened.has(n.key);
+    const verified = opened === null || noticeTrust(opened, n) === null;
     const ruled = ['gate', 'decision'].includes(kind);
     return {
       id: n.id, key: n.key, kind, verified,
@@ -975,9 +1056,41 @@ export function waitingItems(noticesText, lineName, { home, opened = null }) {
   });
 }
 
-/** The notice keys the runner opened, from a container's ledger (1.2.2, C-3). */
+/** A notice's seal (1.2.3, F-1): the sha256 of its block as the runner wrote it, trailing space aside. */
+export function noticeSeal(text) {
+  return createHash('sha256').update(String(text ?? '').trimEnd()).digest('hex');
+}
+
+/**
+ * The notices the runner opened and has not closed, from the ledger (1.2.2 container, every mode since
+ * 1.2.3): their key to the latest signed { notice, sha }. A container entry from 1.2.2 carries no seal.
+ */
 export function openedNotices(entries) {
-  return new Set((entries ?? []).filter((e) => e.kind === 'notice').map((e) => e.key));
+  const opened = new Map();
+  for (const e of entries ?? []) {
+    if (e.kind === 'notice') opened.set(e.key, { notice: e.notice ?? null, sha: e.seal ?? null, line: e.line ?? null });
+    else if (e.kind === 'notice-closed' && opened.get(e.key)?.notice === e.notice) opened.delete(e.key);
+  }
+  return opened;
+}
+
+/**
+ * Whether an open notice is the one the runner opened (1.2.3, F-1, F-3): a signed entry with its key,
+ * its N-id and the seal of its block. Null when it is; otherwise why not.
+ */
+export function noticeTrust(opened, notice) {
+  const signed = opened?.get(notice.key);
+  if (!signed) return 'the runner signed no notice with this key';
+  if (signed.notice !== notice.id) return `the runner signed this key as ${signed.notice ?? 'no N-id'}, not ${notice.id}`;
+  if (signed.sha !== null && signed.sha !== noticeSeal(notice.text)) return 'its text is not the one the runner wrote';
+  return null;
+}
+
+/** The N-ids that more than one notice carries, open or closed (1.2.3, F-1). */
+export function duplicateNoticeIds(text) {
+  const seen = new Map();
+  for (const n of notices(text)) if (n.id) seen.set(n.id, (seen.get(n.id) ?? 0) + 1);
+  return [...seen].filter(([, count]) => count > 1).map(([id]) => id);
 }
 
 /**
@@ -987,13 +1100,17 @@ export function openedNotices(entries) {
  */
 export function writeRecordFile(dir, name, text) {
   const fs = require('node:fs');
+  if (/[/\\]/.test(name) || name.startsWith('.')) throw new Error(`${name} is not a plain record name`);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   if (fs.lstatSync(dir).isSymbolicLink()) throw new Error(`${dir} is a symbolic link: the runner does not write records through it`);
-  fs.chmodSync(dir, 0o700);
-  if (/[/\\]/.test(name) || name.startsWith('.')) throw new Error(`${name} is not a plain record name`);
-  const tmp = `${dir}/.${name}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmp, text, { flag: 'wx', mode: 0o600 });
-  fs.renameSync(tmp, `${dir}/${name}`);
+  // Resolved once, and used from then on (1.2.3, F-6): a link swapped into a parent later is not followed.
+  const real = fs.realpathSync(dir);
+  fs.chmodSync(real, 0o700);
+  const tmp = `${real}/.${name}.${process.pid}.${Date.now()}.tmp`;
+  const { O_WRONLY, O_CREAT, O_EXCL, O_NOFOLLOW } = fs.constants;
+  const fd = fs.openSync(tmp, O_WRONLY | O_CREAT | O_EXCL | (O_NOFOLLOW ?? 0), 0o600);
+  try { fs.writeSync(fd, text); } finally { fs.closeSync(fd); }
+  fs.renameSync(tmp, `${real}/${name}`);
 }
 
 /** Why the caller's --record-dir cannot be used (1.2.2, C-4): inside a line's checkout or worktrees. */
@@ -1003,11 +1120,25 @@ export function recordDirProblems(dir, config) {
 }
 
 /**
+ * Text an agent or the project's code wrote, safe to print or to quote (1.2.3, F-2, F-7): line ends
+ * made \n, and without C0 and C1 control characters (tab and newline aside), DEL, the bidirectional
+ * overrides and isolates (U+202A–U+202E, U+2066–U+2069) and the Unicode line and paragraph separators.
+ */
+export function plainText(text) {
+  return [...String(text ?? '').replace(/\r\n?/g, '\n')].filter((c) => {
+    const n = c.codePointAt(0);
+    if (n === 9 || n === 10) return true;
+    if (n < 32 || n === 127 || (n >= 128 && n < 160)) return false;
+    return !((n >= 0x202a && n <= 0x202e) || (n >= 0x2066 && n <= 0x2069) || n === 0x2028 || n === 0x2029);
+  }).join('');
+}
+
+/**
  * A live check's output for the next prompt (1.2.2): it is the project's code talking, so it is
  * fenced as data, without control characters, at most 20 lines of 300 characters and 4000 in all.
  */
 export function liveTail(text, { lines = 20, width = 300, total = 4000 } = {}) {
-  const clean = String(text ?? '').replace(/\r\n?/g, '\n').split('').filter((c) => { const n = c.charCodeAt(0); return n === 9 || n === 10 || (n >= 32 && n !== 127 && !(n >= 128 && n < 160)); }).join('');
+  const clean = plainText(text);
   let tail = clean.trim().split('\n').slice(-lines).map((l) => (l.length > width ? `${l.slice(0, width)}…` : l)).join('\n');
   if (tail.length > total) tail = `…${tail.slice(-total)}`;
   return tail.replaceAll('```', "'''");
@@ -1050,7 +1181,28 @@ export function stepLabel(name) {
   return `\uE000${name}\uE001`;
 }
 export function renderLabels(text, colour = false) {
-  return String(text).replace(/\uE000([^\uE001]*)\uE001/g, colour ? '\u001b[1m$1\u001b[0m' : '$1');
+  return String(text)
+    .replace(/\uE002([\d;]+)\uE003([^\uE001]*)\uE001/g, colour ? '\u001b[$1m$2\u001b[0m' : '$2')
+    .replace(/\uE000([^\uE001]*)\uE001/g, colour ? '\u001b[1m$1\u001b[0m' : '$1');
+}
+
+/**
+ * A notice's colour in a terminal, by its kind (1.2.3): red for what stops the line or concerns its
+ * safety, yellow for what holds a step until someone looks, magenta for what waits for the approver's
+ * ruling, and bold alone for the rest.
+ */
+const NOTICE_COLOURS = {
+  security: '1;31', failure: '1;31', halt: '1;31', diverged: '1;31',
+  blocked: '1;33', uncommitted: '1;33', check: '1;33', branch: '1;33', origin: '1;33', push: '1;33', pre: '1;33',
+  id: '1;33', renumbered: '1;33', lock: '1;33', distinct: '1;33', needs: '1;33', budget: '1;33', codex: '1;33',
+  gate: '1;35', decision: '1;35', manual: '1;35',
+};
+export function noticeColour(key) {
+  return NOTICE_COLOURS[noticeKind(key)] ?? '1';
+}
+/** A notice's id in a log line, bold and coloured by its kind in a terminal, marked as stepLabel is. */
+export function noticeLabel(id, key) {
+  return `\uE002${noticeColour(key)}\uE003${id}\uE001`;
 }
 
 /** The notice key of a step waiting for the approver. */
@@ -1071,15 +1223,18 @@ export function gateArgv(step, reason, { reject = false } = {}) {
 export const AGENT_MARKERS = Object.freeze(['WINGFOIL_AGENT', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDECODE', 'CODEX_SANDBOX']);
 
 /** What a gate's packet says: whether it is ready, the evidence, and a reason ready to use. */
-export function gatePacket({ step, element, head, dirty = [], records = [], openNotices = [] }) {
+export function gatePacket({ step, element, head, dirty = [], records = [], openNotices = [], resolvedRuns = new Set() }) {
   const last = records.filter((r) => r.element === element.ref).at(-1) ?? null;
   const notes = last ? parseNotes(last.notes) : {};
   const problems = [];
+  // A blocked run whose notice the approver closed, or whose decision was ruled, holds the gate no
+  // longer (1.2.4, N7): the approver has solved what it was blocked on.
+  const resolved = Boolean(last && last.result === 'blocked' && resolvedRuns.has(last.id));
   if (dirty.length) problems.push(`uncommitted files: ${dirty.slice(0, 3).join(', ')}`);
-  if (last && last.result !== 'completed') problems.push(`the last run ${last.id} ended ${last.result}`);
+  if (last && last.result !== 'completed' && !resolved) problems.push(`the last run ${last.id} ended ${last.result}`);
   if (String(notes.checks ?? '').includes(':fail')) problems.push(`failed checks in ${last.id}`);
   if (openNotices.length) problems.push(`open notices: ${openNotices.join(', ')}`);
-  const evidence = last ? `run ${last.id} ${last.result}${notes.checks ? `, checks ${notes.checks}` : ''}` : 'no run recorded on this element';
+  const evidence = last ? `run ${last.id} ${last.result}${resolved ? ', solved by the approver' : ''}${notes.checks ? `, checks ${notes.checks}` : ''}` : 'no run recorded on this element';
   const short = String(head ?? '').slice(0, 8);
   return { ready: problems.length === 0, problems, head: short, evidence, reason: `Approved ${step.key} at ${short}: ${evidence}`.replace(/"/g, "'") };
 }
@@ -1540,6 +1695,7 @@ export function exitLine(step, element, next) {
   const missing = step.evidence?.missing ?? [];
   if (!missing.length) return '';
   const parts = missing.map((kind) => {
+    if (kind === 'state' && runnerSubmits(step)) return `${element.ref} reaches ${next ?? 'its next state'} when the runner runs memory submit ${element.id} after your answer completed: do not run it yourself`;
     if (kind === 'state') {
       const verb = (step.actions ?? []).map((a) => a.token).find((t) => /^memory\.(submit|approve|park)$/.test(t)) ?? 'memory.submit';
       return `${element.ref} must reach ${next ?? 'its next state'}: run npx wingfoil ${verb.replace('.', ' ')} ${element.id} once the work is done`;
@@ -1687,7 +1843,7 @@ export function buildPrompt({ project, step, element, line, worktree, checkout, 
     'Do not run workflow finalize, memory approve or memory reject, and do not push: the runner finalizes after its bound checks, and the approver approves.',
     pushText(step, { push, checkout, lines: lineBranchNames }),
     step.phase === 'review'
-      ? `Review: to accept, leave the element as it is and answer completed. To reject, in ${checkout} run npx wingfoil memory park ${element.id} --reason "<the reasons>" and answer rejected with the reasons. Name each finding's class and, when one exists, the structural solution that removes the class; look for the other cases of each class first (directive code-review). A finding inside this element's own change is recorded in the memory park --reason: the park commit is its tracked record (directive code-review), so it needs no bug. If the reject needs an adr, a decision-log, or a bug for a defect outside this element's change, raise it first (as below), cite its id in the reasons, then park and answer rejected: dev-loop holds the task until it is closed. If a finding's cause is a test red wrote that contradicts an accepted decision (an adr, a decision-log, the specification), the solution is a red amendment: add to the reasons the line Red amendment (${line.name}:<decision id>): <file>[, <file>…] naming those test files, and never ask green or refactor to change red's files.`
+      ? `Review: to accept, ${runnerSubmits(step) ? `answer completed: the runner then runs memory submit ${element.id}, so do not move the element yourself` : 'leave the element as it is and answer completed'}. To reject, in ${checkout} run npx wingfoil memory park ${element.id} --reason "<the reasons>" and answer rejected with the reasons. Name each finding's class and, when one exists, the structural solution that removes the class; look for the other cases of each class first (directive code-review). A finding inside this element's own change is recorded in the memory park --reason: the park commit is its tracked record (directive code-review), so it needs no bug. If the reject needs an adr, a decision-log, or a bug for a defect outside this element's change, raise it first (as below), cite its id in the reasons, then park and answer rejected: dev-loop holds the task until it is closed. If a finding's cause is a test red wrote that contradicts an accepted decision (an adr, a decision-log, the specification), the solution is a red amendment: add to the reasons the line Red amendment (${line.name}:<decision id>): <file>[, <file>…] naming those test files, and never ask green or refactor to change red's files.`
       : '',
     checks.length ? `After you, the runner runs the bound checks: ${checks.join(', ')}.` : '',
     '',
@@ -2102,6 +2258,17 @@ export function lastResume(text, line) {
 // ---- lock ---------------------------------------------------------------------------------------
 
 /** Whether a lock is stale: its process is gone, or it is older than the limit. */
+/**
+ * A lock file's lock while it holds (1.2.3, F-10): null when the file is missing, unreadable, or its
+ * process is gone or too old, so that a file left behind blocks nothing.
+ */
+export function liveLock(file, { staleMinutes, alive, read = (f) => require('node:fs').readFileSync(f, 'utf8') }) {
+  let lock;
+  try { lock = JSON.parse(read(file)); } catch { return null; }
+  if (!Number.isInteger(lock?.pid)) return null;
+  return lockIsStale(lock, { staleMinutes, alive }) ? null : lock;
+}
+
 export function lockIsStale(lock, { now = Date.now(), staleMinutes, alive }) {
   if (!alive(lock.pid)) return true;
   return now - Date.parse(lock.started) > staleMinutes * 60000;
