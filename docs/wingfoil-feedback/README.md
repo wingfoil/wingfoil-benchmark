@@ -95,6 +95,7 @@ stays `needs-info` until the next sync reads them.
 | [F-047](F-047-an-agent-that-carries-the-process-by-hand-pays-for-it-in-its-own-context.md) | An agent that carries the process by hand pays for it in its own context | request | open | |
 | [F-048](F-048-the-frontier-lists-starts-the-wip-limit-refuses.md) | The frontier lists starts that the WIP limit refuses | gap | open | |
 | [F-049](F-049-a-workflow-that-names-a-state-its-element-lacks-loads-with-no-diagnostic.md) | A workflow that names a state its element lacks loads with no diagnostic | gap | open | |
+| [F-050](F-050-a-task-moved-to-done-by-memory-verbs-stays-on-the-frontier-at-its-build-step.md) | A task moved to done by Memory verbs stays on the frontier at its build step | gap | open | |
 
 ## Context
 

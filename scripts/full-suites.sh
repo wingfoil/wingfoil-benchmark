@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# The benchmark's full suites (dl-016, task-075): lint, `npm test` with coverage, the build, test:bin and test:docker,
+# The benchmark's full suites (dl-016, task-075): lint, `npm test` with coverage, the build, test:bin, test:docker and
+# the external workflow runner's own tests (test:runner, task-177),
 # on the main checkout and every task/* worktree — or only on the branches named as arguments — one at a time, niced
 # and at idle I/O priority (the containers test:docker starts are dockerd's, and keep their own), vitest with 2 workers.
 # Run on demand, when the machine is free (the approver's choice of 2026-10-09: never from a cron on a machine that
 # sleeps). Each branch's log is $WFB_OUT/<date>/<branch>-<commit>-<hhmmss>.txt, never overwritten; summary.txt gets a
 # line per branch: the commit the run started on, DIRTY when the worktree had changes not committed, GIT-ERROR when
-# git could not say, each stage's exit code and the log's name. A run holds a lock, and a second one runs nothing.
+# git could not say, each stage's exit code (`-` for a stage the branch does not have) and the log's name. A run
+# holds a lock, and a second one runs nothing.
 # No agent, no credential.
 # Usage: scripts/full-suites.sh [branch…]
 set -uo pipefail
@@ -41,9 +43,15 @@ run() { # $1 = worktree, $2 = branch
     low npm run build; echo "BUILD $?"
     low npm run test:bin -- --maxWorkers=2; echo "BIN $?"
     low npm run test:docker; echo "DOCKER $?"
+    # A branch from before task-177 has no runner and no test:runner: its stage is "-", not a failure.
+    if grep -q '"test:runner"' package.json 2> /dev/null; then
+      low npm run test:runner; echo "RUNNER $?"
+    else
+      echo "RUNNER -"
+    fi
     echo "== end $(date -Is)"
   } > "$log" 2>&1
-  local codes changed=''; codes="$(grep -E '^(LINT|TEST|BUILD|BIN|DOCKER) [0-9]+$' "$log" | tr '\n' ' ')"
+  local codes changed=''; codes="$(grep -E '^(LINT|TEST|BUILD|BIN|DOCKER|RUNNER) ([0-9]+|-)$' "$log" | tr '\n' ' ')"
   # A commit or an edit in the shared worktree during the run: the log no longer names what it tested.
   local now
   if [ "$dirty" = ' GIT-ERROR' ]; then

@@ -8,7 +8,21 @@ import { moduleBoundaries } from './eslint/module-boundaries.js';
 export default tseslint.config(
   // `spikes/` holds throwaway probes and whatever an agent wrote while being probed: it is evidence,
   // not project code, and it is never built or published.
-  { ignores: ['dist/', 'coverage/', 'docs/', 'runs/', 'results/', 'spikes/'] },
+  {
+    ignores: [
+      'dist/',
+      'coverage/',
+      'docs/',
+      'runs/',
+      'results/',
+      'spikes/',
+      // The external workflow runner's common files, copied unchanged at their tag (task-177).
+      'scripts/runner/',
+      'scripts/checks/',
+      'scripts/lib/',
+      'scripts/setup/',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.strict,
   {
