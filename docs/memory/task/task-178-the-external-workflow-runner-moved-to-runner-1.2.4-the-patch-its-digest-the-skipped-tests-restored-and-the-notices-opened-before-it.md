@@ -49,7 +49,35 @@ whose review is the first real kanban review on 1.2.4 the maintainers asked to h
 
 ## Design
 
-<!-- To be written when the task starts. -->
+**The update.** `git apply` of the runner package's `patches/from-1.2.2-to-1.2.4.patch` (tag `ec5c08b`): it changes
+six of the copied files (`scripts/runner/{MANIFEST.sha256,VERSION,gate.mjs,lib.mjs,run.mjs,runner.test.mjs}`); no
+machine file has changed since 1.2.1, and the two Claude adapters and the package's config for this repository are
+unchanged between the tags. No key `config/runner.yaml` sets changes meaning, and 1.2.3 and 1.2.4 add none that the
+config would set: `runner-config.test.ts` stays as it is (AC3 is shown by running it on 1.2.4).
+
+**The criteria, classified.**
+
+| AC | Kind | How it is shown |
+|---|---|---|
+| 1 | characterization | `git apply --check`, then the apply; `manifest.mjs --digest sha256:3258a655…cb988` ok; the anonymity check on the six files |
+| 2 | red-first | `npm run test:runner` without the skip: red on 1.2.2's files (tests 25 and 27), green on 1.2.4's |
+| 3 | characterization | the config test and `workflow list` on 1.2.4; the diff of the runner's config reads between the tags |
+| 4 | characterization | after the merge, from the home: each old notice closed with `run.mjs --close`, the runner's next dry run |
+| 5 | characterization | the home and the line on `origin/main`; `--doctor` ok, `--dry-run` proposing task-163's step |
+| 6 | characterization | the state folders listed (names and counts only, never a key read) |
+| 7, 8 | process | the notes; pre-review, the docs tests, the full suites on the approver's go, an independent review |
+
+**The state folder (AC6).** Only the old-name folder `~/.local/state/dfd-runner` exists, shared by every project on
+this machine; there is no `wingfoil-runner` folder, so 1.2.3's guard (a new-name folder without a key beside an old
+one with a key) does not stop the runner. `--migrate-state` moves the folder for every project at once: it is the
+approver's, with the other projects, and not done here.
+
+**The old notices (AC4).** N-001, N-002 and N-005 are the optional real-agent checks of task-127, task-177 and
+task-162, opened unsigned by 1.2.2. Approving one would record a check that never ran, and `gate.mjs` has no reject
+for it, so each is closed with `run.mjs --close <N-id> --how "…"`, as the runner's adoption notes say; the runner
+reopens it, signed. Every done task leaves such a notice: the approver's console loop stops on a new notice, so its
+filter skips the real-agent-check gates (the loop is the approver's, outside the repository; the new filter is
+handed over in the notes).
 
 ## Execution notes
 
