@@ -2,7 +2,7 @@
 id: task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
 type: task
 title: "Fix bug-053: pre-review.sh runs Prettier in batches and selects every test that imports a changed file"
-status: backlog
+status: in-progress
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
@@ -33,9 +33,12 @@ suites went red after a green pre-review in six v0.3 tasks. Third in W20's order
 
 ## Design
 
-<!-- To be written when the task starts. -->
+`batched` in `scripts/pre-review.sh` passes Prettier, eslint and the related tests 200 files at a time through `check`,
+which names a red stage and exits 1 (process substitution, so the exit reaches the script). Related tests: `npx vitest
+related --run`, which follows the import graph, so a module imported only through another selects its tests. A skipped
+selection prints a line. Tests in `test/unit/scripts/pre-review.test.ts`; README's Pre-review section updated.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+Red first not run separately: the new tests were written with the fix; the full suites and the independent review
+(dl-020) are left to the review step. `wingfoil workflow next` behaved as declared.
