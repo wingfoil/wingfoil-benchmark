@@ -251,6 +251,17 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
     expect(mixed.recorded()).toContain('npx vitest run --maxWorkers=2 --passWithNoTests test/unit/x.test.ts');
   });
 
+  it('is runnable as npm run pre-review, which a headless session may run, and keeps its lines within 120 characters', () => {
+    const pkg = JSON.parse(readFileSync(repoPath('package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts['pre-review']).toBe('bash scripts/pre-review.sh');
+    const long = readFileSync(SCRIPT, 'utf8')
+      .split('\n')
+      .filter((line) => line.length > 120);
+    expect(long).toEqual([]);
+  });
+
   it('refuses a base that names no commit, rather than reporting nothing changed', () => {
     const { run, recorded } = fixture(['src/core/a.ts']);
     const result = spawnSync('bash', [SCRIPT, 'no-such-branch'], { cwd: run.cwd, encoding: 'utf8' });
