@@ -101,9 +101,9 @@ release owns — `campaign-cycle`, the `release` slot, `release-flow`'s release 
 `team.agents` entry, `approval_authority` not false, or a name in `team.members`). The step list is read with the
 runner's own matcher semantics (`workflow`, `workflow.phase`, `*`).
 
-**The home and the line, outside every working checkout.** The home: a clone of `origin` under
-`~/Workspaces/runner-homes/`, `npm ci`, no agent working in it; the line: a clone under `~/Workspaces/runner-lines/`
-with its worktrees beside it, `npm ci`. Neither path is written in a tracked file. With `push: false`, the line's
+**The home and the line, outside every working checkout.** The home: a clone of `origin` in a folder of runner
+homes beside the workspace's checkouts, `npm ci`, no agent working in it; the line: a clone in a folder of runner
+lines, with its worktrees beside it, `npm ci`. Neither path is written in a tracked file. With `push: false`, the line's
 work reaches `origin` by the approver's push from the home (ADOPTION.md 5a), and the main checkout fetches it.
 While this task is unmerged, the home's `trusted_ref` is the task branch, set only in the home's
 `config/runner.local.yaml` (which the drift check does not read); after the merge and the push it falls back to
@@ -155,8 +155,8 @@ written by `claude` and reviewed by `codex`. They contradict the maintainers' an
 identity only. `npm run test:runner` skips them by name (`--test-skip-pattern`): 93 pass. Sent to the coordination
 session for the maintainers on 2026-11-24, with the approver's OK, asking for a 1.2.3.
 
-**The home and the line (AC5).** The home: a clone of `origin` under `~/Workspaces/runner-homes/`, `npm ci`. The
-line: a clone under `~/Workspaces/runner-lines/`, worktrees beside it, `npm ci`. Their paths are only in the home's
+**The home and the line (AC5).** The home: a clone of `origin` in a folder of runner homes, `npm ci`. The line: a
+clone in a folder of runner lines, worktrees beside it, `npm ci`. Their paths are only in the home's
 `config/runner.local.yaml` (git-ignored; `config/runner.local.example.yaml` is committed with placeholders). While
 this task is unmerged, the task branch is fetched into both (`git fetch <worktree> <branch>`, `merge --ff-only`): the
 home's `paths.trusted_ref` is a local branch `task-177-pilot`, the line's `main` is the task branch, never pushed.
@@ -180,3 +180,28 @@ the paid launch a manual step; AC3 keeps `campaign-cycle` out of `launch.allow`.
 change of its own, with the test changed first. Every `wingfoil` command above ran as `npx --no-install wingfoil`
 (0.3.2): the `wingfoil` on the machine's PATH is an older global install.
 
+
+### Review
+
+- **Round 1** (an independent read-only subagent, in a temporary clone, on `main...1e9143f8`; the main checkout's
+  reflog unchanged after it). No blocker; seven should-fix and nine nits. It verified the copy blob by blob against
+  the tag, every key of `config/runner.yaml` against the runner's code, the test's matcher against `stepMatches`, the
+  skip pattern (exactly tests 25 and 27), the finalize commit and the docs.
+  - S1, fixed: the runner's `executes_as` named product-owner and tech-lead, which made WingFoil treat those steps as
+    agent work for every client; it is now developer, reviewer, qa, architect.
+  - S2, fixed: this element named the machine's folders of runner homes and lines; they are described, not named.
+  - S3, fixed: the package's `role_scope` (a reviewer writes only `docs/`, a qa outside its paths reported) restored.
+  - S4, fixed: `integration.test_command` was the default `npm test`; it is now niced with two workers.
+  - S5, fixed red-first: the full suites' runner stage failed every branch from before this task; such a branch's
+    stage is now `-`, and nothing runs for it.
+  - S6, fixed red-first by mutation: the config test now also fails on `weekly_mains`, `live_checks` or
+    `life_cycle_start`, on a local file holding more than the lines' checkout and worktrees and `paths`, on an owned
+    workflow that includes an allowed one, on an owned name no workflow has, and on a role with no tier or a tier
+    whose adapter is missing or names no model (what the skipped test 25 also checked, N6). Each mutation red alone;
+    a local file with paths only stays green.
+  - S7, open for the approver: AC4's email is amended by the approver before done.
+  - Nits fixed: the config's comments (the test's place, the real-agent check held first as an optional step that
+    awaits the approver, no `distinct_from` enforced, the trailers carrying the identity's email with the model's
+    name and `AI-Model`); F-050's notice was announced by a dry run, not written; D8 back among the deviations, and
+    the copied checks run only once a step binds them. Left as is: `scripts/setup/` in the ignore lists, harmless and
+    ready for the machine file if a Codex line comes.

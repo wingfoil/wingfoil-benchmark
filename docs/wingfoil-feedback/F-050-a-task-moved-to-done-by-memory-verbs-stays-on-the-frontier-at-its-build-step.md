@@ -18,7 +18,7 @@ listed `work-item.build@task:task-127-…` on its frontier (`workflow status`: "
 was not. An external workflow runner, asked for its next step (`--dry-run`), proposed that build for a task already
 done. `wingfoil workflow finalize --step work-item.build@task:<id> --reason …` closed it, as an empty commit. After
 that, `work-item.real-agent-check` (manual, optional) stayed on the frontier as "human needed", routed to the
-approver, and the runner opened a notice for it.
+approver, and the runner's dry run announced a notice for it.
 
 ## Expected
 
