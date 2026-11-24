@@ -81,5 +81,42 @@ handed over in the notes).
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+**The patch (AC1).** `git apply --check <runner package>/patches/from-1.2.2-to-1.2.4.patch`: applies; the apply
+changes the six files the Design names, each then byte-identical to `runner-1.2.4:common/scripts/runner/<file>`
+(`cmp`). `node scripts/runner/manifest.mjs --digest
+sha256:3258a65539754e7d17644fe4555a88a030502d8ff5e884892f34e6f6a08cb988`: "ok: runner 1.2.4, the 16 common files
+match the manifest, 1 machine file(s) left out: scripts/setup/codex-apparmor.sh", "ok: manifest sha256 …", exit 0.
+The anonymity check on the patch's added lines (the folder names of the machine's workspaces, counts only): two
+dictionary words; the token's lines: 0.
+
+**Red first (AC2).** `npm run test:runner` without `--test-skip-pattern`, on 1.2.2's files: "not ok 25", "not ok
+27", 93 pass, 2 fail, 1 skipped (commit `test(task-178): red …`). On 1.2.4's files: 103 pass, 0 fail, 1 skipped (the
+runner's own skip: this repository binds no checks).
+
+**The config (AC3).** `git -C <runner package> diff runner-1.2.2 runner-1.2.4` adds no `config.<key>` read in
+`lib.mjs` or `run.mjs`, and changes neither the Claude adapters nor the package's config for this repository.
+`test/unit/docs/runner-config.test.ts` and the other docs tests on 1.2.4: 76 passed; `npx --no-install wingfoil
+workflow list`: no diagnostics. `scripts/pre-review.sh main`: green.
+
+**The state folder (AC6).** `~/.local/state/` holds only the old-name folder `dfd-runner` (5 entries, listed by
+count, nothing read); no `wingfoil-runner`. 1.2.3's guard does not apply; `--migrate-state` is not run (Design).
+
+**Before the merge, from the home (AC5, first half).** The task branch fetched into the home as a local branch
+`task-178-pilot`, `paths.trusted_ref: task-178-pilot` in the home's git-ignored local file only.
+
+| Command (from the home) | Declared | Observed |
+|---|---|---|
+| `run.mjs --line trunk --doctor` | the project's problems | "runner 1.2.4 · wingfoil 0.3.2", "ok: the project can run under the runner" |
+| `run.mjs --line trunk --dry-run` | the next step, nothing written | `work-item.start@task:task-163-…`, agent "WingFoil Benchmark Runner", `claude-sonnet`; its prompt quotes the approver's park reason as points to address; nothing written in the home or the line |
+
+That dry run shows a gap of this pilot: the line's clone does not yet hold task-178 (added, approved and started in
+the main checkout, not pushed), so the runner reads the in-progress slot as free and would start task-163 beside it.
+WingFoil's WIP limit holds per clone. The loop is stopped until the merge and the push; the rule for the pilot is
+that a task worked by hand in the main checkout is pushed (or the loop kept stopped) before the runner runs again.
+
+**For the done step (AC4, AC5).** After the merge and the approver's push: the home back on `origin/main` (its
+`trusted_ref` lines removed, the local branch deleted), the line fast-forwarded; `workflow finalize --step
+work-item.build@task:task-178-…` (built by hand, F-050); from the home, `run.mjs --line trunk --close N-001`, `N-002`
+and `N-005`, each `--how "opened unsigned by runner-1.2.2; the runner reopens it signed (task-178)"`; the doctor and
+a dry run. The console loop's filter then skips the real-agent-check gates; the new loop is handed over in chat.
+
