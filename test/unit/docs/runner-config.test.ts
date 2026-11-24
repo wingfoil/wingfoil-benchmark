@@ -97,6 +97,10 @@ describe('the runner launches only what spends nothing and the release does not 
         const entry = dna.team.agents.find((candidate) => candidate.name === agent);
         expect(entry, `line ${name}: ${agent} is not in team.agents`).toBeDefined();
         expect(entry?.email, `line ${name}: ${agent} has no email`).toMatch(/@/);
+        // WingFoil 0.3.2 refuses an agent email on a reserved top-level domain (its bug-261): `workflow list` fails.
+        expect(entry?.email, `line ${name}: ${agent}'s email is on a reserved domain`).not.toMatch(
+          /\.(test|example|invalid|localhost)$/i,
+        );
         expect(entry?.approval_authority, `line ${name}: ${agent} can approve`).toBe(false);
         expect(
           dna.team.members.map((member) => member.name),
