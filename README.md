@@ -339,8 +339,10 @@ checks a reviewer should never have to report: on changed Markdown, every line t
 out (it would rewrite the front matter WingFoil writes); Prettier on every file the branch changed over `<base>` (types
 it does not know, and paths `.prettierignore` names, skipped); eslint on changed sources, `tsc`, the changed test
 files with the traceability test, every test that imports a changed source directly or through another module
-(`vitest related`, which uses the default config, so tests under `test/bin/` and `test/docker/` are never selected;
-`test:bin` covers the first), and `test:bin` when the CLI, the site or a bin test changed. Every check that takes the
+(`vitest related`, which uses the default config, so tests under `test/bin/`, `test/docker/` and `test/fixtures/` are
+never selected; `test:bin` covers the first), and `test:bin` when the CLI, the site or a bin test changed. The changed
+test files drop those three folders too, with a `pre-review: tests skipped for N file(s)` line naming them, since a
+`vitest run` whose filter selects only excluded files exits 1. Every check that takes the
 changed file list (Prettier, eslint, the changed tests, the related tests) runs in batches of at most 200 files and
 60000 bytes (counted as bytes, not characters) of paths, so a large branch never overflows one argument list; the traceability and evaluation-page tests run once,
 outside the batches. Niced, 2 vitest workers, it stops at the first red check and names it

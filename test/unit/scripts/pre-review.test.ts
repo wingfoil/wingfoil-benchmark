@@ -9,6 +9,16 @@ import { tempDir } from '../../support/scenario-fixture.js';
 
 const SCRIPT = repoPath('scripts/pre-review.sh');
 
+const VITEST_NO_FILES = `if [ "$1 $2" = "vitest run" ]; then
+  case " $* " in *" --passWithNoTests "*) ;; *)
+    found=0
+    for a in "$@"; do
+      case "$a" in test/docker/*|test/bin/*|test/fixtures/*) ;; test/*.test.ts) found=1;; esac
+    done
+    if [ "$found" -eq 0 ]; then echo 'No test files found, exiting with code 1' >&2; exit 1; fi;;
+  esac
+fi`;
+
 /**
  * A repository whose branch changes `files` over `main`, and stub `npx` and `npm` that record each call and fail the
  * command named by `failing`: what the script runs, without running a check (dl-020, task-098).
@@ -57,6 +67,9 @@ function fixture(
       [
         '#!/usr/bin/env bash',
         `echo "${tool} $*" >> '${calls}'`,
+        // The real vitest run exits 1 ('No test files found') when its filters select only what the default config
+        // excludes, unless --passWithNoTests is given.
+        tool === 'npx' ? VITEST_NO_FILES : '',
         failing === undefined ? 'exit 0' : `case "${tool} $*" in "${failing}"*) exit 1;; esac`,
         'exit 0',
       ].join('\n'),
@@ -80,7 +93,7 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
       'npx prettier --check --ignore-unknown docs/n.md src/cli/a.ts test/unit/x.test.ts',
       'npx eslint src/cli/a.ts test/unit/x.test.ts',
       'npx tsc --noEmit -p .',
-      'npx vitest run --maxWorkers=2 test/unit/x.test.ts',
+      'npx vitest run --maxWorkers=2 --passWithNoTests test/unit/x.test.ts',
       'npx vitest run --maxWorkers=2 test/acceptance/traceability.test.ts test/unit/docs/evaluate-page.test.ts',
       'npx vitest related --run --maxWorkers=2 src/cli/a.ts',
       'npm run test:bin -- --maxWorkers=2',
@@ -130,7 +143,10 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
     // A name holds at most 255 bytes: 60 four-byte characters per level. 130 paths of about 135 characters and 490 bytes
     // are 17500 characters (under the bound) and 64000 bytes (over it).
     const wide = '\u{1F600}'.repeat(60);
-    const names = Array.from({ length: 130 }, (_, i) => `data/${wide}/${wide}/${String(i).padStart(3, '0')}.json`);
+    const names = Array.from(
+      { length: 130 },
+      (_, i) => `data/${wide}/${wide}/${String(i).padStart(3, '0')}.json`,
+    );
     const { run, recorded } = fixture(names);
     const result = run();
     expect(result.status, result.stderr).toBe(0);
@@ -169,7 +185,11 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
   });
 
   it('passes every changed source that is not a test file to vitest related, wherever it sits (bug-053)', () => {
-    const { run, recorded } = fixture(['src/core/deep.ts', 'eslint/module-boundaries.js', 'test/unit/x.test.ts']);
+    const { run, recorded } = fixture([
+      'src/core/deep.ts',
+      'eslint/module-boundaries.js',
+      'test/unit/x.test.ts',
+    ]);
     expect(run().status).toBe(0);
     expect(recorded()).toContain(
       'npx vitest related --run --maxWorkers=2 eslint/module-boundaries.js src/core/deep.ts',
@@ -181,7 +201,10 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
     writeFileSync(join(root, 'c.ts'), 'export const c = 1;\n');
     writeFileSync(join(root, 'b.ts'), "import { c } from './c.js';\nexport const b = c;\n");
     // Globals (--globals) so the temporary project needs no node_modules to import vitest from.
-    writeFileSync(join(root, 'a.test.ts'), "import { b } from './b.js';\nit('a', () => expect(b).toBe(1));\n");
+    writeFileSync(
+      join(root, 'a.test.ts'),
+      "import { b } from './b.js';\nit('a', () => expect(b).toBe(1));\n",
+    );
     writeFileSync(join(root, 'other.test.ts'), "it('other', () => undefined);\n");
     const vitest = repoPath('node_modules/vitest/vitest.mjs');
     const args = [vitest, 'related', '--run', '--globals', '--reporter=verbose', 'c.ts'];
@@ -209,6 +232,23 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
     const { run, recorded } = fixture(['test/bin/z.test.ts']);
     expect(run().status).toBe(0);
     expect(recorded()).toContain('npm run test:bin -- --maxWorkers=2');
+  });
+
+  it('never gives vitest run only the tests its default config excludes, and says which it dropped (bug-053)', () => {
+    const excluded = ['test/bin/z.test.ts', 'test/docker/d.test.ts', 'test/fixtures/f.test.ts'];
+    const { run, recorded } = fixture(excluded);
+    const result = run();
+    expect(result.status, result.stderr).toBe(0);
+    for (const file of excluded) {
+      expect(recorded().filter((call) => call.startsWith('npx vitest run') && call.includes(file))).toEqual(
+        [],
+      );
+      expect(result.stdout).toContain(file);
+    }
+    expect(result.stdout).toMatch(/^pre-review: tests skipped for 3 file/m);
+    const mixed = fixture([...excluded, 'test/unit/x.test.ts']);
+    expect(mixed.run().status).toBe(0);
+    expect(mixed.recorded()).toContain('npx vitest run --maxWorkers=2 --passWithNoTests test/unit/x.test.ts');
   });
 
   it('refuses a base that names no commit, rather than reporting nothing changed', () => {

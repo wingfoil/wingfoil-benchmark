@@ -2,8 +2,8 @@
 # The checks before a review round (dl-020 option C, task-098, bug-053): changed Markdown checked for width and a final
 # newline; Prettier on every file the branch changed; eslint on changed sources; tsc; the touched test files with the
 # traceability and evaluation-page tests; the tests that import a changed source, directly or through another module
-# (vitest related, which uses the default config: tests under test/bin/ and test/docker/ are not selected, so test:bin
-# covers the first). Every file-list check runs in batches of 200 files or 60000 bytes (counted in bytes, not
+# (vitest related, which uses the default config: tests under test/bin/, test/docker/ and test/fixtures/ are not
+# selected, so test:bin covers the first; the changed ones among them are dropped from the test run with a line). Every file-list check runs in batches of 200 files or 60000 bytes (counted in bytes, not
 # characters), and every skipped stage prints 'pre-review: <stage> skipped: <why>'. test:bin when the CLI, the site or
 # a bin test changed. At the lowest priority, vitest with 2 workers (dl-016); it stops at the first red check and names
 # it. No agent, no credential, nothing written. The full suites stay scripts/full-suites.sh's.
@@ -92,10 +92,20 @@ has_sources() { [ "${#sources[@]}" -gt 0 ]; }
 eslint_stage() { batched eslint npx eslint < <(printf '%s\n' "${sources[@]}"); }
 stage_if eslint "no changed source (.ts, .mts, .js, .mjs)" has_sources eslint_stage
 check tsc npx tsc --noEmit -p .
-# The changed test files go in batches too; the two fixed tests run once, outside them.
-mapfile -t tests < <(printf '%s\n' "${changed[@]}" | grep -E '^test/.*\.test\.ts$' || true)
+# The changed test files go in batches too; the two fixed tests run once, outside them. vitest.config.ts excludes
+# test/docker/, test/bin/ and test/fixtures/: a filter that selects only those exits 1 ('No test files found'), so they
+# are dropped here with a line saying so (test:bin covers test/bin/), and the batched call passes --passWithNoTests too,
+# so a config that drifts from this list cannot turn a correct branch red; the fixed-tests call still runs.
+excluded_dirs='^test/(docker|bin|fixtures)/'
+mapfile -t tests < <(printf '%s\n' "${changed[@]}" | grep -E '^test/.*\.test\.ts$' | grep -vE "$excluded_dirs" || true)
+mapfile -t tests_excluded < <(printf '%s\n' "${changed[@]}" | grep -E '^test/.*\.test\.ts$' | grep -E "$excluded_dirs" || true)
 tests_stage() {
-  if [ "${#tests[@]}" -gt 0 ]; then batched tests npx vitest run --maxWorkers=2 < <(printf '%s\n' "${tests[@]}"); fi
+  if [ "${#tests_excluded[@]}" -gt 0 ]; then
+    echo "pre-review: tests skipped for ${#tests_excluded[@]} file(s) the default vitest config excludes: ${tests_excluded[*]}"
+  fi
+  if [ "${#tests[@]}" -gt 0 ]; then
+    batched tests npx vitest run --maxWorkers=2 --passWithNoTests < <(printf '%s\n' "${tests[@]}")
+  fi
   check tests npx vitest run --maxWorkers=2 test/acceptance/traceability.test.ts test/unit/docs/evaluate-page.test.ts
 }
 tests_stage
