@@ -239,9 +239,10 @@ describe('scripts/full-suites.sh (dl-016, task-075)', () => {
       ['a double-quoted value', (clone: string) => `"${clone}"`],
       ['a single-quoted value', (clone: string) => `'${clone}'`],
       ['a trailing comment', (clone: string) => `${clone}  # this machine's clone`],
-    ])('reads %s as the YAML reader of the tests does', (_, value) => {
+      ['a quoted value holding #', (clone: string) => `"${clone}"`, ' #1'],
+    ])('reads %s as the YAML reader of the tests does', (_, value, suffix = '') => {
       const { root, main, clones, env } = fixture();
-      const clone = join(root, 'a-clone');
+      const clone = join(root, `a-clone${suffix}`);
       mkdirSync(clone);
       mkdirSync(join(main, 'config'));
       writeFileSync(join(main, 'config', 'siblings.local.yaml'), `wingfoil: ${value(clone)}\n`);
