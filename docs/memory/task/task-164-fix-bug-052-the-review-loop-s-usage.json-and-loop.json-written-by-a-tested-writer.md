@@ -2,7 +2,7 @@
 id: task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer
 type: task
 title: "Fix bug-052: the review loop's usage.json and loop.json written by a tested writer"
-status: backlog
+status: in-progress
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
@@ -45,3 +45,12 @@ task-153 made it). `writeLoop` and `reviewRound` call them; `test/support/loop-r
 - Full suite (`nice -n 19 npm test -- --maxWorkers=2`): 2574 passed, 1 failed:
   `test/unit/docs/required-lists.test.ts > gives every task past draft at least one requirement`. It reads the
   worktree's docs, which this task did not touch; not investigated further.
+- Review (dl-020) follow-up, commit cfa76cc6: `findingsRecord` joins the writer (the class "a record `readLoop` reads,
+  written inline" is now closed for `loop.json`, `findings.json`, `reviewer-usage.json` and `fixer-usage.json`);
+  `reviewRound` and `test/support/loop-records.ts` call it, with a round trip in `review-records.test.ts`. The
+  reviewer-usage characterization builds a typed `SessionUsage` with dry run 251's figures and compares bytes with the
+  stored file. The round trip checks `reviewers[0]` (cost_eur 0.3, bounded). `loopRecord` takes `LoopPins` and a
+  `Pick` of the summary, so the `as ReviewLoop` and `as LoopOutcome` casts are gone. Targeted tests (review-records,
+  results/review, review-loop), typecheck, lint and prettier pass. `required-lists` fails on the branch's stale
+  task-179 docs, outside this change. `scripts/pre-review.sh main` is still not run (it needs an approval a headless
+  run cannot get).
