@@ -2,7 +2,7 @@
 id: task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
 type: task
 title: "Fix bug-053: pre-review.sh runs Prettier in batches and selects every test that imports a changed file"
-status: in-review
+status: approved
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
