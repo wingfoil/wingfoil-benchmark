@@ -70,5 +70,27 @@ a guessed path. When the clone moves, only the local value changes.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+Built by hand in a worktree of the main checkout while the runner's line worked task-164: the runner takes the backlog
+in id order (WingFoil reads the elements in path order and has no priority), so task-179 would have come after
+task-165 to task-176; the approver chose the hand build (2026-11-25). Its build step is finalized by hand after the
+merge (F-050), and nothing is pushed before it is done, so the line never proposes it.
+
+- `834f05d1` red: the resolver's test (`test/unit/support/siblings.test.ts`), the local file's example and ignore and
+  the old folder names (`test/unit/docs/siblings-config.test.ts`), full-suites' clone (three cases; the variable's
+  pass-through was green already, a characterization). Red for the missing module, the missing example and ignore,
+  the six files naming old folders, and the script's guessed default.
+- `57260593` green: `test/support/siblings.ts`, the four scenario tests and `test/docker/run.test.ts` on it,
+  `scripts/full-suites.sh` reading the file, the example, `.gitignore`, a README paragraph under Full suites.
+- `ff2a0855` the requirements (REQ-NFR-04, REQ-CLI-10): the traceability test asks one of every task past draft.
+
+Deviations from the Design, each small: a `~/` path in the local file is read against the home folder (the runner's
+example writes its paths so); a skipped test carries its reason in its title (`titled`), since vitest prints nothing
+else for a skipped test, and the acceptance traceability reads only `test/acceptance` titles, which this task does
+not touch; `holdoutScenario(id)` gives the four scenario tests one line each. A local file with another key, or a key
+that is not a string, throws: a typo never reads as "not set".
+
+AC8: the approver's local file is written in the main checkout (git-ignored once this branch is merged; until then it
+shows as untracked there). From this worktree the scenario tests now read the hold-out: 62 passed, none skipped,
+where the same run skipped 10 before the file.
+
+`wingfoil` commands: `memory submit` moved the task backlog → in-progress, as declared.
