@@ -8,6 +8,20 @@ runner's home; a notice is never edited by hand.
 
 <!-- runner:open -->
 
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.approve@task:task-165-fix-bug-055-a-reviewer-s-findings-after-unfenced-prose-reach-the-fixer -->
+### N-020 · 2026-11-25 · trunk:task-165-fix-bug-055-a-reviewer-s-findings-after-unfenced-prose-reach-the-fixer
+
+- **Status:** open
+- **Kind:** gate
+- **Opened:** 2026-11-25T20:04:51Z
+- **Line:** trunk
+- **Element:** trunk:task-165-fix-bug-055-a-reviewer-s-findings-after-unfenced-prose-reach-the-fixer
+- **Reason:** work-item.approve@task:task-165-fix-bug-055-a-reviewer-s-findings-after-unfenced-prose-reach-the-fixer waits for the approver
+- **Ready:** yes
+- **Head:** 936ceb17
+- **Evidence:** run task-165-fix-bug-055-a-reviewer-s-findings-after-unfenced-prose-reach-the-fixer/review/2 completed
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-020 --reason 'Approved work-item.approve@task:task-165-fix-bug-055-a-reviewer-s-findings-after-unfenced-prose-reach-the-fixer at 936ceb17: run task-165-fix-bug-055-a-reviewer-s-findings-after-unfenced-prose-reach-the-fixer/review/2 completed'`
+
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer -->
 ### N-019 · 2026-11-25 · trunk:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer
 
