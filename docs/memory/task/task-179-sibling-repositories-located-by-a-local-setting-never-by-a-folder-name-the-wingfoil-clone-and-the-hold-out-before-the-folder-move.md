@@ -2,7 +2,7 @@
 id: task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move
 type: task
 title: "Sibling repositories located by a local setting, never by a folder name: the WingFoil clone and the hold-out before the folder move"
-status: in-progress
+status: in-review
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
