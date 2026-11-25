@@ -8,6 +8,20 @@ runner's home; a notice is never edited by hand.
 
 <!-- runner:open -->
 
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer -->
+### N-019 · 2026-11-25 · trunk:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer
+
+- **Status:** open
+- **Kind:** gate
+- **Opened:** 2026-11-25T19:40:56Z
+- **Line:** trunk
+- **Element:** trunk:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer
+- **Reason:** work-item.real-agent-check@task:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer waits for the approver
+- **Ready:** yes
+- **Head:** 189f1a54
+- **Evidence:** run task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer/done/1 completed, checks integrated:pass
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-019 --reason 'Approved work-item.real-agent-check@task:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer at 189f1a54: run task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer/done/1 completed, checks integrated:pass'`
+
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-180-the-external-workflow-runner-moved-to-runner-1.2.6-the-patch-its-digest-and-the-checks-for-unsigned-notices-and-held-elements-before-the-loop-resumes -->
 ### N-017 · 2026-11-25 · trunk:task-180-the-external-workflow-runner-moved-to-runner-1.2.6-the-patch-its-digest-and-the-checks-for-unsigned-notices-and-held-elements-before-the-loop-resumes
 
