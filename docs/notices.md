@@ -8,6 +8,20 @@ runner's home; a notice is never edited by hand.
 
 <!-- runner:open -->
 
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file -->
+### N-016 · 2026-11-25 · trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
+
+- **Status:** open
+- **Kind:** gate
+- **Opened:** 2026-11-25T19:10:53Z
+- **Line:** trunk
+- **Element:** trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
+- **Reason:** work-item.real-agent-check@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file waits for the approver
+- **Ready:** yes
+- **Head:** 76c0a40c
+- **Evidence:** run task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file/done/1 completed, checks integrated:pass
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-016 --reason 'Approved work-item.real-agent-check@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file at 76c0a40c: run task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file/done/1 completed, checks integrated:pass'`
+
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move -->
 ### N-015 · 2026-11-25 · trunk:task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move
 
