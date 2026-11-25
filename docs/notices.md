@@ -8,6 +8,20 @@ runner's home; a notice is never edited by hand.
 
 <!-- runner:open -->
 
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-180-the-external-workflow-runner-moved-to-runner-1.2.6-the-patch-its-digest-and-the-checks-for-unsigned-notices-and-held-elements-before-the-loop-resumes -->
+### N-017 · 2026-11-25 · trunk:task-180-the-external-workflow-runner-moved-to-runner-1.2.6-the-patch-its-digest-and-the-checks-for-unsigned-notices-and-held-elements-before-the-loop-resumes
+
+- **Status:** open
+- **Kind:** gate
+- **Opened:** 2026-11-25T19:10:53Z
+- **Line:** trunk
+- **Element:** trunk:task-180-the-external-workflow-runner-moved-to-runner-1.2.6-the-patch-its-digest-and-the-checks-for-unsigned-notices-and-held-elements-before-the-loop-resumes
+- **Reason:** work-item.real-agent-check@task:task-180-the-external-workflow-runner-moved-to-runner-1.2.6-the-patch-its-digest-and-the-checks-for-unsigned-notices-and-held-elements-before-the-loop-resumes waits for the approver
+- **Ready:** yes
+- **Head:** 1c18468e
+- **Evidence:** no run recorded on this element
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-017 --reason 'Approved work-item.real-agent-check@task:task-180-the-external-workflow-runner-moved-to-runner-1.2.6-the-patch-its-digest-and-the-checks-for-unsigned-notices-and-held-elements-before-the-loop-resumes at 1c18468e: no run recorded on this element'`
+
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file -->
 ### N-016 · 2026-11-25 · trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
 
