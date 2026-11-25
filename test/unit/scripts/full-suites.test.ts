@@ -29,19 +29,29 @@ function fixture() {
   const bin = join(root, 'bin');
   mkdirSync(bin);
   const calls = join(root, 'calls.txt');
+  const clones = join(root, 'clones.txt');
   writeFileSync(
     join(bin, 'npm'),
     [
       '#!/usr/bin/env bash',
       `echo "$(basename "$PWD") $*" >> '${calls}'`,
+      // The WingFoil clone each suite is given (task-179): the variable's value, or <unset>.
+      `echo "\${BENCH_WINGFOIL_REPO-<unset>}" >> '${clones}'`,
       '[ "$(basename "$PWD")" = task-x ] && [ "$1" = test ] && exit 1',
       'exit 0',
     ].join('\n'),
   );
   chmodSync(join(bin, 'npm'), 0o755);
   const out = join(root, 'out');
-  const env = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`, WFB_MAIN: main, WFB_OUT: out };
-  return { root, main, out, calls, env };
+  // The suite this test runs in may itself have the clone's variable: the fixture starts without it.
+  const { BENCH_WINGFOIL_REPO: _ignored, ...inherited } = process.env;
+  const env: NodeJS.ProcessEnv = {
+    ...inherited,
+    PATH: `${bin}:${process.env.PATH ?? ''}`,
+    WFB_MAIN: main,
+    WFB_OUT: out,
+  };
+  return { root, main, out, calls, clones, env };
 }
 
 const day = (out: string) =>
@@ -196,5 +206,43 @@ describe('scripts/full-suites.sh (dl-016, task-075)', () => {
     expect(readFileSync(join(day(out), 'summary.txt'), 'utf8')).toContain(
       'another full-suites run is in progress',
     );
+  });
+
+  describe('the WingFoil clone it gives the suites (task-179)', () => {
+    const given = (clones: string) => [...new Set(readFileSync(clones, 'utf8').trim().split('\n'))];
+
+    it('passes BENCH_WINGFOIL_REPO through when it is set', () => {
+      const { root, clones, env } = fixture();
+      const clone = join(root, 'a-clone');
+      mkdirSync(clone);
+      const run = spawnSync('bash', [SCRIPT, 'task/x'], {
+        env: { ...env, BENCH_WINGFOIL_REPO: clone },
+        encoding: 'utf8',
+      });
+      expect(run.status, run.stderr).toBe(0);
+      expect(given(clones)).toEqual([clone]);
+    });
+
+    it("reads it from the main checkout's config/siblings.local.yaml when the variable is not set", () => {
+      const { root, main, clones, env } = fixture();
+      const clone = join(root, 'a-clone');
+      mkdirSync(clone);
+      mkdirSync(join(main, 'config'));
+      writeFileSync(join(main, 'config', 'siblings.local.yaml'), `holdout: /elsewhere\nwingfoil: ${clone}\n`);
+      const run = spawnSync('bash', [SCRIPT, 'task/x'], { env, encoding: 'utf8' });
+      expect(run.status, run.stderr).toBe(0);
+      expect(given(clones)).toEqual([clone]);
+    });
+
+    it('guesses no folder when neither names it, and says so in one line naming the variable', () => {
+      const { root, out, clones, env } = fixture();
+      // The folder the script guessed before task-179, present: it must not be picked up.
+      mkdirSync(join(root, 'WingFoil' + '2'));
+      const run = spawnSync('bash', [SCRIPT, 'task/x'], { env, encoding: 'utf8' });
+      expect(run.status, run.stderr).toBe(0);
+      expect(given(clones)).toEqual(['<unset>']);
+      const said = `${run.stdout}${readFileSync(join(day(out), 'summary.txt'), 'utf8')}`;
+      expect(said).toMatch(/BENCH_WINGFOIL_REPO.*siblings\.local\.yaml/);
+    });
   });
 });
