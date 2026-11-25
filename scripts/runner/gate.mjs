@@ -112,6 +112,9 @@ if (entry) {
     // A notice from a runner older than 1.2.3 has no signed entry: the approver who has read it above
     // and finds it is the one the runner printed rules it with its seal, as --amend with its diff.
     const seal = lib.noticeSeal(entry.text).slice(0, 16);
+    // Only a notice older than the first one the runner signed on this line may be ruled unsigned
+    // (1.2.6, G-2): any later one is not the runner's, and its seal is not offered.
+    if (!lib.legacyNotice(signedLedger, lineName, id)) stop(`${id}: ${problem}. It is newer than the first notice the runner signed on line ${lineName}, so the runner did not open it: nothing is ruled. Read it, remove it from the notices if it is not the runner's, and run the line again`);
     if (arg('--unsigned') !== seal) stop(`${id}: ${problem}. If it was opened by a runner older than 1.2.3 and says what the runner printed, run the same command again with --unsigned ${seal}; otherwise close it (node scripts/runner/run.mjs --line ${lineName} --close ${id} --how "not the runner's") and let the runner open it again`);
     unsigned = true;
   }
@@ -128,7 +131,9 @@ const porcelain = spawnSync('git', ['-C', co, 'status', '--porcelain'], { encodi
 // The element's file is where Memory keeps it, read from the runner home's memory.yaml (1.2.3, F-4).
 let memoryYaml = {};
 try { memoryYaml = yaml.load(readFileSync(join(HOME, '.wingfoil/memory.yaml'), 'utf8')) ?? {}; } catch { memoryYaml = {}; }
-const memoryFile = (l, of) => l.startsWith(' M ') && !l.includes(' -> ') && !l.slice(3).startsWith('"') && lib.isMemoryPath(memoryYaml, l.slice(3), of);
+// A path pattern may span folders (1.2.6, G-3): the element's file is the only tracked one that matches.
+const tracked = spawnSync('git', ['-C', co, 'ls-files', '-z'], { encoding: 'utf8' }).stdout.split('\0').filter(Boolean);
+const memoryFile = (l, of) => l.startsWith(' M ') && !l.includes(' -> ') && !l.slice(3).startsWith('"') && lib.ownMemoryFile(memoryYaml, tracked, of) === l.slice(3);
 const amended = amend ? porcelain.filter((l) => memoryFile(l, element)) : [];
 if (amend && amended.length !== 1) stop(`--amend needs exactly one modified, unstaged Memory file of ${element} in ${co}; found ${amended.length}`);
 // A decision may be ruled while the element it is about has its own file modified (1.2.2): the ruling
