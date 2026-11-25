@@ -338,11 +338,21 @@ checks a reviewer should never have to report: on changed Markdown, every line t
 (tables, code blocks, the front matter and lines with a link apart) and a final newline, since Prettier leaves Markdown
 out (it would rewrite the front matter WingFoil writes); Prettier on every file the branch changed over `<base>` (types
 it does not know, and paths `.prettierignore` names, skipped); eslint on changed sources, `tsc`, the changed test
-files with the traceability test, and `test:bin` when the CLI, the site or a bin test changed. Niced, 2 vitest
-workers, it stops at the first red check and names it; it refuses a `<base>` that names no commit (exit 2).
+files with the traceability test, every test that imports a changed source directly or through another module
+(`vitest related`, which uses the default config, so tests under `test/bin/`, `test/docker/` and `test/fixtures/` are
+never selected; `test:bin` covers the first), and `test:bin` when the CLI, the site or a bin test changed. The changed
+test files drop those three folders too, with a `pre-review: tests skipped for N file(s)` line naming them, since a
+`vitest run` whose filter selects only excluded files exits 1. Every check that takes the changed file list (Prettier,
+eslint, the changed tests, the related tests) runs in batches of at most 200 files and 60000 bytes (counted as bytes,
+not characters) of paths, so a large branch never overflows one argument list; the traceability and evaluation-page
+tests run once, outside the batches. Niced, 2 vitest workers, it stops at the first red check and names it
+(`pre-review: <check> is red`); every conditional check (markdown, eslint, tests-related, test:bin) that does not apply
+prints `pre-review: <check> skipped: <reason>`; it refuses a `<base>` that names no commit (exit 2).
+`npm run pre-review -- <base>` runs the same script, the form a headless session may run.
 
 ```sh
 scripts/pre-review.sh main
+npm run pre-review -- main
 ```
 
 ## Full suites
@@ -354,6 +364,14 @@ branch's log is `.cache/full-suites/<date>/<branch>-<commit>-<time>.txt` (git-ig
 `summary.txt` gets a line per branch: the commit, `DIRTY` when the worktree had changes not committed, each stage's exit
 code, and `CHANGED` when the worktree's commit or files changed during the run. A docker test skips itself when its harness clone is missing (`BENCH_WINGFOIL_REPO`, `BENCH_SPECKIT_REPO`): read
 the log's counts, not only its exit code.
+
+The tests and the script never guess where a sibling repository is (task-179). The WingFoil clone and the hold-out
+come from `BENCH_WINGFOIL_REPO` and `BENCH_HOLDOUT_PATH`, else from the main checkout's git-ignored
+`config/siblings.local.yaml` (keys `wingfoil` and `holdout`; copy `config/siblings.local.example.yaml`), which a
+worktree reads too; the hold-out last falls back to `wingfoil-benchmark-holdout` beside the main checkout. The tests
+take their paths from the file without exporting them; the script exports only the clone, as `BENCH_WINGFOIL_REPO`,
+and never the hold-out, which would make the fixture scenarios' tests read the real one. A test that needs a missing
+sibling skips, and its title says which variable or key to set.
 
 ```sh
 scripts/full-suites.sh                 # main and every task/* worktree

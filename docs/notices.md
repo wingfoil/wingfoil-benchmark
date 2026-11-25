@@ -8,19 +8,47 @@ runner's home; a notice is never edited by hand.
 
 <!-- runner:open -->
 
-<!-- key:gate-trunk-plan-006-release-v0.4-work-item.approve@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file -->
-### N-014 · 2026-11-24 · trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-180-the-external-workflow-runner-moved-to-runner-1.2.6-the-patch-its-digest-and-the-checks-for-unsigned-notices-and-held-elements-before-the-loop-resumes -->
+### N-017 · 2026-11-25 · trunk:task-180-the-external-workflow-runner-moved-to-runner-1.2.6-the-patch-its-digest-and-the-checks-for-unsigned-notices-and-held-elements-before-the-loop-resumes
 
 - **Status:** open
 - **Kind:** gate
-- **Opened:** 2026-11-24T20:12:51Z
+- **Opened:** 2026-11-25T19:10:53Z
+- **Line:** trunk
+- **Element:** trunk:task-180-the-external-workflow-runner-moved-to-runner-1.2.6-the-patch-its-digest-and-the-checks-for-unsigned-notices-and-held-elements-before-the-loop-resumes
+- **Reason:** work-item.real-agent-check@task:task-180-the-external-workflow-runner-moved-to-runner-1.2.6-the-patch-its-digest-and-the-checks-for-unsigned-notices-and-held-elements-before-the-loop-resumes waits for the approver
+- **Ready:** yes
+- **Head:** 1c18468e
+- **Evidence:** no run recorded on this element
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-017 --reason 'Approved work-item.real-agent-check@task:task-180-the-external-workflow-runner-moved-to-runner-1.2.6-the-patch-its-digest-and-the-checks-for-unsigned-notices-and-held-elements-before-the-loop-resumes at 1c18468e: no run recorded on this element'`
+
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file -->
+### N-016 · 2026-11-25 · trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
+
+- **Status:** open
+- **Kind:** gate
+- **Opened:** 2026-11-25T19:10:53Z
 - **Line:** trunk
 - **Element:** trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
-- **Reason:** work-item.approve@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file waits for the approver
+- **Reason:** work-item.real-agent-check@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file waits for the approver
 - **Ready:** yes
-- **Head:** a1e31c9b
-- **Evidence:** run task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file/review/6 completed
-- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-014 --reason 'Approved work-item.approve@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file at a1e31c9b: run task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file/review/6 completed'`
+- **Head:** 76c0a40c
+- **Evidence:** run task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file/done/1 completed, checks integrated:pass
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-016 --reason 'Approved work-item.real-agent-check@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file at 76c0a40c: run task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file/done/1 completed, checks integrated:pass'`
+
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move -->
+### N-015 · 2026-11-25 · trunk:task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move
+
+- **Status:** open
+- **Kind:** gate
+- **Opened:** 2026-11-25T10:05:20Z
+- **Line:** trunk
+- **Element:** trunk:task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move
+- **Reason:** work-item.real-agent-check@task:task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move waits for the approver
+- **Ready:** yes
+- **Head:** cb0f9121
+- **Evidence:** no run recorded on this element
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-015 --reason 'Approved work-item.real-agent-check@task:task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move at cb0f9121: no run recorded on this element'`
 
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it -->
 ### N-009 · 2026-11-24 · trunk:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it
@@ -81,6 +109,34 @@ runner's home; a notice is never edited by hand.
 ## Closed
 
 <!-- runner:closed -->
+
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.approve@task:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer -->
+### N-018 · 2026-11-25 · trunk:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer
+
+- **Status:** closed 2026-11-25T19:30:17Z — the approver ruled the gate
+- **Kind:** gate
+- **Opened:** 2026-11-25T19:20:39Z
+- **Line:** trunk
+- **Element:** trunk:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer
+- **Reason:** work-item.approve@task:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer waits for the approver
+- **Ready:** yes
+- **Head:** b5c6806e
+- **Evidence:** run task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer/review/2 completed
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-018 --reason 'Approved work-item.approve@task:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer at b5c6806e: run task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer/review/2 completed'`
+
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.approve@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file -->
+### N-014 · 2026-11-24 · trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
+
+- **Status:** closed 2026-11-25T08:20:44Z — the approver ruled the gate
+- **Kind:** gate
+- **Opened:** 2026-11-24T20:12:51Z
+- **Line:** trunk
+- **Element:** trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
+- **Reason:** work-item.approve@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file waits for the approver
+- **Ready:** yes
+- **Head:** a1e31c9b
+- **Evidence:** run task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file/review/6 completed
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-014 --reason 'Approved work-item.approve@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file at a1e31c9b: run task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file/review/6 completed'`
 
 <!-- key:failure-trunk-git_fetch_-q_origin_git_github.com_Permission_denied_publ -->
 ### N-013 · 2026-11-24 · trunk:runner

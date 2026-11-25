@@ -119,16 +119,16 @@ record stays in git. The composed versions add the approver's gate to the three 
 
 ## D8 — the external workflow runner runs the governance (task-177)
 
-The runner's common files at `runner-1.2.4` (task-178; first `runner-1.2.2`, task-177) are copied unchanged into
-`scripts/runner/`, `scripts/checks/` and `scripts/lib/` (manifest digest `sha256:3258a655…cb988`, checked with `node
-scripts/runner/manifest.mjs --digest`); the machine file `scripts/setup/codex-apparmor.sh` and the Codex adapters are
-left out, as no line runs Codex. Prettier and ESLint ignore the copied folders: the manifest is their check, and an
-update is the runner's patch. `config/runner.yaml` launches only `work-item`, never `campaign-cycle` or the release
-slot; the real-agent check waits for the approver as an optional step, and the manual entry guards it a second time
-(`test/unit/docs/runner-config.test.ts`). The copied `scripts/checks/` run only when a step binds them
-(`.wingfoil/workflows/bindings.yaml`, which this repository does not have yet). The runner signs as its own
-`team.agents` identity, which cannot approve; gates stay the approver's, through `gate.mjs`. `npm run test:runner` runs
-the runner's own tests, a stage of the full suites.
+The runner's common files at `runner-1.2.6` (task-180, through dl-038; before it `runner-1.2.4`, task-178, and
+`runner-1.2.2`, task-177) are copied unchanged into `scripts/runner/`, `scripts/checks/` and `scripts/lib/` (manifest
+digest `sha256:0c22a39e…0157`, checked with `node scripts/runner/manifest.mjs --check --digest`); the machine file
+`scripts/setup/codex-apparmor.sh` and the Codex adapters are left out, as no line runs Codex. Prettier and ESLint ignore
+the copied folders: the manifest is their check, and an update is the runner's patch. `config/runner.yaml` launches only
+`work-item`, never `campaign-cycle` or the release slot; the real-agent check waits for the approver as an optional
+step, and the manual entry guards it a second time (`test/unit/docs/runner-config.test.ts`). The copied
+`scripts/checks/` run only when a step binds them (`.wingfoil/workflows/bindings.yaml`, which this repository does not
+have yet). The runner signs as its own `team.agents` identity, which cannot approve; gates stay the approver's, through
+`gate.mjs`. `npm run test:runner` runs the runner's own tests, a stage of the full suites.
 
 ## Left out on purpose
 

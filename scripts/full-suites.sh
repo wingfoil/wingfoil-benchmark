@@ -16,10 +16,32 @@ MAIN="${WFB_MAIN:-$(git -C "$(dirname "$0")" worktree list --porcelain | sed -n 
 MAIN="$(cd "$MAIN" && pwd)"
 OUT="${WFB_OUT:-$MAIN/.cache/full-suites}"; mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd)"
 export BENCH_SPECKIT_REPO="${BENCH_SPECKIT_REPO:-$HOME/.cache/wfb/spec-kit}"
-export BENCH_WINGFOIL_REPO="${BENCH_WINGFOIL_REPO:-$(dirname "$MAIN")/WingFoil2}"
+# The WingFoil clone (task-179): the variable, else the `wingfoil:` key of the main checkout's git-ignored
+# config/siblings.local.yaml, read with the same `yaml` package as test/support/siblings.ts (from this script's own
+# checkout) and resolved the same way: ~/ against the home folder, a relative path against the main checkout. An empty
+# or null key, or a file that cannot be read, leaves it unset. No sibling folder name is guessed.
+if [ -z "${BENCH_WINGFOIL_REPO:-}" ] && [ -f "$MAIN/config/siblings.local.yaml" ]; then
+  clone="$(node -e '
+    const value = (require(process.argv[1]).parse(require("fs").readFileSync(process.argv[2], "utf8")) ?? {}).wingfoil;
+    process.stdout.write(typeof value === "string" ? value : "");
+  ' "$(cd "$(dirname "$0")/.." && pwd)/node_modules/yaml" "$MAIN/config/siblings.local.yaml" 2> /dev/null)" || clone=''
+  case "$clone" in
+    '') ;;
+    '~/'*) BENCH_WINGFOIL_REPO="$HOME/${clone#'~/'}" ;;
+    /*) BENCH_WINGFOIL_REPO="$clone" ;;
+    *) BENCH_WINGFOIL_REPO="$MAIN/$clone" ;;
+  esac
+fi
 DAY_DIR="$OUT/$(date +%F)"; mkdir -p "$DAY_DIR"; SUMMARY="$DAY_DIR/summary.txt"
 exec 9> "$OUT/.lock"
 flock -n 9 || { echo "$(date -Is) another full-suites run is in progress" | tee -a "$SUMMARY"; exit 0; }
+if [ -n "${BENCH_WINGFOIL_REPO:-}" ]; then
+  export BENCH_WINGFOIL_REPO
+else
+  unset BENCH_WINGFOIL_REPO
+  echo "$(date -Is) BENCH_WINGFOIL_REPO not set and no wingfoil: in $MAIN/config/siblings.local.yaml:" \
+    "the tests that build WingFoil skip" | tee -a "$SUMMARY"
+fi
 
 # Lowest priority; no stdin (the worktree list is the loop's) and no lock descriptor (a lingering child would hold it).
 low() { nice -n 19 ionice -c3 "$@" < /dev/null 9>&-; }
