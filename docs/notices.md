@@ -8,20 +8,6 @@ runner's home; a notice is never edited by hand.
 
 <!-- runner:open -->
 
-<!-- key:gate-trunk-plan-006-release-v0.4-work-item.approve@task:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer -->
-### N-018 · 2026-11-25 · trunk:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer
-
-- **Status:** open
-- **Kind:** gate
-- **Opened:** 2026-11-25T19:20:39Z
-- **Line:** trunk
-- **Element:** trunk:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer
-- **Reason:** work-item.approve@task:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer waits for the approver
-- **Ready:** yes
-- **Head:** b5c6806e
-- **Evidence:** run task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer/review/2 completed
-- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-018 --reason 'Approved work-item.approve@task:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer at b5c6806e: run task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer/review/2 completed'`
-
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-180-the-external-workflow-runner-moved-to-runner-1.2.6-the-patch-its-digest-and-the-checks-for-unsigned-notices-and-held-elements-before-the-loop-resumes -->
 ### N-017 · 2026-11-25 · trunk:task-180-the-external-workflow-runner-moved-to-runner-1.2.6-the-patch-its-digest-and-the-checks-for-unsigned-notices-and-held-elements-before-the-loop-resumes
 
@@ -123,6 +109,20 @@ runner's home; a notice is never edited by hand.
 ## Closed
 
 <!-- runner:closed -->
+
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.approve@task:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer -->
+### N-018 · 2026-11-25 · trunk:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer
+
+- **Status:** closed 2026-11-25T19:30:17Z — the approver ruled the gate
+- **Kind:** gate
+- **Opened:** 2026-11-25T19:20:39Z
+- **Line:** trunk
+- **Element:** trunk:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer
+- **Reason:** work-item.approve@task:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer waits for the approver
+- **Ready:** yes
+- **Head:** b5c6806e
+- **Evidence:** run task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer/review/2 completed
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-018 --reason 'Approved work-item.approve@task:task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer at b5c6806e: run task-164-fix-bug-052-the-review-loop-s-usage.json-and-loop.json-written-by-a-tested-writer/review/2 completed'`
 
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.approve@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file -->
 ### N-014 · 2026-11-24 · trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
