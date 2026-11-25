@@ -235,6 +235,31 @@ describe('scripts/full-suites.sh (dl-016, task-075)', () => {
       expect(given(clones)).toEqual([clone]);
     });
 
+    it.each([
+      ['a double-quoted value', (clone: string) => `"${clone}"`],
+      ['a single-quoted value', (clone: string) => `'${clone}'`],
+      ['a trailing comment', (clone: string) => `${clone}  # this machine's clone`],
+    ])('reads %s as the YAML reader of the tests does', (_, value) => {
+      const { root, main, clones, env } = fixture();
+      const clone = join(root, 'a-clone');
+      mkdirSync(clone);
+      mkdirSync(join(main, 'config'));
+      writeFileSync(join(main, 'config', 'siblings.local.yaml'), `wingfoil: ${value(clone)}\n`);
+      const run = spawnSync('bash', [SCRIPT, 'task/x'], { env, encoding: 'utf8' });
+      expect(run.status, run.stderr).toBe(0);
+      expect(given(clones)).toEqual([clone]);
+    });
+
+    it.each([['~'], ['""'], ['# only a comment']])('treats wingfoil: %s as not set', (value) => {
+      const { main, out, clones, env } = fixture();
+      mkdirSync(join(main, 'config'));
+      writeFileSync(join(main, 'config', 'siblings.local.yaml'), `wingfoil: ${value}\n`);
+      const run = spawnSync('bash', [SCRIPT, 'task/x'], { env, encoding: 'utf8' });
+      expect(run.status, run.stderr).toBe(0);
+      expect(given(clones)).toEqual(['<unset>']);
+      expect(readFileSync(join(day(out), 'summary.txt'), 'utf8')).toMatch(/BENCH_WINGFOIL_REPO not set/);
+    });
+
     it('guesses no folder when neither names it, and says so in one line naming the variable', () => {
       const { root, out, clones, env } = fixture();
       // The folder the script guessed before task-179, present: it must not be picked up.

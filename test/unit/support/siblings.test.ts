@@ -122,6 +122,19 @@ describe('the sibling repositories, found by a setting (task-179)', () => {
     expect(byFile.holdout.reason).toBe(`${LOCAL_FILE}: holdout: ${missing} does not exist`);
   });
 
+  it('reads no local file when both variables are set, so a broken file does not break such a run', () => {
+    const { main, clone, holdout, local } = fixture();
+    local('wingfoil: [a]\n');
+    const found = siblings({ env: { BENCH_WINGFOIL_REPO: clone, BENCH_HOLDOUT_PATH: holdout }, main });
+    expect(found.wingfoil.path).toBe(clone);
+    expect(found.holdout.path).toBe(holdout);
+  });
+
+  it('takes a folder that is no git checkout as its own main checkout', () => {
+    const outside = tempDir('bench-siblings-nogit-');
+    expect(mainCheckout(outside)).toBe(outside);
+  });
+
   it('refuses a local file that is not a mapping of the two keys to strings', () => {
     const { main, local } = fixture();
     local('wingfoil: [a]\n');
