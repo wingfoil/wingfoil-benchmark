@@ -59,14 +59,37 @@ export const findingsSchema = z.strictObject({ findings: z.array(findingSchema) 
 const FENCE = /```json[ \t]*\r?\n([\s\S]*?)\r?\n```/gi;
 
 /**
- * The findings a reviewer's final message holds: the message itself as JSON, or the one fenced `json` block in it.
- * Anything else (no JSON, two blocks, a finding out of the format) is an issue, so the loop ends as `failed`.
+ * The JSON object that ends an unfenced message after prose (bug-055): the outermost `{` from which the rest of the
+ * message, to its end, is one JSON value. Undefined when the message does not end with such an object.
+ */
+function trailingObject(message: string): string | undefined {
+  if (!message.endsWith('}')) return undefined;
+  for (let start = message.indexOf('{'); start !== -1; start = message.indexOf('{', start + 1)) {
+    const candidate = message.slice(start);
+    try {
+      JSON.parse(candidate);
+      return candidate;
+    } catch {
+      // not the start of the closing object; try the next brace
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The findings a reviewer's final message holds: the message itself as JSON, the one fenced `json` block in it, or,
+ * with no fence at all, the JSON object that ends it after prose (bug-055). Anything else (no JSON, two blocks, a
+ * finding out of the format) is an issue, so the loop ends as `failed`.
  */
 export function parseFindings(message: string): Result<readonly Finding[]> {
   const trimmed = message.trim();
   let text = trimmed;
   if (!trimmed.startsWith('{')) {
     const blocks = [...trimmed.matchAll(FENCE)].map((match) => match[1] ?? '');
+    const trailing = blocks.length === 0 ? trailingObject(trimmed) : undefined;
+    if (trailing !== undefined) {
+      blocks.push(trailing);
+    }
     if (blocks.length !== 1) {
       return fail([
         {
