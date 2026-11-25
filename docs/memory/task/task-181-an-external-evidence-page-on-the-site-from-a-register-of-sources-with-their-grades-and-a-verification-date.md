@@ -2,7 +2,7 @@
 id: task-181-an-external-evidence-page-on-the-site-from-a-register-of-sources-with-their-grades-and-a-verification-date
 type: task
 title: "An external-evidence page on the site, from a register of sources with their grades and a verification date"
-status: draft
+status: pending
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
