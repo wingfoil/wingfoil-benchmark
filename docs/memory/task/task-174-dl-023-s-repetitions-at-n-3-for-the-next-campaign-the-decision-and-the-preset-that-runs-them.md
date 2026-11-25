@@ -28,6 +28,11 @@ reads every group at n = 3 in the reference campaign. Placed before the campaign
 2. Red first: the preset (or the campaign option) produces the three repetitions with distinct execution ids and the
    same pins; a dry run lists them and their estimate.
 3. The results pages read a group at n = 3 (characterization against a fixture of three runs).
+3a. With the mean, each group also reports the checks passed in every one of its runs (pass^k), and S8 the share of
+   runs that kept every rule, next to its per-check share ([plan-006](../../plans/plan-006-release-v0.4.md)'s
+   external-benchmarks triage, row 5; the Harness Leaderboard's 51.4% against 33.0% and OctoBench's CSR against ISR
+   in [X_external-benchmarks-2026-11-25.md](../../01_vision/X_external-benchmarks-2026-11-25.md), re-read at their
+   sources before the method page cites them). Red first: a fixture of three runs where one check fails once.
 4. Checks: `scripts/pre-review.sh main`, the docs and traceability tests, the full suites on the approver's go; an
    independent review (dl-020).
 

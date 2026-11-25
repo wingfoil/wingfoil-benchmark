@@ -25,6 +25,11 @@ read from the workflow (the WingFoil maintainer's point of 2026-10-24) is weighe
 1. The decomposition as dl-033 states it, computed from the run records by a tested module (red first).
 2. The results and the method page show it; a v0.3 execution re-read with it (characterization: no figure changes).
 3. *P*: kept as a candidate with its reason, or added as a metric through the experiment design.
+3a. From the runs' usage records, per step: the prompt-cache hit rate, and the share of input tokens spent reading the
+   arm's rules and decisions where the records tell it apart; a step's cache rate far below its arm's is flagged
+   ([plan-006](../../plans/plan-006-release-v0.4.md)'s external-benchmarks triage, row 6; imec's broken-cache build,
+   grade B, in [X_external-benchmarks-2026-11-25.md](../../01_vision/X_external-benchmarks-2026-11-25.md), re-read
+   at its source before the method page cites it). Red first, against a fixture with a low-cache step.
 4. Checks: `scripts/pre-review.sh main`, the docs and traceability tests, the full suites on the approver's go; an
    independent review (dl-020).
 
