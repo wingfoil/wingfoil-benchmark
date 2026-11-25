@@ -76,6 +76,10 @@ function trailingObject(message: string): string | undefined {
   return undefined;
 }
 
+/** Every form parseFindings accepts, in the words of its refusal; keep it in step with the doc comment below. */
+const ACCEPTED_FORMS =
+  'none of JSON alone, one fenced json block, or a JSON object that ends the message after prose';
+
 /**
  * The findings a reviewer's final message holds: the message itself as JSON, the one fenced `json` block in it, or,
  * with no fence at all, the JSON object that ends it after prose (bug-055). Anything else (no JSON, two blocks, a
@@ -96,7 +100,7 @@ export function parseFindings(message: string): Result<readonly Finding[]> {
           path: 'findings',
           message:
             blocks.length === 0
-              ? 'the final message holds no findings: neither JSON alone nor a fenced json block'
+              ? `the final message holds no findings: ${ACCEPTED_FORMS}`
               : `the final message holds ${blocks.length} fenced json blocks, not one`,
         },
       ]);

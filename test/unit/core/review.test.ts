@@ -33,7 +33,9 @@ describe("the reviewer's findings (task-148, REQ-RUN-21)", () => {
     expect(parseFindings(`Nothing to fix.\n{"findings": []}`)).toEqual({ ok: true, value: [] });
     // Prose after the object, or a malformed object, keep today's outcome.
     expect(parseFindings(`${json}\nThanks.`).ok).toBe(false);
-    expect(parseFindings(`Prose.\n${JSON.stringify({ findings: [{ ...FINDING, severity: 'major' }] })}`).ok).toBe(false);
+    expect(
+      parseFindings(`Prose.\n${JSON.stringify({ findings: [{ ...FINDING, severity: 'major' }] })}`).ok,
+    ).toBe(false);
     expect(parseFindings('Prose.\n{"findings": [')).toMatchObject({ ok: false });
   });
 
