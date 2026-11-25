@@ -358,9 +358,10 @@ the log's counts, not only its exit code.
 The tests and the script never guess where a sibling repository is (task-179). The WingFoil clone and the hold-out
 come from `BENCH_WINGFOIL_REPO` and `BENCH_HOLDOUT_PATH`, else from the main checkout's git-ignored
 `config/siblings.local.yaml` (keys `wingfoil` and `holdout`; copy `config/siblings.local.example.yaml`), which a
-worktree reads too; the hold-out last falls back to `wingfoil-benchmark-holdout` beside the main checkout. The file
-only feeds the tests that ask for a path, never the environment the CLI reads. A test that needs a missing sibling
-skips, and its title says which variable or key to set.
+worktree reads too; the hold-out last falls back to `wingfoil-benchmark-holdout` beside the main checkout. The tests
+take their paths from the file without exporting them; the script exports only the clone, as `BENCH_WINGFOIL_REPO`,
+and never the hold-out, which would make the fixture scenarios' tests read the real one. A test that needs a missing
+sibling skips, and its title says which variable or key to set.
 
 ```sh
 scripts/full-suites.sh                 # main and every task/* worktree

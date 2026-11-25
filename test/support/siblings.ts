@@ -32,19 +32,27 @@ const KINDS = {
 } as const;
 type Kind = keyof typeof KINDS;
 
-/** The main checkout of the repository `root` is in: the parent of the git common directory (a worktree's too). */
+/**
+ * The main checkout of the repository `root` is in: the parent of the git common directory (a worktree's too). A folder
+ * outside git, or a machine without it, is its own main checkout: a test that needs no sibling still loads.
+ */
 export function mainCheckout(root: string = REPO_ROOT): string {
-  const common = execFileSync(
-    'git',
-    ['-C', root, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-    {
+  let common: string;
+  try {
+    common = execFileSync('git', ['-C', root, 'rev-parse', '--path-format=absolute', '--git-common-dir'], {
       encoding: 'utf8',
-    },
-  ).trim();
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return resolve(root);
+  }
   return basename(common) === '.git' ? dirname(common) : resolve(root);
 }
 
-/** The local file's values, `~/` read against the home folder and a relative path against the main checkout. */
+/**
+ * The local file's values, `~/` read against the home folder and a relative path against the main checkout. A key left
+ * empty or null (`wingfoil:`, `wingfoil: ~`) is not set; `scripts/full-suites.sh` reads the file the same way.
+ */
 function localValues(main: string): Partial<Record<Kind, string>> {
   const file = join(main, LOCAL_FILE);
   if (!existsSync(file)) return {};
@@ -53,7 +61,8 @@ function localValues(main: string): Partial<Record<Kind, string>> {
   const values: Partial<Record<Kind, string>> = {};
   for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
     if (!(key in KINDS)) throw new Error(`${LOCAL_FILE}: unknown key ${key} (only wingfoil and holdout)`);
-    if (typeof value !== 'string' || value === '') throw new Error(`${LOCAL_FILE}: ${key} is not a path`);
+    if (value === null || value === '') continue;
+    if (typeof value !== 'string') throw new Error(`${LOCAL_FILE}: ${key} is not a path`);
     values[key as Kind] = value.startsWith('~/') ? join(homedir(), value.slice(2)) : resolve(main, value);
   }
   return values;
@@ -69,12 +78,14 @@ function found(path: string, source: Sibling['source'], label: string): Sibling 
 export function siblings(options: { env?: NodeJS.ProcessEnv; main?: string } = {}): Record<Kind, Sibling> {
   const env = options.env ?? process.env;
   const main = options.main ?? mainCheckout();
-  const local = localValues(main);
+  // The file is read only when a variable is unset: a broken file never breaks a run the variables cover.
+  let local: Partial<Record<Kind, string>> | undefined;
+  const fromLocal = (kind: Kind) => (local ??= localValues(main))[kind];
   const one = (kind: Kind): Sibling => {
     const { variable, what } = KINDS[kind];
     const fromEnv = env[variable];
     if (fromEnv !== undefined && fromEnv !== '') return found(fromEnv, 'env', variable);
-    const fromFile = local[kind];
+    const fromFile = fromLocal(kind);
     if (fromFile !== undefined) return found(fromFile, 'local', `${LOCAL_FILE}: ${kind}`);
     const unset = `no ${what}: set ${variable} or ${kind}: in ${LOCAL_FILE} (see config/siblings.local.example.yaml)`;
     if (kind === 'holdout') {

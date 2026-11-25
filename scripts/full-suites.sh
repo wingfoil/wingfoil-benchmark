@@ -19,9 +19,12 @@ export BENCH_SPECKIT_REPO="${BENCH_SPECKIT_REPO:-$HOME/.cache/wfb/spec-kit}"
 # The WingFoil clone (task-179): the variable, else the main checkout's git-ignored config/siblings.local.yaml (its
 # `wingfoil:` key, ~/ and relative paths as test/support/siblings.ts reads them). No sibling folder name is guessed.
 if [ -z "${BENCH_WINGFOIL_REPO:-}" ] && [ -f "$MAIN/config/siblings.local.yaml" ]; then
-  clone="$(sed -n 's/^wingfoil:[[:space:]]*//p' "$MAIN/config/siblings.local.yaml" | sed 's/[[:space:]]*$//' | head -n 1)"
+  # As YAML reads a plain scalar: a trailing ` #` comment and CR dropped, one pair of quotes around it removed.
+  clone="$(sed -n 's/^wingfoil:[[:space:]]*//p' "$MAIN/config/siblings.local.yaml" | head -n 1 \
+    | sed -e 's/\r$//' -e 's/^#.*//' -e 's/[[:space:]]#.*$//' -e 's/[[:space:]]*$//' \
+      -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/")"
   case "$clone" in
-    '') ;;
+    '' | '~' | null | Null | NULL) ;;
     '~/'*) BENCH_WINGFOIL_REPO="$HOME/${clone#'~/'}" ;;
     /*) BENCH_WINGFOIL_REPO="$clone" ;;
     *) BENCH_WINGFOIL_REPO="$MAIN/$clone" ;;

@@ -130,6 +130,14 @@ describe('the sibling repositories, found by a setting (task-179)', () => {
     expect(found.holdout.path).toBe(holdout);
   });
 
+  it('treats a key left empty or null as not set, as scripts/full-suites.sh does', () => {
+    const { main, local } = fixture();
+    local('wingfoil: ~\nholdout:\n');
+    const found = siblings({ env: {}, main });
+    expect(found.wingfoil.source).toBe('none');
+    expect(found.holdout.source).toBe('none');
+  });
+
   it('takes a folder that is no git checkout as its own main checkout', () => {
     const outside = tempDir('bench-siblings-nogit-');
     expect(mainCheckout(outside)).toBe(outside);

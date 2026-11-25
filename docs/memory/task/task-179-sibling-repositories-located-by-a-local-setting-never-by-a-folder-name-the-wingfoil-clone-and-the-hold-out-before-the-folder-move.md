@@ -93,4 +93,10 @@ AC8: the approver's local file is written in the main checkout (git-ignored once
 shows as untracked there). From this worktree the scenario tests now read the hold-out: 62 passed, none skipped,
 where the same run skipped 10 before the file.
 
+### Review
+
+| Round | Commit | Reviewer | Findings | Outcome |
+| ----- | ------ | -------- | -------- | ------- |
+| 1 | `b777d1de` | independent agent, read-only clone | should-fix: `full-suites.sh` read a quoted value or a trailing comment unlike YAML; nits: `wingfoil: ~` read as a path by the script, README claimed nothing is exported, the resolver failed to load outside git and parsed the file even with both variables set, the old-name scan matched only after `/` or a quote, machine paths in skip titles | fixed: the script strips CR, a ` #` comment and one pair of quotes, and treats empty, `~` and `null` as unset (both readers alike, tested); README says only the clone is exported; `mainCheckout` falls back outside git; the file is read only when a variable is unset; the scan matches the name between non-name characters. Kept: machine paths in skip titles (console and git-ignored logs only) |
+
 `wingfoil` commands: `memory submit` moved the task backlog → in-progress, as declared.

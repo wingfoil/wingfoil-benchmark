@@ -35,7 +35,7 @@ describe('the sibling repositories are named only by the local setting (task-179
       .filter((file) => file !== '' && !/^scripts\/(runner|checks|lib|setup)\//.test(file));
     const hits = files.filter((file) => {
       const text = readFileSync(repoPath(file), 'utf8');
-      return OLD_NAMES.some((name) => new RegExp(`[/'"]${name}(?![\\w-])`).test(text));
+      return OLD_NAMES.some((name) => new RegExp(`(?<![\\w.-])${name}(?![\\w-])`).test(text));
     });
     expect(hits).toEqual([]);
   });
