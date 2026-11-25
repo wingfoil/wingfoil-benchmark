@@ -76,6 +76,23 @@ specification task.
 | 9 | The follow-ups left in v0.3's notes (about fourteen) | W20: one task of test gaps and cleanups (plan-005's, never filed; `.prettierignore` hiding `src/results/`; the review loop's hold-out branch; `docs/evaluate.md` after publication); classifier v2's gaps and the `ambiguous` hook answer on Haiku with W25's oracle; the Resource's size under Codex dropped as a stated limit; `memory amend`/`park` as a WingFoil feedback note |
 | 10 | The WingFoil feedback inbox | F-040 to F-047 and the open notes filed in WingFoil by the approver (dl-009), then a `wingfoil-sync` task in W20 |
 
+**The external-benchmarks triage**, accepted by the approver in chat (2026-11-25), of the proposals that came with
+[X_external-benchmarks-2026-11-25.md](../01_vision/X_external-benchmarks-2026-11-25.md). Each external figure is
+re-read at its primary source before an element cites it, with its grade next to it:
+
+| # | Proposal | Where |
+|---|---|---|
+| 1 | The orchestrator judging its own checks (Gated SDD, grade C) as support for H5; undeclared changes against declared files as a metric | W25, in S10's H5 version and dl-036's specification |
+| 2 | The blind rubric judge: judges from more than one vendor, never the evaluated model, calibrated on a human-rated sample first | W23, F4.6's design |
+| 3 | S7: an EvoScore-like metric and a regression rate per step (SWE-CI) | W22, weighed in S7's specification |
+| 4 | S4: injected facts that cannot be inferred (DreamBench-SWE); a step where a recorded decision goes stale (MemTrace) | W22, weighed in S4's specification |
+| 5 | "Passed in every run" next to the mean at n = 3; "every rule kept in the run" for S8 | W21, with dl-023's repetition preset |
+| 6 | The prompt-cache hit rate per step; the token share spent reading rules and decisions | W21, with dl-033 |
+| 7 | A `baseline-log` control arm: a verbatim log of earlier sessions, no process | a decision-log of its own before any task |
+| 8 | A scenario from a hard long-horizon set (SWE-EVO, a SWE-CI subset) | after v0.4; licences and hold-out threats (T5, T13) first |
+| 9 | An "external evidence" section on the site, apart from the results, from a YAML register with grades and a verification date | W20, as soon as possible: it costs little |
+| 10 | Re-scoring saved answers before a key change, newly broken answers reported | after v0.4, in a cleanup task; mostly the practice already |
+
 **Inputs:** [rel-v0-3](../memory/release/rel-v0-3.md)'s Retrospective; plan-005's Completion; dl-021, dl-023, dl-033 to
 dl-037; [07_sequencer.md](../01_vision/07_sequencer.md) 1.2; the retrospective input of 2026-10-24.
 

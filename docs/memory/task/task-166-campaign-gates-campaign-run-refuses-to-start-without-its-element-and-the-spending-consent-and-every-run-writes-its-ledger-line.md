@@ -2,7 +2,7 @@
 id: task-166-campaign-gates-campaign-run-refuses-to-start-without-its-element-and-the-spending-consent-and-every-run-writes-its-ledger-line
 type: task
 title: "Campaign gates: campaign run refuses to start without its element and the spending consent, and every run writes its ledger line"
-status: backlog
+status: in-progress
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
@@ -34,9 +34,20 @@ line for every run without a hand step.
 
 ## Design
 
-<!-- To be written when the task starts. -->
+`src/cli/campaign-gates.ts`. The gate runs right after `checkCampaign`, before the estimate: the campaign's element is
+the one `docs/memory/campaign/*.md` whose `campaign_file` is the file (none, or several, refuse); its status must be
+past the spending gate (`approved`, `running`, `scored`, `reviewed`, `published`). `--dry-run` runs the gate and the
+resume check, prints that they pass, and returns without a result or a ledger line. After the runs, `appendLedgerLines`
+runs `scripts/ledger-lines.mjs campaign` for the execution and appends to `docs/calibration/<release>-ledger.md` (the
+element's `release`; created with the table header if absent) every line not already there: a resume adds only the
+runs and attempts it added, since a line names its attempt. Consent cell: the element and its status at launch.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- Tests: `test/unit/cli/campaign-gates.test.ts`, five scenarios in `campaign.feature` (1.3) with acceptance tests;
+  `writeRepo` now writes an approved element. `npm run test -- test/unit test/bin test/acceptance`: all pass except
+  `traceability.test.ts` "bug links" (task-164 done, bug-052 approved), which fails the same way without this change
+  (the worktree's memory is older than main's).
+- Not done here: `scripts/pre-review.sh main` and the full suites (on the approver's go); the independent review (dl-020).
+- Ledger lines carry no `--token-file` scan (the scan says "not run"), as `ledger-lines.mjs` does without it.
+- `wingfoil workflow next`: declared next step for this element was `work-item.start`; observed as declared.
