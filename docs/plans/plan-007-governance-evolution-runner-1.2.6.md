@@ -2,7 +2,7 @@
 id: plan-007-governance-evolution-runner-1.2.6
 type: plan
 title: "governance-evolution — runner-1.2.6"
-status: active
+status: done
 workflow: governance-evolution
 phase: assess
 tags: ["governance","runner","v0.4"]
