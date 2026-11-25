@@ -16,15 +16,17 @@ MAIN="${WFB_MAIN:-$(git -C "$(dirname "$0")" worktree list --porcelain | sed -n 
 MAIN="$(cd "$MAIN" && pwd)"
 OUT="${WFB_OUT:-$MAIN/.cache/full-suites}"; mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd)"
 export BENCH_SPECKIT_REPO="${BENCH_SPECKIT_REPO:-$HOME/.cache/wfb/spec-kit}"
-# The WingFoil clone (task-179): the variable, else the main checkout's git-ignored config/siblings.local.yaml (its
-# `wingfoil:` key, ~/ and relative paths as test/support/siblings.ts reads them). No sibling folder name is guessed.
+# The WingFoil clone (task-179): the variable, else the `wingfoil:` key of the main checkout's git-ignored
+# config/siblings.local.yaml, read with the same `yaml` package as test/support/siblings.ts (from this script's own
+# checkout) and resolved the same way: ~/ against the home folder, a relative path against the main checkout. An empty
+# or null key, or a file that cannot be read, leaves it unset. No sibling folder name is guessed.
 if [ -z "${BENCH_WINGFOIL_REPO:-}" ] && [ -f "$MAIN/config/siblings.local.yaml" ]; then
-  # As YAML reads a plain scalar: a trailing ` #` comment and CR dropped, one pair of quotes around it removed.
-  clone="$(sed -n 's/^wingfoil:[[:space:]]*//p' "$MAIN/config/siblings.local.yaml" | head -n 1 \
-    | sed -e 's/\r$//' -e 's/^#.*//' -e 's/[[:space:]]#.*$//' -e 's/[[:space:]]*$//' \
-      -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/")"
+  clone="$(node -e '
+    const value = (require(process.argv[1]).parse(require("fs").readFileSync(process.argv[2], "utf8")) ?? {}).wingfoil;
+    process.stdout.write(typeof value === "string" ? value : "");
+  ' "$(cd "$(dirname "$0")/.." && pwd)/node_modules/yaml" "$MAIN/config/siblings.local.yaml" 2> /dev/null)" || clone=''
   case "$clone" in
-    '' | '~' | null | Null | NULL) ;;
+    '') ;;
     '~/'*) BENCH_WINGFOIL_REPO="$HOME/${clone#'~/'}" ;;
     /*) BENCH_WINGFOIL_REPO="$clone" ;;
     *) BENCH_WINGFOIL_REPO="$MAIN/$clone" ;;
