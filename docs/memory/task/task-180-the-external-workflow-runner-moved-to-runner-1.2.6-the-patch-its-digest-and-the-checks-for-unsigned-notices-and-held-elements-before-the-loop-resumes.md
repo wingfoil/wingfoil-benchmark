@@ -123,6 +123,10 @@ tests), tests-related; test:bin skipped (no change under src/cli, src/site or te
 | `memory park task-164 --reason …` | in-progress → backlog | in-progress → backlog, the reason in the commit |
 | `memory submit task-180-…` | backlog → in-progress | backlog → in-progress |
 
+**The full suites (AC7),** on the approver's go, `scripts/full-suites.sh task/task-180-runner-1.2.6` at `d40520c9`:
+LINT 0, TEST 0 (160 files, 2616 tests: main's 2615 and the new config guard), BUILD 0, BIN 0 (22 tests), DOCKER 0 (24
+tests, none skipped), RUNNER 0 (111 of 112, the one expected skip).
+
 ### Review
 
 Round 1, an independent read-only agent in a temporary clone (dl-020), on `42f85d6c…75d55fd8`: **accept with nits**,
