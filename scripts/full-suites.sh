@@ -16,10 +16,27 @@ MAIN="${WFB_MAIN:-$(git -C "$(dirname "$0")" worktree list --porcelain | sed -n 
 MAIN="$(cd "$MAIN" && pwd)"
 OUT="${WFB_OUT:-$MAIN/.cache/full-suites}"; mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd)"
 export BENCH_SPECKIT_REPO="${BENCH_SPECKIT_REPO:-$HOME/.cache/wfb/spec-kit}"
-export BENCH_WINGFOIL_REPO="${BENCH_WINGFOIL_REPO:-$(dirname "$MAIN")/WingFoil2}"
+# The WingFoil clone (task-179): the variable, else the main checkout's git-ignored config/siblings.local.yaml (its
+# `wingfoil:` key, ~/ and relative paths as test/support/siblings.ts reads them). No sibling folder name is guessed.
+if [ -z "${BENCH_WINGFOIL_REPO:-}" ] && [ -f "$MAIN/config/siblings.local.yaml" ]; then
+  clone="$(sed -n 's/^wingfoil:[[:space:]]*//p' "$MAIN/config/siblings.local.yaml" | sed 's/[[:space:]]*$//' | head -n 1)"
+  case "$clone" in
+    '') ;;
+    '~/'*) BENCH_WINGFOIL_REPO="$HOME/${clone#'~/'}" ;;
+    /*) BENCH_WINGFOIL_REPO="$clone" ;;
+    *) BENCH_WINGFOIL_REPO="$MAIN/$clone" ;;
+  esac
+fi
 DAY_DIR="$OUT/$(date +%F)"; mkdir -p "$DAY_DIR"; SUMMARY="$DAY_DIR/summary.txt"
 exec 9> "$OUT/.lock"
 flock -n 9 || { echo "$(date -Is) another full-suites run is in progress" | tee -a "$SUMMARY"; exit 0; }
+if [ -n "${BENCH_WINGFOIL_REPO:-}" ]; then
+  export BENCH_WINGFOIL_REPO
+else
+  unset BENCH_WINGFOIL_REPO
+  echo "$(date -Is) BENCH_WINGFOIL_REPO not set and no wingfoil: in $MAIN/config/siblings.local.yaml:" \
+    "the tests that build WingFoil skip" | tee -a "$SUMMARY"
+fi
 
 # Lowest priority; no stdin (the worktree list is the loop's) and no lock descriptor (a lingering child would hold it).
 low() { nice -n 19 ionice -c3 "$@" < /dev/null 9>&-; }

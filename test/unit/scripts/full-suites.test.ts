@@ -44,7 +44,8 @@ function fixture() {
   chmodSync(join(bin, 'npm'), 0o755);
   const out = join(root, 'out');
   // The suite this test runs in may itself have the clone's variable: the fixture starts without it.
-  const { BENCH_WINGFOIL_REPO: _ignored, ...inherited } = process.env;
+  const inherited = { ...process.env };
+  delete inherited.BENCH_WINGFOIL_REPO;
   const env: NodeJS.ProcessEnv = {
     ...inherited,
     PATH: `${bin}:${process.env.PATH ?? ''}`,

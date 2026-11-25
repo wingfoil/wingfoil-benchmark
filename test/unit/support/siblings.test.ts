@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { tempDir } from '../../support/scenario-fixture.js';
 import { HOLDOUT_DEFAULT, LOCAL_FILE, mainCheckout, siblings } from '../../support/siblings.js';
@@ -56,6 +56,14 @@ describe('the sibling repositories, found by a setting (task-179)', () => {
     expect(found.wingfoil).toEqual({ path: clone, source: 'local', reason: undefined });
     expect(found.holdout).toEqual({ path: holdout, source: 'local', reason: undefined });
     expect(mainCheckout(worktree)).toBe(main);
+  });
+
+  it('reads a ~/ path of the local file against the home folder', () => {
+    const { root, main, clone, local } = fixture();
+    vi.stubEnv('HOME', root);
+    local('wingfoil: ~/a-clone\n');
+    expect(siblings({ env: {}, main }).wingfoil).toEqual({ path: clone, source: 'local', reason: undefined });
+    vi.unstubAllEnvs();
   });
 
   it('treats an empty variable as unset', () => {
