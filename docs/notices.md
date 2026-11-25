@@ -8,20 +8,6 @@ runner's home; a notice is never edited by hand.
 
 <!-- runner:open -->
 
-<!-- key:gate-trunk-plan-006-release-v0.4-work-item.approve@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file -->
-### N-014 · 2026-11-24 · trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
-
-- **Status:** open
-- **Kind:** gate
-- **Opened:** 2026-11-24T20:12:51Z
-- **Line:** trunk
-- **Element:** trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
-- **Reason:** work-item.approve@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file waits for the approver
-- **Ready:** yes
-- **Head:** a1e31c9b
-- **Evidence:** run task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file/review/6 completed
-- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-014 --reason 'Approved work-item.approve@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file at a1e31c9b: run task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file/review/6 completed'`
-
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it -->
 ### N-009 · 2026-11-24 · trunk:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it
 
@@ -81,6 +67,20 @@ runner's home; a notice is never edited by hand.
 ## Closed
 
 <!-- runner:closed -->
+
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.approve@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file -->
+### N-014 · 2026-11-24 · trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
+
+- **Status:** closed 2026-11-25T08:20:44Z — the approver ruled the gate
+- **Kind:** gate
+- **Opened:** 2026-11-24T20:12:51Z
+- **Line:** trunk
+- **Element:** trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
+- **Reason:** work-item.approve@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file waits for the approver
+- **Ready:** yes
+- **Head:** a1e31c9b
+- **Evidence:** run task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file/review/6 completed
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-014 --reason 'Approved work-item.approve@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file at a1e31c9b: run task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file/review/6 completed'`
 
 <!-- key:failure-trunk-git_fetch_-q_origin_git_github.com_Permission_denied_publ -->
 ### N-013 · 2026-11-24 · trunk:runner
