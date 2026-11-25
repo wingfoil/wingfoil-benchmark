@@ -101,4 +101,9 @@ where the same run skipped 10 before the file.
 | 2 | `43dde97c` | the same agent, re-review | nit: rarer quoted values (a quoted `#`, a quoted `~` or `null`, escapes) still read apart; nit: the empty-or-null resolver test came in the fix commit, not the red one (it was red on `b777d1de`), and the old-name regex has no test of its own | fixed: the script reads the key with the same `yaml` package as the resolver, a red test for a quoted `#`. Kept: the commit order (recorded here), the regex checked by hand by the reviewer |
 | 3 | `6a835f2e` | the same agent, re-review | nits only: when the file cannot be read (no `node_modules`, no `node`, a value the resolver refuses) the script's line says the key is absent, not unreadable; a block scalar keeps its newline in the resolver and loses it in the script | accepted, the review closes. Kept: both nits (the clone is left unset, or a path reported, never a wrong one exported) |
 
+Full suites at `5f8a76ae`, from this worktree with no `BENCH_*` variable exported (the clone read from the main
+checkout's local file, AC8): LINT 0, TEST 0 (2605 passed, none skipped), BUILD 0, BIN 0 (22), DOCKER 0 (24 passed,
+none skipped: the hold-out and wingfoil tests ran), RUNNER 0 (103 passed, 1 skipped); log
+`.cache/full-suites/2026-11-25/task_task-179-sibling-paths-5f8a76ae-102822.txt`.
+
 `wingfoil` commands: `memory submit` moved the task backlog → in-progress, as declared.
