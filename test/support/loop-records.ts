@@ -3,9 +3,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { ReviewLoop } from '../../src/core/index.js';
-import type { LoopOutcome } from '../../src/runner/review-loop.js';
-import { loopRecord, reviewerUsageRecord } from '../../src/runner/review-records.js';
+import { findingsRecord, loopRecord, reviewerUsageRecord } from '../../src/runner/review-records.js';
 
 /** One finding as `findings.json` holds it. */
 export interface LoopFinding {
@@ -91,7 +89,7 @@ export function writeReviewLoop(runDir: string, spec: LoopSpec): void {
     );
     if (round.findings !== null) {
       const findings = round.findings.map((finding) => ({ ...finding, why: `Because of ${finding.title}.` }));
-      writeFileSync(join(roundDir, 'findings.json'), JSON.stringify({ findings }));
+      writeFileSync(join(roundDir, 'findings.json'), findingsRecord(findings, []));
     }
     if (round.fix !== undefined) {
       const eur = round.fix.eur ?? 0.02;
@@ -125,13 +123,13 @@ export function writeReviewLoop(runDir: string, spec: LoopSpec): void {
     prompt: { sha256: spec.pins?.prompt ?? 'a'.repeat(64) },
     fixer_prompt: { sha256: spec.pins?.fixerPrompt ?? 'b'.repeat(64) },
     max_rounds: spec.maxRounds ?? 5,
-  } as ReviewLoop;
+  };
   writeFileSync(
     join(dir, 'loop.json'),
     loopRecord(
       loop,
       {
-        outcome: spec.outcome as LoopOutcome,
+        outcome: spec.outcome,
         ...(spec.reason === undefined ? {} : { reason: spec.reason }),
         costEur: Math.round(cost * 1e6) / 1e6,
       },

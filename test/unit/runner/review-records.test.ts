@@ -5,10 +5,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { ReviewLoop } from '../../../src/core/index.js';
+import type { SessionUsage } from '../../../src/agents/index.js';
+import type { Finding } from '../../../src/core/index.js';
 import { readLoop } from '../../../src/results/review.js';
-import { fixerUsageRecord, loopRecord, reviewerUsageRecord } from '../../../src/runner/review-records.js';
-import type { RoundRecord } from '../../../src/runner/review-records.js';
+import {
+  findingsRecord,
+  fixerUsageRecord,
+  loopRecord,
+  reviewerUsageRecord,
+} from '../../../src/runner/review-records.js';
+import type { LoopPins, RoundRecord } from '../../../src/runner/review-records.js';
 
 const STORED = join(
   __dirname,
@@ -20,16 +26,28 @@ const STORED_ROUND = join(
   '../../../results/dry-runs/251/runs/S8@1.1/speckit-docs/claude-sonnet-5-5/r1/review/1',
 );
 
-const LOOP = {
+const LOOP: LoopPins = {
   agent: { name: 'claude-code', version: '2.1.300' },
   model: 'claude-sonnet-5-5',
   effort: 'medium',
   prompt: { sha256: 'c8bce4bd9083d33c7953fb6f4cba77da07661f4952d900bbe98bf79a86991983' },
   fixer_prompt: { sha256: '47fcee47291cde67557ee717b7817c3721dadde8410001b0b26bcc446a9ec223' },
   max_rounds: 5,
-} as ReviewLoop;
+};
 
-const USAGE = {
+/** Dry run 251's reviewer session, as the runner holds it before it writes it. */
+const STORED_USAGE: SessionUsage = {
+  inputTokens: 8,
+  outputTokens: 1440,
+  cacheCreationInputTokens: 14887,
+  cacheReadInputTokens: 77858,
+  costUsd: 0.05941930000000001,
+  costEur: 0.05298418981000001,
+  turns: 4,
+  durationMs: 18050,
+};
+
+const USAGE: SessionUsage = {
   inputTokens: 8,
   outputTokens: 1440,
   cacheCreationInputTokens: 14887,
@@ -62,11 +80,37 @@ describe('the review loop writer', () => {
   });
 
   it('writes reviewer-usage.json as the stored v0.3 round holds it', () => {
-    const stored = JSON.parse(
+    expect(reviewerUsageRecord(STORED_USAGE, undefined, [])).toBe(
       readFileSync(join(STORED_ROUND, 'reviewer-usage.json'), 'utf8'),
-    ) as typeof USAGE;
-    expect(JSON.parse(reviewerUsageRecord(stored, undefined, []))).toEqual(stored);
-    expect(reviewerUsageRecord(stored, undefined, [])).toBe(`${JSON.stringify(stored, undefined, 2)}\n`);
+    );
+  });
+
+  it('writes findings.json scrubbed of credentials, and readLoop reads the findings back', () => {
+    const dir = runDir();
+    const finding: Finding = {
+      severity: 'should-fix',
+      file: 'src/a.ts',
+      line: 3,
+      title: 'A title',
+      why: 'token sk-secret leaked',
+    };
+    writeFileSync(
+      join(dir, 'review', 'loop.json'),
+      loopRecord(
+        LOOP,
+        { outcome: 'clean', costEur: 0.1 },
+        [{ n: 1, findings: { blocker: 0, 'should-fix': 1, nit: 0 }, fixed: false }],
+        [],
+      ),
+    );
+    const written = findingsRecord([finding], ['sk-secret']);
+    expect(written).not.toContain('sk-secret');
+    writeFileSync(join(dir, 'review', '1', 'findings.json'), written);
+    const read = readLoop(dir, rate);
+    if (!read.ok || read.value === undefined) throw new Error(JSON.stringify(read));
+    expect(read.value.rounds[0]?.findings).toEqual([
+      { severity: 'should-fix', file: 'src/a.ts', line: 3, title: 'A title' },
+    ]);
   });
 
   it('round-trips a loop through the writer and readLoop', () => {
@@ -81,7 +125,7 @@ describe('the review loop writer', () => {
         'sk-secret',
       ]),
     );
-    writeFileSync(join(dir, 'review', '1', 'findings.json'), JSON.stringify({ findings: [] }));
+    writeFileSync(join(dir, 'review', '1', 'findings.json'), findingsRecord([], []));
     writeFileSync(
       join(dir, 'review', '1', 'reviewer-usage.json'),
       reviewerUsageRecord(USAGE, 0.3, [60, 120]),
@@ -99,6 +143,7 @@ describe('the review loop writer', () => {
     expect(read.value.reviewer).toMatchObject({ agent: 'claude-code', version: '2.1.300', effort: 'medium' });
     expect(read.value.rounds.map((round) => round.n)).toEqual([1, 2]);
     expect(read.value.reviewers).toHaveLength(1);
+    expect(read.value.reviewers[0]).toMatchObject({ cost_eur: 0.3, bounded: true });
     expect(read.value.fixers).toHaveLength(1);
   });
 

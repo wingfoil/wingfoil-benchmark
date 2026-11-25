@@ -19,10 +19,20 @@ export interface RoundRecord {
   readonly fixed: boolean;
 }
 
+/** The fields of the loop's pins that `loop.json` records. */
+export interface LoopPins {
+  readonly agent: { readonly name: string; readonly version: string };
+  readonly model: string;
+  readonly effort: string;
+  readonly prompt: Pick<ReviewLoop['prompt'], 'sha256'>;
+  readonly fixer_prompt: Pick<ReviewLoop['fixer_prompt'], 'sha256'>;
+  readonly max_rounds: number;
+}
+
 /** `review/loop.json`: the reviewer's pins, the outcome, its reason scrubbed of credentials, its cost, the rounds. */
 export function loopRecord(
-  loop: ReviewLoop,
-  summary: LoopSummary,
+  loop: LoopPins,
+  summary: Pick<LoopSummary, 'reason' | 'costEur'> & { readonly outcome: string },
   rounds: readonly RoundRecord[],
   secrets: readonly string[],
 ): string {
@@ -40,6 +50,11 @@ export function loopRecord(
     undefined,
     2,
   )}\n`;
+}
+
+/** `review/<n>/findings.json`: the round's findings, scrubbed of credentials. `readLoop` reads it back (bug-052). */
+export function findingsRecord(findings: readonly Finding[], secrets: readonly string[]): string {
+  return `${scrub(JSON.stringify({ findings }, undefined, 2), secrets)}\n`;
 }
 
 /**

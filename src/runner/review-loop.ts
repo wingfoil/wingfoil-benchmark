@@ -7,7 +7,7 @@ import type { SessionUsage, StepOutcome } from '../agents/index.js';
 import { parseFindings, reasonOf } from '../core/index.js';
 import type { ApproverPolicy, Arm, Finding, ReviewLoop, Scenario } from '../core/index.js';
 import { buildReviewCopy, setupAddedPaths } from './review-copy.js';
-import { fixerUsageRecord, loopRecord, reviewerUsageRecord } from './review-records.js';
+import { findingsRecord, fixerUsageRecord, loopRecord, reviewerUsageRecord } from './review-records.js';
 import type { RoundRecord } from './review-records.js';
 import {
   CAP_REACHED,
@@ -492,10 +492,7 @@ async function reviewRound(n: number, input: RoundInput, options: RunnerOptions)
     const issues = parsed.issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ');
     return ended({ outcome: 'failed', reason: `round ${n}'s findings do not parse: ${issues}` });
   }
-  writeFileSync(
-    join(roundDir, 'findings.json'),
-    `${scrub(JSON.stringify({ findings: parsed.value }, undefined, 2), secrets)}\n`,
-  );
+  writeFileSync(join(roundDir, 'findings.json'), findingsRecord(parsed.value, secrets));
   return { findings: parsed.value, costEur };
 }
 
