@@ -2,7 +2,7 @@
 id: task-180-the-external-workflow-runner-moved-to-runner-1.2.6-the-patch-its-digest-and-the-checks-for-unsigned-notices-and-held-elements-before-the-loop-resumes
 type: task
 title: "The external workflow runner moved to runner-1.2.6: the patch, its digest, and the checks for unsigned notices and held elements before the loop resumes"
-status: pending
+status: backlog
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
