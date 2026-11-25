@@ -51,3 +51,18 @@ reference composer at `549d787d`, on WingFoil 0.3.2; this repository's deviation
 ## Retrospective
 
 <!-- What went well, what to change, and the notes added to the WingFoil feedback inbox. -->
+
+Points recorded during the release, for the retrospective:
+
+- **Updating the runner is done by hand** (task-178, the approver, 2026-11-24). The runner cannot carry its own update:
+  its agents cannot read the runner's package (the patch and the manifest lie outside the line's checkout and
+  worktrees), the anonymity check of the copied files is the approver's, and on 1.2.2 a review step blocked (N7).
+  Running the new code is safe by design, since the runner runs from its home, which must equal its trusted ref
+  (`origin/main` outside a pilot). The approver chose to route runner updates through `governance-evolution` (its run
+  opened after the folder move), and to weigh asking the runner's maintainers for a scripted update step run from the
+  home, like the integrate step.
+- **The WIP limit holds per clone** (task-178). A task worked by hand in the main checkout and not pushed is
+  invisible to the runner's line, which then reads the in-progress slot as free; the console loop stays stopped
+  until such a task is pushed.
+- **Every done task leaves an optional real-agent-check gate** (F-050, notices N-001, N-002, N-005), which
+  `gate.mjs` can only approve, as a check that never ran; the console loop's filter skips them.

@@ -2,7 +2,7 @@
 id: task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
 type: task
 title: "Fix bug-053: pre-review.sh runs Prettier in batches and selects every test that imports a changed file"
-status: backlog
+status: approved
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
@@ -33,9 +33,56 @@ suites went red after a green pre-review in six v0.3 tasks. Third in W20's order
 
 ## Design
 
-<!-- To be written when the task starts. -->
+`batched` in `scripts/pre-review.sh` passes every file-list check (Prettier, eslint, the changed test files, the related
+tests) in batches of at most 200 files and 60000 bytes of paths (well under the 131072 bytes one argument may hold),
+through `check`, which names a red stage and exits 1 (process substitution, so the exit reaches the script). The bytes
+are counted by `byte_length` in the C locale, so a multibyte path counts its bytes, not its characters; the locale is
+set only inside that function, never for the checks. The traceability and evaluation-page tests run once, outside the
+batches. The changed test files drop `test/bin/`, `test/docker/` and `test/fixtures/`, which `vitest.config.ts`
+excludes (a `vitest run` whose filter selects only excluded files exits 1, 'No test files found'), with a
+`pre-review: tests skipped for N file(s)` line naming them; the batched call also passes `--passWithNoTests`, so a
+config that drifts from the list cannot turn a correct branch red (the fixed-tests call still runs). Related tests:
+`npx vitest related --run` on every changed source that is not a test file, which follows the import graph, so a module
+imported only through another selects its tests; it uses the default config, so tests under `test/bin/`, `test/docker/`
+and `test/fixtures/` are never selected (`test:bin` covers the first). Every skipped stage prints
+`pre-review: <stage> skipped: <why>`. Tests in `test/unit/scripts/pre-review.test.ts`; README's Pre-review section
+updated.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+Red first not run separately: the new tests were written with the fix. `wingfoil workflow next` behaved as declared.
+`scripts/pre-review.sh main` could not be run directly in the headless session (refused); round 5 runs it as
+`npm run pre-review -- main`, green (see Review). The targeted tests (pre-review,
+traceability, docs: 7 files, 85 tests) are green. The full suites are left to the approver's go.
+
+### Review
+
+Post-fix checklist (work-item review step, dl-020) run before each round: the Design, the notes, the README and the
+script header searched for every term the fix changed (200 files, bytes, characters, related, test/docker).
+
+| Round | Fix commit | Reviewer | Findings | Outcome |
+| ----- | ---------- | -------- | -------- | ------- |
+| 1 | `1d85e7d4` | independent review | batching only by count; skipped stages silent; fixed tests run per batch | fixed: bytes bound, a line per skipped stage, fixed tests once |
+| 2 | `1ed5779a` | independent review | `vitest related` fed a folder list that drifted from the layout | fixed: every changed non-test source |
+| 3 | `89a16f9d` | claude-opus-5-5 | should-fix: a byte bound measured in characters; should-fix: Design and notes stale; should-fix: claim wider than the selection (`test/bin/`, `test/docker/`); nit: header line of 129 characters | fixed: `byte_length` in the C locale and a 4-byte-path test, Design and notes updated, scope stated in README and header, header rewrapped |
+| 4 | `bfbe5517` | runner re-review of `89a16f9d` | blocker (class: a `vitest run` filter that can select no test exits 1): changed tests all under `test/bin/` made the batched call red; the fixture's fake npx could not see it | fixed: excluded folders dropped with a skipped line, `--passWithNoTests` on the batched call, the fake npx fails such a run, a test for both |
+| 5 | `7a9283cf` | runner re-review of `bfbe5517` | blocker (class: hand-wrapped lines past the width that no check run on the branch sees): README.md batch paragraph at 160 characters, `scripts/pre-review.sh` header (about 205) and two lines over 120; AC5's `scripts/pre-review.sh main` never run; nit: a blank line before the round-4 row | fixed: all three rewrapped, `package.json` script `pre-review` (`npm run pre-review -- main`) so headless sessions run the check, a test pinning the script and its 120-character width, the table row restored, the check run (below) |
+| 6 | none (re-review of `7a9283cf`) | claude-opus-5-5 (reviewer step) | nit: `test/unit/scripts/pre-review.test.ts:143` a comment of 121 characters (no rule binds code comments; `src/site/build.ts:59` is as wide), and its "about 490 bytes" is 495; nit: round 5's class note says "Prettier covers the tests", but Prettier leaves comments and strings unwrapped; nit: `work-item.yaml`'s review step names `scripts/pre-review.sh main` only, not the `npm run pre-review -- main` form headless sessions run (the script and its usage are unchanged, so AC4 holds) | accepted: nits recorded, not fixed; no new round |
+
+Rounds 1 and 2 are recorded from the commit messages; their findings' wording and severities were not kept in the
+session, so they are summarised. Class checked in round 4: of the calls taking a file filter, `vitest related` passes
+with no test (default `passWithNoTests`), Prettier and eslint count named files as results, and the batched `vitest run`
+is the only one that could select nothing. Class checked in round 5: every hand-wrapped line the branch added, in
+README, the script and the tests (Prettier covers the tests; `npm run lint` is green). Round 6 re-reviewed round 5's
+diff: nits only, so the review closes.
+
+Round 5, `npm run pre-review -- main` run on the committed branch (the headless form; the script diffs `main...HEAD`):
+`markdown`, `prettier` (all matched files use Prettier code style), `eslint`, `tsc`, `tests` (23 passed), `tests` (the
+traceability and evaluation-page tests, 35 passed), `tests-related skipped: no changed source besides test files`,
+`test:bin skipped: no change under src/cli, src/site or test/bin`, `pre-review: green`. AC5's first check is met;
+the full suites stay with the approver's go. The pre-review and traceability tests: 50 passed.
+
+Round 6 (reviewer), on `7a9283cf`: `npm run pre-review -- main` green (the same stages as round 5: tests 23 and 35
+passed, tests-related and test:bin skipped); `npm run test -- test/unit/docs test/acceptance/traceability.test.ts
+test/unit/scripts/pre-review.test.ts`: 7 files, 87 tests passed (the coverage threshold of a targeted run reports
+0%, as for any partial run).

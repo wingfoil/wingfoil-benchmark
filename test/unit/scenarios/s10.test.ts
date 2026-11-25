@@ -11,12 +11,12 @@ import type { SuiteReport } from '../../../src/scoring/index.js';
 import { localScoringDocker } from '../../support/local-scoring.js';
 import { repoPath } from '../../support/paths.js';
 import { referenceRun, referenceSnapshot } from '../../support/reference.js';
+import { holdoutScenario, titled } from '../../support/siblings.js';
 
 const REFERENCE = repoPath('test/fixtures/reference/S10');
 
-/** The hold-out: BENCH_HOLDOUT_PATH, else the checkout beside this repository; its tests skip without one. */
-const HOLDOUT = process.env.BENCH_HOLDOUT_PATH || repoPath('../WingFoil2-Benchmark-HoldOut');
-const HAS_HOLDOUT = existsSync(join(HOLDOUT, 'scenarios', 'S10', '1.0'));
+/** The hold-out, as the local setting names it (task-179); its tests skip without one, and their title says why. */
+const { root: HOLDOUT, present: HAS_HOLDOUT, reason: NO_HOLDOUT } = holdoutScenario('S10');
 
 /** S10@1.0 as the repository holds it (F6.13). */
 function s10(): Scenario {
@@ -326,7 +326,11 @@ describe('S10@1.0 (F6.13)', { timeout: 240_000 }, () => {
   });
 
   it.skipIf(!HAS_HOLDOUT)(
-    "passes the hold-out's additions after the last step, and fails them on the seed",
+    titled(
+      "passes the hold-out's additions after the last step, and fails them on the seed",
+      !HAS_HOLDOUT,
+      NO_HOLDOUT,
+    ),
     async () => {
       const done = referenceSnapshot(scenario.seedDir, REFERENCE, 4);
       const seed = referenceSnapshot(scenario.seedDir, REFERENCE, 0);

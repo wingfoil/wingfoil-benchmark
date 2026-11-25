@@ -8,24 +8,156 @@ runner's home; a notice is never edited by hand.
 
 <!-- runner:open -->
 
-<!-- key:gate-trunk-plan-006-release-v0.4-work-item.approve@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design -->
-### N-004 · 2026-11-24 · trunk:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move -->
+### N-015 · 2026-11-25 · trunk:task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move
 
 - **Status:** open
 - **Kind:** gate
-- **Opened:** 2026-11-24T09:58:36Z
+- **Opened:** 2026-11-25T10:05:20Z
+- **Line:** trunk
+- **Element:** trunk:task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move
+- **Reason:** work-item.real-agent-check@task:task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move waits for the approver
+- **Ready:** yes
+- **Head:** cb0f9121
+- **Evidence:** no run recorded on this element
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-015 --reason 'Approved work-item.real-agent-check@task:task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move at cb0f9121: no run recorded on this element'`
+
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it -->
+### N-009 · 2026-11-24 · trunk:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it
+
+- **Status:** open
+- **Kind:** gate
+- **Opened:** 2026-11-24T15:04:25Z
+- **Line:** trunk
+- **Element:** trunk:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it
+- **Reason:** work-item.real-agent-check@task:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it waits for the approver
+- **Ready:** yes
+- **Head:** 284c33bc
+- **Evidence:** no run recorded on this element
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-009 --reason 'Approved work-item.real-agent-check@task:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it at 284c33bc: no run recorded on this element'`
+
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-177-the-external-workflow-runner-as-this-repository-s-governance-its-configuration-its-identity-and-its-doctor-the-pilot-s-runner-half -->
+### N-008 · 2026-11-24 · trunk:task-177-the-external-workflow-runner-as-this-repository-s-governance-its-configuration-its-identity-and-its-doctor-the-pilot-s-runner-half
+
+- **Status:** open
+- **Kind:** gate
+- **Opened:** 2026-11-24T15:04:24Z
+- **Line:** trunk
+- **Element:** trunk:task-177-the-external-workflow-runner-as-this-repository-s-governance-its-configuration-its-identity-and-its-doctor-the-pilot-s-runner-half
+- **Reason:** work-item.real-agent-check@task:task-177-the-external-workflow-runner-as-this-repository-s-governance-its-configuration-its-identity-and-its-doctor-the-pilot-s-runner-half waits for the approver
+- **Ready:** yes
+- **Head:** 66cc0b8a
+- **Evidence:** no run recorded on this element
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-008 --reason 'Approved work-item.real-agent-check@task:task-177-the-external-workflow-runner-as-this-repository-s-governance-its-configuration-its-identity-and-its-doctor-the-pilot-s-runner-half at 66cc0b8a: no run recorded on this element'`
+
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design -->
+### N-007 · 2026-11-24 · trunk:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
+
+- **Status:** open
+- **Kind:** gate
+- **Opened:** 2026-11-24T15:04:24Z
 - **Line:** trunk
 - **Element:** trunk:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
-- **Reason:** work-item.approve@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design waits for the approver
-- **Ready:** no: the last run task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/review/1 ended blocked
-- **Head:** 1f30d536
-- **Evidence:** run task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/review/1 blocked
-- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-004 --reason 'Approved work-item.approve@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design at 1f30d536: run task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/review/1 blocked'`
+- **Reason:** work-item.real-agent-check@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design waits for the approver
+- **Ready:** yes
+- **Head:** 161c932f
+- **Evidence:** run task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/done/1 completed, checks integrated:pass
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-007 --reason 'Approved work-item.real-agent-check@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design at 161c932f: run task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/done/1 completed, checks integrated:pass'`
+
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-127-adopt-methodology-kanban-1.0.0-with-base-2-and-software-1-keeping-the-benchmark-s-delivery-rules-bug-046 -->
+### N-006 · 2026-11-24 · trunk:task-127-adopt-methodology-kanban-1.0.0-with-base-2-and-software-1-keeping-the-benchmark-s-delivery-rules-bug-046
+
+- **Status:** open
+- **Kind:** gate
+- **Opened:** 2026-11-24T15:04:23Z
+- **Line:** trunk
+- **Element:** trunk:task-127-adopt-methodology-kanban-1.0.0-with-base-2-and-software-1-keeping-the-benchmark-s-delivery-rules-bug-046
+- **Reason:** work-item.real-agent-check@task:task-127-adopt-methodology-kanban-1.0.0-with-base-2-and-software-1-keeping-the-benchmark-s-delivery-rules-bug-046 waits for the approver
+- **Ready:** yes
+- **Head:** 0ac36c9d
+- **Evidence:** no run recorded on this element
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-006 --reason 'Approved work-item.real-agent-check@task:task-127-adopt-methodology-kanban-1.0.0-with-base-2-and-software-1-keeping-the-benchmark-s-delivery-rules-bug-046 at 0ac36c9d: no run recorded on this element'`
+
+## Closed
+
+<!-- runner:closed -->
+
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.approve@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file -->
+### N-014 · 2026-11-24 · trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
+
+- **Status:** closed 2026-11-25T08:20:44Z — the approver ruled the gate
+- **Kind:** gate
+- **Opened:** 2026-11-24T20:12:51Z
+- **Line:** trunk
+- **Element:** trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
+- **Reason:** work-item.approve@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file waits for the approver
+- **Ready:** yes
+- **Head:** a1e31c9b
+- **Evidence:** run task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file/review/6 completed
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-014 --reason 'Approved work-item.approve@task:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file at a1e31c9b: run task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file/review/6 completed'`
+
+<!-- key:failure-trunk-git_fetch_-q_origin_git_github.com_Permission_denied_publ -->
+### N-013 · 2026-11-24 · trunk:runner
+
+- **Status:** closed 2026-11-24T20:12:47Z — the line ran again without a failure
+- **Kind:** failure
+- **Opened:** 2026-11-24T18:30:23Z
+- **Line:** trunk
+- **Element:** trunk:runner
+- **Reason:** runner failure: git fetch -q origin: git@github.com: Permission denied (publickey). (the notice closes by itself once the line runs again without a failure)
+- **Unblock:** `cd <runner home> && node scripts/runner/run.mjs --line trunk --dry-run`
+
+<!-- key:failure-trunk-git_fetch_-q_origin_ssh_Could_not_resolve_hostname_github. -->
+### N-012 · 2026-11-24 · trunk:runner
+
+- **Status:** closed 2026-11-24T18:27:38Z — the line ran again without a failure
+- **Kind:** failure
+- **Opened:** 2026-11-24T17:24:47Z
+- **Line:** trunk
+- **Element:** trunk:runner
+- **Reason:** runner failure: git fetch -q origin: ssh: Could not resolve hostname github.com: Temporary failure in name resolution (the notice closes by itself once the line runs again without a failure)
+- **Unblock:** `cd <runner home> && node scripts/runner/run.mjs --line trunk --dry-run`
+
+<!-- key:halt-trunk-rejected-task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file -->
+### N-011 · 2026-11-24 · trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
+
+- **Status:** closed 2026-11-24T17:22:11Z — resumed by the approver
+- **Kind:** halt
+- **Opened:** 2026-11-24T16:37:04Z
+- **Line:** trunk
+- **Element:** trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
+- **Reason:** trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file rejected 2 times in review: rule it first (npx wingfoil memory history task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file)
+- **Unblock:** `cd <runner home> && node scripts/runner/run.mjs --line trunk --resume`
+
+<!-- key:halt-trunk-rejected-task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file -->
+### N-010 · 2026-11-24 · trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
+
+- **Status:** closed 2026-11-24T15:38:09Z — resumed by the approver
+- **Kind:** halt
+- **Opened:** 2026-11-24T15:36:17Z
+- **Line:** trunk
+- **Element:** trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file
+- **Reason:** trunk:task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file rejected 2 times in review: rule it first (npx wingfoil memory history task-163-fix-bug-053-pre-review.sh-runs-prettier-in-batches-and-selects-every-test-that-imports-a-changed-file)
+- **Unblock:** `cd <runner home> && node scripts/runner/run.mjs --line trunk --resume`
+
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design -->
+### N-005 · 2026-11-24 · trunk:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
+
+- **Status:** closed 2026-11-24T15:03:20Z — opened unsigned by runner-1.2.2; the runner reopens it signed (task-178)
+- **Kind:** gate
+- **Opened:** 2026-11-24T11:58:24Z
+- **Line:** trunk
+- **Element:** trunk:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
+- **Reason:** work-item.real-agent-check@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design waits for the approver
+- **Ready:** yes
+- **Head:** 5544b261
+- **Evidence:** run task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/done/1 completed, checks integrated:pass
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-005 --reason 'Approved work-item.real-agent-check@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design at 5544b261: run task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/done/1 completed, checks integrated:pass'`
 
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-177-the-external-workflow-runner-as-this-repository-s-governance-its-configuration-its-identity-and-its-doctor-the-pilot-s-runner-half -->
 ### N-002 · 2026-11-24 · trunk:task-177-the-external-workflow-runner-as-this-repository-s-governance-its-configuration-its-identity-and-its-doctor-the-pilot-s-runner-half
 
-- **Status:** open
+- **Status:** closed 2026-11-24T15:03:20Z — opened unsigned by runner-1.2.2; the runner reopens it signed (task-178)
 - **Kind:** gate
 - **Opened:** 2026-11-24T09:35:56Z
 - **Line:** trunk
@@ -39,7 +171,7 @@ runner's home; a notice is never edited by hand.
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-127-adopt-methodology-kanban-1.0.0-with-base-2-and-software-1-keeping-the-benchmark-s-delivery-rules-bug-046 -->
 ### N-001 · 2026-11-24 · trunk:task-127-adopt-methodology-kanban-1.0.0-with-base-2-and-software-1-keeping-the-benchmark-s-delivery-rules-bug-046
 
-- **Status:** open
+- **Status:** closed 2026-11-24T15:03:19Z — opened unsigned by runner-1.2.2; the runner reopens it signed (task-178)
 - **Kind:** gate
 - **Opened:** 2026-11-24T09:35:55Z
 - **Line:** trunk
@@ -50,9 +182,19 @@ runner's home; a notice is never edited by hand.
 - **Evidence:** no run recorded on this element
 - **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-001 --reason 'Approved work-item.real-agent-check@task:task-127-adopt-methodology-kanban-1.0.0-with-base-2-and-software-1-keeping-the-benchmark-s-delivery-rules-bug-046 at 89abe0a3: no run recorded on this element'`
 
-## Closed
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.approve@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design -->
+### N-004 · 2026-11-24 · trunk:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
 
-<!-- runner:closed -->
+- **Status:** closed 2026-11-24T11:45:24Z — the approver ruled the gate
+- **Kind:** gate
+- **Opened:** 2026-11-24T09:58:36Z
+- **Line:** trunk
+- **Element:** trunk:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
+- **Reason:** work-item.approve@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design waits for the approver
+- **Ready:** no: the last run task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/review/1 ended blocked
+- **Head:** 1f30d536
+- **Evidence:** run task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/review/1 blocked
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-004 --reason 'Approved work-item.approve@task:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design at 1f30d536: run task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/review/1 blocked'`
 
 <!-- key:blocked-trunk-task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design/review/1 -->
 ### N-003 · 2026-11-24 · trunk:task-162-v0.4-s-specification-the-sequencer-s-amendment-1.3-features-f2.8-and-f6.14-step-b-and-q-e4-in-the-experiment-design
