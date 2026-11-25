@@ -3,7 +3,7 @@ id: bug-055-a-reviewer-s-findings-after-prose-unfenced-end-the-review-loop-as-fa
 type: bug
 title: "A reviewer's findings after prose, unfenced, end the review loop as failed and its should-fix never reaches a fixer"
 status: approved
-# fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
+fixed_by: task-165-fix-bug-055-a-reviewer-s-findings-after-unfenced-prose-reach-the-fixer
 tags: ["v0.3","review-loop"]
 ---
 
