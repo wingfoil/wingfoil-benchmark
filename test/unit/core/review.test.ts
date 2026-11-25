@@ -24,6 +24,21 @@ describe("the reviewer's findings (task-148, REQ-RUN-21)", () => {
     expect(parseFindings('{"findings": []}')).toEqual({ ok: true, value: [] });
   });
 
+  it('reads the findings object that ends an unfenced message after prose (bug-055, task-165)', () => {
+    const json = JSON.stringify({ findings: [FINDING] });
+    expect(parseFindings(`Summary with {braces} and a "quote".\n\nOne issue below.\n\n${json}\n`)).toEqual({
+      ok: true,
+      value: [FINDING],
+    });
+    expect(parseFindings(`Nothing to fix.\n{"findings": []}`)).toEqual({ ok: true, value: [] });
+    // Prose after the object, or a malformed object, keep today's outcome.
+    expect(parseFindings(`${json}\nThanks.`).ok).toBe(false);
+    expect(
+      parseFindings(`Prose.\n${JSON.stringify({ findings: [{ ...FINDING, severity: 'major' }] })}`).ok,
+    ).toBe(false);
+    expect(parseFindings('Prose.\n{"findings": [')).toMatchObject({ ok: false });
+  });
+
   it('refuses anything else, naming why', () => {
     const refused = (message: string) => {
       const parsed = parseFindings(message);
