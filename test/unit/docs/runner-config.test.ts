@@ -27,6 +27,8 @@ type RunnerConfig = {
   integration?: { setup_command?: unknown; install_scripts?: boolean };
   roles?: Record<string, string>;
   launch?: { allow?: string[]; manual?: string[]; optional?: string[] };
+  permissions?: { extra?: string[]; sources_read_only?: unknown; read_deny?: unknown };
+  needs?: { open_states?: unknown };
   phases?: { integrate?: string[] };
   lines?: Record<string, Line>;
 };
@@ -130,6 +132,14 @@ describe('the runner launches only what spends nothing and the release does not 
     expect(config.integration?.install_scripts ?? false, 'integration.install_scripts').toBe(false);
   });
 
+  it("keeps the runner's own allowlist and its defaults for read-only roles and open states (task-180)", () => {
+    // runner-1.2.5 and 1.2.6 read these keys: an empty sources_read_only would let reviewer and qa edit the sources,
+    // a narrower open_states would release a held element sooner, and read_deny is chosen per role, not here.
+    expect(config.permissions?.sources_read_only, 'permissions.sources_read_only').toBeUndefined();
+    expect(config.permissions?.read_deny, 'permissions.read_deny').toBeUndefined();
+    expect(config.needs?.open_states, 'needs.open_states').toBeUndefined();
+  });
+
   it('keeps only machine paths in the local file and its committed example, which the drift check does not read', () => {
     // The local file exists only on a machine that runs the runner (its home); the example is checked everywhere.
     const files = [repoPath('config', 'runner.local.example.yaml'), localFile].filter((file) => existsSync(file));
@@ -164,8 +174,13 @@ describe('the runner launches only what spends nothing and the release does not 
         expect(adapter, `line ${name}: tier ${tier}`).toBeDefined();
         const file = repoPath('.wingfoil', 'agents', 'custom', `${adapter ?? ''}.yaml`);
         expect(existsSync(file), `${adapter} adapter`).toBe(true);
-        const manifest = load(file) as { name?: string; launch?: { headless?: { args?: string[] } } };
+        const manifest = load(file) as {
+          name?: string;
+          launch?: { headless?: { args?: string[]; permissions?: unknown } };
+        };
         expect(manifest.name).toBe(adapter);
+        // A permissions fragment would replace the runner's allowlist (runner-1.2.5, task-180).
+        expect(manifest.launch?.headless?.permissions, `${adapter} declares no permissions fragment`).toBeUndefined();
         const args = manifest.launch?.headless?.args ?? [];
         expect(args[args.indexOf('--model') + 1] ?? '', `${adapter} names its model`).toMatch(/^claude-/);
       }

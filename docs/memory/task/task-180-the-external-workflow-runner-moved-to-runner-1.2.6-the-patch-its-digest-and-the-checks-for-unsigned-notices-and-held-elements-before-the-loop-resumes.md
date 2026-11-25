@@ -81,5 +81,71 @@ element too: the dry run shows whether any element is held.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+Built by hand in a session (dl-038), on `task/task-180-runner-1.2.6` in a worktree, with the console loop stopped.
+task-164 went back to backlog first (`memory park`, in-progress limit 1); its build step had not run.
+
+**The patch (AC1).** `git apply --check <runner package>/patches/from-1.2.4-to-1.2.6.patch` on `main`: applies; the
+apply changes the seven files of the Design, each equal to the tag's `common/` copy (`cmp` against `git show
+runner-1.2.6:common/<file>`). `node scripts/runner/manifest.mjs --check --digest
+sha256:0c22a39ed7d204fc53508fb07de5e28d63a90b92f5cb6e1ee8877485642c0157`: "ok: runner 1.2.6, the 16 common files match
+the manifest, 1 machine file(s) left out: scripts/setup/codex-apparmor.sh", "ok: manifest sha256 …", exit 0. The
+anonymity check on the diff (the names of the local folders as candidates, counts only): 171 candidates, 25 words
+hit, 24 generic, and one flagged word, which is the line's name `trunk`, already in 18 pushed files.
+
+**The tests (AC2, AC3).** `npm run test:runner` on 1.2.6: 112 tests, 111 passed, 0 failed, 1 skipped (test 36, "this
+project has no .wingfoil/workflows/bindings.yaml", as on 1.2.4). `runner-config.test.ts`: 10 passed. Its launch test
+already counts `launch.optional` as launched work (the key 1.2.6 needs to skip a step), so no new guard is needed.
+`permissions.sources_read_only`, `permissions.read_deny` and `needs.open_states` neither launch nor skip work, and
+all four stay unset in `config/runner.yaml`. D8 names 1.2.6, dl-038 and the new digest.
+
+**From the home on the task branch (AC4).** The branch was fetched into the home as a local branch `task-180-pilot`,
+with `paths.trusted_ref: task-180-pilot` in the home's git-ignored local file only; afterwards the home went back to
+`main` and the local file to its saved copy, and the branch was deleted.
+
+| Command (from the home) | Declared | Observed |
+|---|---|---|
+| `run.mjs --line trunk --doctor` | the project's problems | "runner 1.2.6 · wingfoil 0.3.2", "ok: the project can run under the runner" |
+| `run.mjs --line trunk --dry-run` | the next step, nothing written | `work-item.build@task:task-164-…`, `claude-sonnet`; N-006…N-009 and N-015 listed as open gates; N-016 (task-163's real-agent check) would be opened; no security notice, no held element; `docs/notices.md` unchanged (md5), the line and the state folder untouched |
+
+The dry run still proposes task-164's build because the line's clone does not hold the park or task-180 yet (not
+pushed): the WIP limit holds per clone, as task-178 recorded. The loop stays stopped until the merge and the push.
+
+**Checks (AC7).** `scripts/pre-review.sh main` on the branch: markdown, prettier, eslint, tsc, tests (2 files, 35
+tests), tests-related; test:bin skipped (no change under src/cli, src/site or test/bin); "pre-review: green".
+
+**`wingfoil` commands, declared vs observed (AC6).**
+
+| Command | Declared | Observed |
+|---|---|---|
+| `workflow start governance-evolution --title …` | record the plan, print the first step | added `plan-007-…` as draft, then "error: … added but not submitted", since `workflow` and `phase` are required on submit; filled by hand, then `memory submit`: draft → active |
+| `workflow finalize --step governance-evolution.assess` | record the step | an empty commit with the phase record |
+| `memory submit dl-038-…` | draft → its next state | draft → pending, and the run's next step became the approver's `approve` |
+| `memory park task-164 --reason …` | in-progress → backlog | in-progress → backlog, the reason in the commit |
+| `memory submit task-180-…` | backlog → in-progress | backlog → in-progress |
+
+**The full suites (AC7),** on the approver's go, `scripts/full-suites.sh task/task-180-runner-1.2.6` at `d40520c9`:
+LINT 0, TEST 0 (160 files, 2616 tests: main's 2615 and the new config guard), BUILD 0, BIN 0 (22 tests), DOCKER 0 (24
+tests, none skipped), RUNNER 0 (111 of 112, the one expected skip).
+
+### Review
+
+Round 1, an independent read-only agent in a temporary clone (dl-020), on `42f85d6c…75d55fd8`: **accept with nits**,
+no must-fix. It confirmed the seven files equal the tag's `common/` copy (17 of 17 compared, the machine file left
+out by D8), the manifest check, `test:runner` 111 of 112 with the one expected skip, the docs tests 39 of 39, D8
+within 120 characters, and no private path in the diff. The findings and what was done:
+
+- **should-fix, the config test guards only `launch.optional`.** Done: a test that `permissions.sources_read_only`,
+  `permissions.read_deny` and `needs.open_states` stay unset, and that no adapter declares a
+  `launch.headless.permissions` fragment. It is red when `needs.open_states` is set (checked, then reverted); 11
+  tests pass.
+- **should-fix, the notes missing.** The reviewer read the branch before the notes were committed (`45a7dd4a`).
+- **nit, campaign states.** 1.2.6's default open states leave out the campaign states `running`, `scored` and
+  `reviewed`, so a need on a running campaign would count as closed. No element declares `needs`; this is for the
+  approver to rule on as a feedback note, not done here.
+- **nit, two commits with one subject** (the D8 reflow). Left as they are: the history is not rewritten.
+- **nit, "optional" in D8 and the runner config's comment.** Left as they are: the wording is accurate, and the
+  config's comment is the home's file.
+
+**For the done step (AC5).** After the merge and the approver's push: the home and the line on `origin/main`;
+`workflow finalize --step work-item.build@task:task-180-…` (built by hand, F-050); from the home, the doctor and a
+dry run proposing task-164's next step; then the console loop restarts.

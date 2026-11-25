@@ -86,6 +86,12 @@ test('permissionArgs lists what a role may run, and never publishing or the appr
   const developer = lib.permissionArgs({ command: 'claude', role: 'developer', cli, sources: ['src/'] });
   assert.ok(developer.includes('Bash(git merge:*)') && !developer.includes('Edit(src/**)'));
   assert.deepEqual(lib.permissionArgs({ command: 'codex', role: 'reviewer', cli }), []);
+  // The roles that only read the sources, and the paths a role may not read, come from the
+  // configuration (1.2.5): reviewer and qa unless it names others.
+  const tester = lib.permissionArgs({ command: 'claude', role: 'tester', cli, sources: ['src/'], sourcesReadOnly: ['reviewer', 'qa', 'tester'], readDeny: ['src/', 'dist'] });
+  for (const rule of ['Edit(src/**)', 'Write(src/**)', 'Read(src/**)', 'Read(dist/**)']) assert.ok(tester.slice(tester.indexOf('--disallowedTools')).includes(rule), rule);
+  assert.ok(!lib.permissionArgs({ command: 'claude', role: 'tester', cli, sources: ['src/'] }).includes('Edit(src/**)'));
+  assert.deepEqual(lib.settings({}).sourcesReadOnly, ['reviewer', 'qa']);
 });
 
 test('withoutToolLists drops an older allowlist and keeps the rest', () => {
@@ -105,6 +111,100 @@ test('forbiddenCommands finds publishing and the approver verbs', () => {
   const bad = ['git push https://x/y main', 'git -C /c push origin main', 'npm publish', 'npx --no-install wingfoil memory approve dl-1', 'node node_modules/wingfoil-released/dist/cli.js workflow finalize p --step s'];
   assert.deepEqual(lib.forbiddenCommands(bad), bad);
   assert.deepEqual(lib.forbiddenCommands(['git status', 'git log --grep push', 'npx wingfoil memory submit t-1']).length, 1 - 1 + 0);
+  // What a command runs counts, however it is wrapped (1.2.5).
+  const wrapped = ["bash -lc 'git push origin main'", 'env A=1 git push', 'echo $(git push)', 'echo "`npm publish`"', 'bash <<EOF\ngit push\nEOF', 'eval "git push"',
+    'xargs -I{} git push {}', 'timeout 5 git push', 'cd x && npm publish --dry-run', 'git -c a=b --no-pager push', 'node scripts/runner/gate.mjs --line t', 'sh -c "npx wingfoil memory reject t-1"'];
+  assert.deepEqual(lib.forbiddenCommands(wrapped), wrapped);
+  // Prose, a message or a pattern that cites a forbidden command runs nothing.
+  const cited = ["cat <<'EOF' > note.md\nnever run npx --no-install wingfoil memory approve\nEOF", 'rg -n "npm publish" docs', "git commit -m 'no git push here'",
+    "bash -lc 'rg \"git push\" docs'", 'cat scripts/runner/gate.mjs', 'git log 2>&1 | head', 'git status &> /dev/null && echo ok'];
+  assert.deepEqual(lib.forbiddenCommands(cited), []);
+  // A text that does not parse is judged whole, as before.
+  assert.deepEqual(lib.forbiddenCommands(['echo "git push']), ['echo "git push']);
+});
+
+test('1.2.5: readScopeCommands finds the commands that name a path the role may not read', () => {
+  const commands = ['cat src/a.ts', 'git show HEAD:src/a.ts', 'rg foo .', "bash -lc 'sed -n 1,9p ./src/x'", 'ls /w/t1/src/', 'cat test/a.ts', 'cat srcx/a', 'rg --glob=src/** x'];
+  assert.deepEqual(lib.readScopeCommands(commands, ['src/'], { roots: ['/w/t1'] }), ['cat src/a.ts', 'git show HEAD:src/a.ts', "bash -lc 'sed -n 1,9p ./src/x'", 'ls /w/t1/src/', 'rg --glob=src/** x']);
+  assert.deepEqual(lib.readScopeCommands(commands, [], {}), []);
+});
+
+test('1.2.5: the permission fragment of an adapter is chosen as the engine of WingFoil chooses it', () => {
+  const manifest = { name: 'a', launch: { headless: { args: ['exec', '{bootstrap}'], permissions: { default: ['--sandbox', 'read-only'], qa: ['--sandbox', 'workspace-write'] } } } };
+  assert.deepEqual(lib.adapterPermissions(manifest, 'qa'), ['--sandbox', 'workspace-write']);
+  assert.deepEqual(lib.adapterPermissions(manifest, 'tester'), ['--sandbox', 'read-only']);
+  assert.deepEqual(lib.adapterPermissions(manifest, 'toString'), ['--sandbox', 'read-only'], 'an inherited key is never a role');
+  assert.deepEqual(lib.adapterPermissions({ launch: { headless: { permissions: ['-x'] } } }, 'any'), ['-x']);
+  assert.equal(lib.adapterPermissions({ launch: { headless: { args: [] } } }, 'qa'), null, 'WingFoil 0.3.2: none declared');
+  // The fragment comes right after the adapter's args, before the runner's extra arguments at the end.
+  assert.deepEqual(lib.launchArgs(manifest, { position: 'end', args: ['--add-dir', '/c'] }, { bootstrap: 'P' }, ['--sandbox', 'workspace-write']), ['exec', 'P', '--sandbox', 'workspace-write', '--add-dir', '/c']);
+  // The runner's own denies stay after a Claude fragment; a launch that turns the checks off is refused.
+  const denies = lib.runnerDenies({ role: 'developer', cli: ['npx', 'wingfoil'], sources: ['src/'] });
+  for (const rule of ['Bash(git push:*)', 'Bash(git -C:*)', 'Bash(node scripts/runner/gate.mjs:*)', 'Bash(npx wingfoil memory approve:*)']) assert.ok(denies.includes(rule), rule);
+  assert.deepEqual(lib.bypassArgs(['-p', 'x', '--dangerously-skip-permissions']), ['--dangerously-skip-permissions']);
+  assert.equal(lib.bypassArgs(['--permission-mode', 'bypassPermissions']).length, 1);
+  assert.equal(lib.bypassArgs(['exec', '-s', 'danger-full-access']).length, 1);
+  assert.equal(lib.bypassArgs(['-c', 'sandbox_mode="danger-full-access"']).length, 1);
+  assert.deepEqual(lib.bypassArgs(['--permission-mode', 'dontAsk', '--sandbox', 'workspace-write']), []);
+});
+
+test('1.2.6: forbiddenCommands judges every command but a reader on its whole text (G-1)', () => {
+  const caught = [`python3 -c "import os;os.system('git push')"`, `node -e "require('child_process').execSync('git push')"`, 'find . -exec git push \\;', 'echo "git push" | sh',
+    'cat <<EOF | bash\ngit push\nEOF', '{ git push; }', 'flock f git push', 'setsid git push', 'bash -c -- "git push"', 'python3 scripts/runner/gate.mjs',
+    'npm run -s wingfoil -- memory approve t-1', "rg --pre 'git push' x .", "sed -n '1e git push' f", "sed -n 's/x/git push/e' f", 'git -c alias.x="!git push" x', 'cat <<EOF | sh\nnpm publish\nEOF'];
+  assert.deepEqual(caught.filter((c) => !lib.forbiddenCommands([c]).length), []);
+  const cited = ["cat <<'EOF' > note.md\nnever run npx --no-install wingfoil memory approve\nEOF", 'rg -n "npm publish" docs', "git commit -m 'no git push here'",
+    `bash -lc 'rg "git push" docs'`, 'cat scripts/runner/gate.mjs', 'echo "never git push" > notes.txt', 'grep -rn "runner/gate.mjs" docs | head -3',
+    'npx wingfoil memory add --type bug --title "git push fails on the mirror"', 'git log --ext-diff -p | head'];
+  assert.deepEqual(lib.forbiddenCommands(cited), []);
+});
+
+test('1.2.6: an unsigned notice is a legacy one only below the first signed number (G-2)', () => {
+  const entries = [{ kind: 'notice', line: 'trunk', notice: 'N-012' }, { kind: 'notice', line: 'trunk', notice: 'N-015' }, { kind: 'notice', line: 'other', notice: 'N-002' }];
+  assert.equal(lib.legacyNotice(entries, 'trunk', 'N-011'), true);
+  assert.equal(lib.legacyNotice(entries, 'trunk', 'N-013'), false, 'a block an agent wrote after signing began');
+  assert.equal(lib.legacyNotice(entries, 'trunk', 'N-099'), false);
+  assert.equal(lib.legacyNotice([], 'trunk', 'N-099'), true, 'no notice signed yet');
+});
+
+test('1.2.6: a placeholder spans folders in a Memory path (G-3), and approved or releasing is open (G-4)', () => {
+  const memoryYaml = { types: { plan: { path: 'docs/05_plans/{scope}/{id}.md' }, task: { path: 'docs/memory/task/{id}.md' } } };
+  assert.ok(lib.isMemoryPath(memoryYaml, 'docs/05_plans/rl-v1/rel-v0.3/plan-7.md', 'plan-7'));
+  assert.ok(lib.isMemoryPath(memoryYaml, 'docs/05_plans/rl-v1/plan-7.md', 'plan-7'));
+  assert.ok(!lib.isMemoryPath(memoryYaml, 'docs/05_plans/plan-7.md', 'plan-7'));
+  assert.ok(!lib.isMemoryPath(memoryYaml, 'docs/memory/task/x/task-1.md', 'task-1'), '{id} is one name');
+  for (const state of ['approved', 'active', 'planning', 'in-development', 'releasing']) assert.ok(lib.OPEN_STATES.includes(state), state);
+  for (const state of ['done', 'accepted', 'resolved', 'released', 'deprecated']) assert.ok(!lib.OPEN_STATES.includes(state), state);
+});
+
+test('1.2.6: an optional step runs before its element\'s later steps, or is skipped for it', () => {
+  const phases = ['start', 'design', 'red', 'green', 'refactor', 'review'];
+  const red = { key: 'ge13.red@task:t-1', workflow: 'ge13', phase: 'red', instance: 'i', optional: true, scope: { element: { type: 'task', id: 't-1' } } };
+  const green = { ...red, key: 'ge13.green@task:t-1', phase: 'green', optional: false };
+  const other = { ...green, key: 'ge13.green@task:t-2', scope: { element: { type: 'task', id: 't-2' } } };
+  assert.deepEqual(lib.optionalFirst([other, green, red]).map((s) => s.key), [other.key, red.key, green.key]);
+  const element = { ref: 'task:t-1' };
+  const run = (phase, at, result = 'completed') => ({ element: 'task:t-1', workflow: 'ge13', phase, result, notes: lib.formatNotes({ at }) });
+  assert.equal(lib.laterStepRan({ records: [run('design', '2026-11-25T10:00:00Z')], element, step: red, phases }), false);
+  assert.equal(lib.laterStepRan({ records: [run('design', '2026-11-25T10:00:00Z'), run('green', '2026-11-25T11:00:00Z')], element, step: red, phases }), true);
+  // A review reject starts a new pass: red may run again.
+  const pass2 = [run('red', '2026-11-25T10:00:00Z'), run('green', '2026-11-25T11:00:00Z'), run('review', '2026-11-25T12:00:00Z', 'rejected')];
+  assert.equal(lib.laterStepRan({ records: pass2, element, step: red, phases }), false);
+  assert.equal(lib.laterStepRan({ records: [...pass2, run('green', '2026-11-25T13:00:00Z')], element, step: red, phases }), true);
+  // The skip is signed, shown at the gate and given to the checks the runner runs.
+  const skips = lib.skipsOf([{ kind: 'skip', line: 'trunk', element: 'task:t-1', step: red.key, phase: 'red', tokens: ['flow-tdd'], why: 'flow-tdd: direct' }, { kind: 'skip', line: 'other', element: 'task:t-1', step: red.key }], 'trunk', 'task:t-1');
+  assert.equal(skips.length, 1);
+  const packet = lib.gatePacket({ step: { key: 'ge13.approve' }, element, head: 'abcdef12', records: [run('review', '2026-11-25T12:00:00Z')], skips });
+  assert.match(packet.evidence, /red skipped: pre flow-tdd failed — flow-tdd: direct/);
+  assert.equal(lib.checkEnv({ line: { name: 'trunk', checkout: '/c' }, element: { id: 't-1', ref: 'task:t-1' }, skipped: skips }).WINGFOIL_RUNNER_SKIPPED, 'red:flow-tdd');
+  assert.equal(lib.checkEnv({ line: { name: 'trunk', checkout: '/c' }, element: { id: 't-1', ref: 'task:t-1' } }).WINGFOIL_RUNNER_SKIPPED, undefined);
+});
+
+test('1.2.5: two lines on one branch are refused', () => {
+  const two = { lines: { trunk: { branch: 'main', agent: 'a', tiers: {}, checkout: '/a', worktrees: '/w' }, next: { branch: 'main', agent: 'a', tiers: {}, checkout: '/b', worktrees: '/x' } } };
+  assert.throws(() => lib.lineConfig(two, 'next'), /lines 'trunk' and 'next' are all on branch 'main'/);
+  assert.deepEqual(lib.sameBranchLines({ lines: { trunk: { branch: 'main' }, l: { branch: 'line/l' } } }), []);
+  for (const line of Object.keys(config.lines)) assert.deepEqual(lib.sameBranchLines(config).filter((g) => g.includes(line)), [], `this project's line ${line}`);
 });
 
 test('the prompt and the MCP server use the project CLI', () => {
@@ -594,12 +694,24 @@ test('a raised id may hold a dot inside it, never at its end', () => {
   assert.equal(lib.raisedIds('raised adr-006-the-toolchain.'), null);
 });
 
-test('the gates hold a blocked step, but not a start that left its task where it was', () => {
-  const raised = 'raised adr-006-x';
-  assert.equal(lib.heldByGates({ phase: 'start', reason: raised, statusBefore: 'backlog', statusAfter: 'in-progress' }), true);
-  assert.equal(lib.heldByGates({ phase: 'start', reason: raised, statusBefore: 'backlog', statusAfter: 'backlog' }), false);
-  assert.equal(lib.heldByGates({ phase: 'review', reason: raised, statusBefore: 'in-review', statusAfter: 'in-review' }), true);
-  assert.equal(lib.heldByGates({ phase: 'green', reason: 'the sandbox failed', statusBefore: 'in-progress', statusAfter: 'in-progress' }), false);
+test('the runner holds a blocked step until what it names is closed, whatever the workflow (1.2.5)', () => {
+  const states = { 'task-005-x': 'in-progress', 'task-002-y': 'done', 'adr-1-z': 'deprecated', 'adr-2-a': 'accepted', 'bug-3-b': 'resolved', 'dl-4-c': 'in-discussion' };
+  const stateOf = (id) => ({ status: states[id] ?? null });
+  // Closed is any state but the open ones, as need-closed reads it: an adr accepted, a bug resolved.
+  assert.deepEqual(lib.waitingIds(['task-005-x', 'task-002-y', 'adr-1-z', 'adr-2-a', 'bug-3-b', 'dl-4-c', 'bug-9-w'], stateOf), { open: ['task-005-x', 'dl-4-c'], unknown: ['bug-9-w'] });
+  assert.deepEqual(lib.waitingIds(['adr-2-a'], stateOf, ['accepted']).open, ['adr-2-a'], 'needs.open_states');
+  // A reported case: task-006 in progress needs task-005, still in progress, and its red answered
+  // blocked needs task-005: no step of it is launched again while task-005 is open.
+  const blocked = record({ id: 'task-006-v/red/1', element: 'task:task-006-v', phase: 'red', result: 'blocked', notes: lib.formatNotes({ reason: 'needs task-005-x', held: 'task-005-x' }) });
+  assert.deepEqual(lib.heldFor({ needs: ['task-002-y', 'task-005-x'], last: blocked, stateOf }), ['task-005-x']);
+  assert.deepEqual(lib.heldFor({ needs: [], last: blocked, stateOf }), ['task-005-x']);
+  states['task-005-x'] = 'done';
+  assert.deepEqual(lib.heldFor({ needs: ['task-002-y', 'task-005-x'], last: blocked, stateOf }), []);
+  // A task whose need is open does not start; a need no element has waits too.
+  states['task-005-x'] = 'backlog';
+  assert.deepEqual(lib.heldFor({ needs: ['task-005-x', 'task-404-q'], last: null, stateOf }), ['task-005-x', 'task-404-q (not found)']);
+  // A later run that did not end blocked releases what an earlier one held.
+  assert.deepEqual(lib.heldFor({ needs: [], last: { ...blocked, result: 'completed' }, stateOf }), []);
 });
 
 test('the needs of a task that list what the task raised are named', () => {
@@ -681,6 +793,20 @@ test('a resumed step is given the decisions closed since its return', () => {
   assert.ok(!/adr-3-v/.test(prompt));
   assert.ok(!/Decided since that return/.test(lib.buildPrompt(args)));
   assert.ok(!/Decided since that return/.test(lib.buildPrompt({ ...args, returned: null, decided: [after] })));
+});
+
+test('1.2.6: red-tests-untouched passes a red the runner skipped, and only with no red run', () => {
+  const memory = mkdtempSync(join(tmpdir(), 'runner-skip-'));
+  const repo = mkdtempSync(join(tmpdir(), 'runner-skip-repo-'));
+  const check = (extra) => spawnSync('node', [new URL('scripts/checks/red-tests-untouched.mjs', root).pathname], { cwd: repo, encoding: 'utf8',
+    env: { ...withoutRunnerEnv(), WINGFOIL_RUNNER_CHECKOUT: memory, WINGFOIL_ELEMENT: 'task-1-x', ...extra } });
+  try {
+    const skipped = check({ WINGFOIL_RUNNER_SKIPPED: 'red:flow-tdd' });
+    assert.equal(skipped.status, 0, skipped.stderr);
+    assert.match(skipped.stdout, /red skipped \(flow-tdd\)/);
+    assert.notEqual(check({}).status, 0, 'no red run and no skip still fails');
+    assert.notEqual(check({ WINGFOIL_RUNNER_SKIPPED: 'design:x' }).status, 0, 'a skip of another phase is not red');
+  } finally { rmSync(memory, { recursive: true, force: true }); rmSync(repo, { recursive: true, force: true }); }
 });
 
 test('red-tests-untouched spans every red run, not the line, and fails on an empty range', () => {
@@ -1564,7 +1690,11 @@ test('1.2.3: the decision exception and --amend take the element\'s own Memory f
   assert.ok(lib.isMemoryPath(memoryYaml, 'docs/04_memory/v0.3/task-9.md', 'task-9'));
   assert.ok(lib.isMemoryPath(memoryYaml, 'docs/memory/adr/adr-1.md', 'adr-1'));
   assert.ok(lib.isMemoryPath(memoryYaml, 'docs/memory/bug/bug-2.md', 'bug-2'));
-  for (const path of ['src/task-9.md', '.wingfoil/directives/custom/task-9.md', 'docs/04_memory/a/b/task-9.md', 'docs/04_memory/v0.3/task-90.md']) assert.ok(!lib.isMemoryPath(memoryYaml, path, 'task-9'), path);
+  for (const path of ['src/task-9.md', '.wingfoil/directives/custom/task-9.md', 'docs/04_memory/v0.3/task-90.md']) assert.ok(!lib.isMemoryPath(memoryYaml, path, 'task-9'), path);
+  // A placeholder spans folders since 1.2.6 (G-3); a second tracked file with the same id, planted
+  // elsewhere, makes the element's own file ambiguous, and none is taken.
+  assert.equal(lib.ownMemoryFile(memoryYaml, ['docs/04_memory/v0.3/task-9.md', 'src/a.ts'], 'task-9'), 'docs/04_memory/v0.3/task-9.md');
+  assert.equal(lib.ownMemoryFile(memoryYaml, ['docs/04_memory/v0.3/task-9.md', 'docs/04_memory/a/b/task-9.md'], 'task-9'), null);
   assert.ok(!lib.isMemoryPath(memoryYaml, 'docs/memory/adr/x.md', '$(x)'));
 });
 
