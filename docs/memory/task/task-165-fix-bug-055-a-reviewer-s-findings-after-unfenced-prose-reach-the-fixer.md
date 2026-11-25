@@ -2,7 +2,7 @@
 id: task-165-fix-bug-055-a-reviewer-s-findings-after-unfenced-prose-reach-the-fixer
 type: task
 title: "Fix bug-055: a reviewer's findings after unfenced prose reach the fixer"
-status: backlog
+status: in-progress
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
