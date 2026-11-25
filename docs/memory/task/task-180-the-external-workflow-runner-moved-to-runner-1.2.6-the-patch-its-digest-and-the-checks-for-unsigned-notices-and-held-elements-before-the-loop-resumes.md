@@ -52,7 +52,32 @@ element, and the console loop can resume with task-164.
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+**The update.** `git apply` of the runner package's `patches/from-1.2.4-to-1.2.6.patch` (package commit `ee1efd6`,
+made after the tag `runner-1.2.6`, `0323a99`). It changes seven of the copied files:
+`scripts/runner/{MANIFEST.sha256,VERSION,gate.mjs,lib.mjs,run.mjs,runner.test.mjs}` and
+`scripts/checks/red-tests-untouched.mjs`. Between the two tags the package changes no machine file, no Claude adapter
+and not its config for this repository (only WingFoil's own config changes). No key that `config/runner.yaml` sets
+changes meaning. The new keys stay unset: `launch.optional`, `permissions.sources_read_only` (default
+`[reviewer, qa]`), `permissions.read_deny` and `needs.open_states`. A step can be skipped only if `launch.optional`
+names it, and `launch.allow` still names `work-item` alone.
+
+**The criteria, classified.**
+
+| AC | Kind | How it is shown |
+|---|---|---|
+| 1 | characterization | `git apply --check`, then the apply; `manifest.mjs --check --digest sha256:0c22a39e…0157` ok; the anonymity check on the seven files |
+| 2 | characterization | `npm run test:runner` on 1.2.6's files; D8's text |
+| 3 | characterization, red-first for any new guard | the config test on 1.2.6; the new keys read against `runner-config.test.ts` |
+| 4 | characterization | from the home on the task branch as its trusted ref: `--doctor`, `--dry-run`, nothing written |
+| 5 | characterization | the home and the line on `origin/main`; `--doctor` ok, `--dry-run` proposing task-164's step |
+| 6, 7 | process | the notes; pre-review, the docs tests, the full suites on the approver's go, an independent review |
+
+**The open gates (AC4).** N-006…N-009 and N-015 were opened by 1.2.4, which signs every notice (since 1.2.3), so
+1.2.6's check for unsigned blocks carrying the runner's key should find none. If it opens a security notice, the
+notice is read and reported to the approver, and nothing is closed on the agent's own initiative.
+
+**Held elements (AC4).** No task declares `needs`, and the only blocked runs on record answered before 1.2.4, so no
+element should be held. The dry run shows it.
 
 ## Execution notes
 
