@@ -123,6 +123,25 @@ tests), tests-related; test:bin skipped (no change under src/cli, src/site or te
 | `memory park task-164 --reason …` | in-progress → backlog | in-progress → backlog, the reason in the commit |
 | `memory submit task-180-…` | backlog → in-progress | backlog → in-progress |
 
+### Review
+
+Round 1, an independent read-only agent in a temporary clone (dl-020), on `42f85d6c…75d55fd8`: **accept with nits**,
+no must-fix. It confirmed the seven files equal the tag's `common/` copy (17 of 17 compared, the machine file left
+out by D8), the manifest check, `test:runner` 111 of 112 with the one expected skip, the docs tests 39 of 39, D8
+within 120 characters, and no private path in the diff. The findings and what was done:
+
+- **should-fix, the config test guards only `launch.optional`.** Done: a test that `permissions.sources_read_only`,
+  `permissions.read_deny` and `needs.open_states` stay unset, and that no adapter declares a
+  `launch.headless.permissions` fragment. It is red when `needs.open_states` is set (checked, then reverted); 11
+  tests pass.
+- **should-fix, the notes missing.** The reviewer read the branch before the notes were committed (`45a7dd4a`).
+- **nit, campaign states.** 1.2.6's default open states leave out the campaign states `running`, `scored` and
+  `reviewed`, so a need on a running campaign would count as closed. No element declares `needs`; this is for the
+  approver to rule on as a feedback note, not done here.
+- **nit, two commits with one subject** (the D8 reflow). Left as they are: the history is not rewritten.
+- **nit, "optional" in D8 and the runner config's comment.** Left as they are: the wording is accurate, and the
+  config's comment is the home's file.
+
 **For the done step (AC5).** After the merge and the approver's push: the home and the line on `origin/main`;
 `workflow finalize --step work-item.build@task:task-180-…` (built by hand, F-050); from the home, the doctor and a
 dry run proposing task-164's next step; then the console loop restarts.
