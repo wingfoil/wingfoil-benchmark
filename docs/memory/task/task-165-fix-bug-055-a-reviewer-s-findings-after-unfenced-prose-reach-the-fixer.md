@@ -29,9 +29,30 @@ loop ends as failed and its should-fix findings never reach a fixer. Placed in W
 
 ## Design
 
-<!-- To be written when the task starts. -->
+Bug-055's Fix option 1: a lenient trailing object. `parseFindings` (`src/core/review.ts`) keeps its two forms (the
+message as JSON alone, one fenced `json` block) and gains a third, tried only when the message has no fence: the JSON
+object that ends the message after prose.
+
+- Scan: `trailingObject` requires the message to end with `}`, then tries each `{` from the first: the first one from
+  which the rest of the message, to its end, parses as one JSON value is the findings object. The result then goes
+  through the same `findingsSchema` as the other forms, so a malformed object is still refused.
+- Cost: one `JSON.parse` per `{` in the prose, at most; reviewer messages are short, so it is negligible.
+- Unchanged: a fenced block wins over any trailing object (the scan runs only with zero fences), two fences still
+  fail, a message with no JSON still fails.
+- Requirement: the bug says option 1 is a leniency the requirements would have to state; REQ-RUN-21 (the review loop's
+  findings) is the one this task cites, and the leniency is documented in the function's doc comment and in the
+  refusal message, which now names all three forms in one constant (`ACCEPTED_FORMS`) next to that comment.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- Red first, then green (533d1c89): `test/unit/core/review.test.ts` gained the prose-then-unfenced case, which failed
+  before the change; fenced, bare, no-findings and malformed messages keep their outcome (8/8 tests pass).
+- Review park (2026-11-25), three points, all fixed in the follow-up commit: (1) an unformatted test line reached
+  review: `npm run format` fixed it, and `npm run pre-review -- main` now runs before every commit; (2) the refusal
+  said "neither JSON alone nor a fenced json block": it now reads from `ACCEPTED_FORMS`, kept beside the doc comment
+  listing the forms (the old text remains only in recorded results and the bug's report, which are history); (3) this
+  Design and these notes were empty, now written.
+- Observed: `npm run pre-review -- main`: prettier, eslint, tsc and the targeted tests passed (8/8, then 35/35); its
+  related-tests stage ran past 10 minutes and was left to finish in the background. The full suites wait for the
+  approver's go (AC3).
+- `wingfoil` commands behaved as declared.
