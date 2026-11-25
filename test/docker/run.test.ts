@@ -10,6 +10,7 @@ import { repoPath } from '../support/paths.js';
 import { referenceScript } from '../support/reference.js';
 import { CANCEL, EXECUTION, storedRun } from '../support/score-fixture.js';
 import { tempDir } from '../support/scenario-fixture.js';
+import { siblings, titled } from '../support/siblings.js';
 
 /**
  * The waves' "Ends with" against the real Docker: W1's trivial scenario, and W2's multi-step run.
@@ -410,16 +411,23 @@ describe('runs in a real container', () => {
     expect(containers).not.toContain(`bench-${image}-`);
   });
 
-  /** The WingFoil clone the WingFoil under test is built from (REQ-RUN-14): the one next to this repository. */
-  const clone = process.env.BENCH_WINGFOIL_REPO ?? repoPath('../WingFoil2');
+  /** The sibling repositories, as the variables or the local setting name them (task-179); none is guessed. */
+  const SIBLINGS = siblings();
+  /** The WingFoil clone the WingFoil under test is built from (REQ-RUN-14). */
+  const clone = SIBLINGS.wingfoil.path ?? '';
+  const HAS_CLONE = clone !== '' && existsSync(join(clone, '.git'));
+  const NO_CLONE = SIBLINGS.wingfoil.reason ?? `${clone} is not a git clone`;
   /** The WingFoil the step-A wingfoil arm runs, the latest released (task-049, task-095, task-114): what these build. */
   const WINGFOIL_UNDER_TEST = 'v0.3.1';
 
   /** The hold-out repository, when this machine has one (K2): S1's additions, S2's answer key. */
-  const holdoutRepo = process.env.BENCH_HOLDOUT_PATH ?? repoPath('../WingFoil2-Benchmark-HoldOut');
-  const hasHoldout = (id: string) => existsSync(join(holdoutRepo, 'scenarios', id, '1.0'));
+  const holdoutRepo = SIBLINGS.holdout.path ?? '';
+  const hasHoldout = (id: string) =>
+    holdoutRepo !== '' && existsSync(join(holdoutRepo, 'scenarios', id, '1.0'));
   /** S2's reference is its answer key, in the hold-out only (W7 decision 5). */
   const s2Reference = join(holdoutRepo, 'reference', 'S2');
+  const HAS_S2_REFERENCE = holdoutRepo !== '' && existsSync(s2Reference);
+  const NO_S2_REFERENCE = SIBLINGS.holdout.reason ?? `${s2Reference} does not exist`;
 
   interface ScoreFile {
     steps: { n: number; suites: { id: string; passed: number; total: number }[] }[];
@@ -653,8 +661,12 @@ describe('runs in a real container', () => {
     await s1InArm(scenarioRepository('S1', s1Reference, {}), 'baseline', 1);
   });
 
-  it.skipIf(!existsSync(join(clone, '.git')))(
-    'W7 (task-032): S1 in the baseline-docs and wingfoil arms, scored by its real oracle',
+  it.skipIf(!HAS_CLONE)(
+    titled(
+      'W7 (task-032): S1 in the baseline-docs and wingfoil arms, scored by its real oracle',
+      !HAS_CLONE,
+      NO_CLONE,
+    ),
     async () => {
       const root = scenarioRepository('S1', s1Reference, withClone());
       await s1InArm(root, 'baseline-docs', 1);
@@ -663,15 +675,23 @@ describe('runs in a real container', () => {
   );
 
   // S2's reference is the answer key: without the hold-out there is nothing to replay (decision 5).
-  it.skipIf(!existsSync(s2Reference))(
-    'W7 (task-033): S2 in the baseline arm, scored by its real oracle',
+  it.skipIf(!HAS_S2_REFERENCE)(
+    titled(
+      'W7 (task-033): S2 in the baseline arm, scored by its real oracle',
+      !HAS_S2_REFERENCE,
+      NO_S2_REFERENCE,
+    ),
     async () => {
       await s2InArm(scenarioRepository('S2', s2Reference, {}), 'baseline', 1);
     },
   );
 
-  it.skipIf(!existsSync(s2Reference) || !existsSync(join(clone, '.git')))(
-    'W7 (task-033): S2 in the baseline-docs and wingfoil arms, scored by its real oracle',
+  it.skipIf(!HAS_S2_REFERENCE || !HAS_CLONE)(
+    titled(
+      'W7 (task-033): S2 in the baseline-docs and wingfoil arms, scored by its real oracle',
+      !HAS_S2_REFERENCE || !HAS_CLONE,
+      !HAS_S2_REFERENCE ? NO_S2_REFERENCE : NO_CLONE,
+    ),
     async () => {
       const root = scenarioRepository('S2', s2Reference, withClone());
       await s2InArm(root, 'baseline-docs', 1);
@@ -683,8 +703,12 @@ describe('runs in a real container', () => {
     await s3InArm(scenarioRepository('S3', s3Reference, {}), 'baseline', 1);
   });
 
-  it.skipIf(!existsSync(join(clone, '.git')))(
-    'W8 (task-036): S3 in the baseline-docs and wingfoil arms, scored by its real oracle',
+  it.skipIf(!HAS_CLONE)(
+    titled(
+      'W8 (task-036): S3 in the baseline-docs and wingfoil arms, scored by its real oracle',
+      !HAS_CLONE,
+      NO_CLONE,
+    ),
     async () => {
       const root = scenarioRepository('S3', s3Reference, withClone());
       await s3InArm(root, 'baseline-docs', 1);
@@ -741,8 +765,12 @@ describe('runs in a real container', () => {
     await s8InArm(scenarioRepository('S8', s8Reference, {}), 'baseline', 1);
   });
 
-  it.skipIf(!existsSync(join(clone, '.git')))(
-    'W8 (task-038): S8 in the baseline-docs and wingfoil arms, its rules delivered to each as K3 says',
+  it.skipIf(!HAS_CLONE)(
+    titled(
+      'W8 (task-038): S8 in the baseline-docs and wingfoil arms, its rules delivered to each as K3 says',
+      !HAS_CLONE,
+      NO_CLONE,
+    ),
     async () => {
       const root = scenarioRepository('S8', s8Reference, withClone());
       await s8InArm(root, 'baseline-docs', 1);
@@ -750,8 +778,12 @@ describe('runs in a real container', () => {
     },
   );
 
-  it.skipIf(!existsSync(join(clone, '.git')))(
-    "W3: the same scenario in the baseline, baseline-docs and wingfoil arms — @F2.6, REQ-RUN-17, @F2.5's generator",
+  it.skipIf(!HAS_CLONE)(
+    titled(
+      "W3: the same scenario in the baseline, baseline-docs and wingfoil arms — @F2.6, REQ-RUN-17, @F2.5's generator",
+      !HAS_CLONE,
+      NO_CLONE,
+    ),
     async () => {
       const root = tempDir('bench-docker-');
       cpSync(repoPath('test/fixtures/campaigns'), join(root, 'campaigns'), { recursive: true });

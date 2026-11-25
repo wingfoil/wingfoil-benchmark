@@ -2,12 +2,12 @@
 id: task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move
 type: task
 title: "Sibling repositories located by a local setting, never by a folder name: the WingFoil clone and the hold-out before the folder move"
-status: backlog
+status: approved
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
 acceptance: []        # e.g. [campaign.feature, scenarios.feature]
-requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
+requirements: [REQ-NFR-04, REQ-CLI-10]
 fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
 ---
 
@@ -70,5 +70,40 @@ a guessed path. When the clone moves, only the local value changes.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+Built by hand in a worktree of the main checkout while the runner's line worked task-164: the runner takes the backlog
+in id order (WingFoil reads the elements in path order and has no priority), so task-179 would have come after
+task-165 to task-176; the approver chose the hand build (2026-11-25). Its build step is finalized by hand after the
+merge (F-050), and nothing is pushed before it is done, so the line never proposes it.
+
+- `834f05d1` red: the resolver's test (`test/unit/support/siblings.test.ts`), the local file's example and ignore and
+  the old folder names (`test/unit/docs/siblings-config.test.ts`), full-suites' clone (three cases; the variable's
+  pass-through was green already, a characterization). Red for the missing module, the missing example and ignore,
+  the six files naming old folders, and the script's guessed default.
+- `57260593` green: `test/support/siblings.ts`, the four scenario tests and `test/docker/run.test.ts` on it,
+  `scripts/full-suites.sh` reading the file, the example, `.gitignore`, a README paragraph under Full suites.
+- `ff2a0855` the requirements (REQ-NFR-04, REQ-CLI-10): the traceability test asks one of every task past draft.
+
+Deviations from the Design, each small: a `~/` path in the local file is read against the home folder (the runner's
+example writes its paths so); a skipped test carries its reason in its title (`titled`), since vitest prints nothing
+else for a skipped test, and the acceptance traceability reads only `test/acceptance` titles, which this task does
+not touch; `holdoutScenario(id)` gives the four scenario tests one line each. A local file with another key, or a key
+that is not a string, throws: a typo never reads as "not set".
+
+AC8: the approver's local file is written in the main checkout (git-ignored once this branch is merged; until then it
+shows as untracked there). From this worktree the scenario tests now read the hold-out: 62 passed, none skipped,
+where the same run skipped 10 before the file.
+
+### Review
+
+| Round | Commit | Reviewer | Findings | Outcome |
+| ----- | ------ | -------- | -------- | ------- |
+| 1 | `b777d1de` | independent agent, read-only clone | should-fix: `full-suites.sh` read a quoted value or a trailing comment unlike YAML; nits: `wingfoil: ~` read as a path by the script, README claimed nothing is exported, the resolver failed to load outside git and parsed the file even with both variables set, the old-name scan matched only after `/` or a quote, machine paths in skip titles | fixed: the script strips CR, a ` #` comment and one pair of quotes, and treats empty, `~` and `null` as unset (the cases reported, tested; the class closed in round 2); README says only the clone is exported; `mainCheckout` falls back outside git; the file is read only when a variable is unset; the scan matches the name between non-name characters. Kept: machine paths in skip titles (console and git-ignored logs only) |
+| 2 | `43dde97c` | the same agent, re-review | nit: rarer quoted values (a quoted `#`, a quoted `~` or `null`, escapes) still read apart; nit: the empty-or-null resolver test came in the fix commit, not the red one (it was red on `b777d1de`), and the old-name regex has no test of its own | fixed: the script reads the key with the same `yaml` package as the resolver, a red test for a quoted `#`. Kept: the commit order (recorded here), the regex checked by hand by the reviewer |
+| 3 | `6a835f2e` | the same agent, re-review | nits only: when the file cannot be read (no `node_modules`, no `node`, a value the resolver refuses) the script's line says the key is absent, not unreadable; a block scalar keeps its newline in the resolver and loses it in the script | accepted, the review closes. Kept: both nits (the clone is left unset, or a path reported, never a wrong one exported) |
+
+Full suites at `5f8a76ae`, from this worktree with no `BENCH_*` variable exported (the clone read from the main
+checkout's local file, AC8): LINT 0, TEST 0 (2605 passed, none skipped), BUILD 0, BIN 0 (22), DOCKER 0 (24 passed,
+none skipped: the hold-out and wingfoil tests ran), RUNNER 0 (103 passed, 1 skipped); log
+`.cache/full-suites/2026-11-25/task_task-179-sibling-paths-5f8a76ae-102822.txt`.
+
+`wingfoil` commands: `memory submit` moved the task backlog → in-progress, as declared.

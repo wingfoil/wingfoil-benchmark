@@ -10,14 +10,17 @@ import type { SuiteReport } from '../../../src/scoring/index.js';
 import { localScoringDocker } from '../../support/local-scoring.js';
 import { repoPath } from '../../support/paths.js';
 import { referenceRun, referenceSnapshot } from '../../support/reference.js';
+import { siblings, titled } from '../../support/siblings.js';
 
 /**
- * The hold-out, where S2's answer key and reference fixes are (W7 decision 5): BENCH_HOLDOUT_PATH, else
- * the checkout beside this repository. Without one, the tests that need the reference are skipped.
+ * The hold-out, where S2's answer key and reference fixes are (W7 decision 5), as the local setting names it
+ * (task-179). Without one, the tests that need the reference are skipped, and their title says why.
  */
-const HOLDOUT = process.env.BENCH_HOLDOUT_PATH || repoPath('../WingFoil2-Benchmark-HoldOut');
+const HOLDOUT_SIBLING = siblings().holdout;
+const HOLDOUT = HOLDOUT_SIBLING.path ?? '';
 const REFERENCE = join(HOLDOUT, 'reference', 'S2');
-const HAS_REFERENCE = existsSync(REFERENCE);
+const HAS_REFERENCE = HOLDOUT !== '' && existsSync(REFERENCE);
+const NO_REFERENCE = HOLDOUT_SIBLING.reason ?? `${REFERENCE} does not exist`;
 
 function s2(): Scenario {
   const loaded = loadScenario(repoPath('scenarios'), 'S2', '1.0');
@@ -123,98 +126,105 @@ describe('S2@1.0 (F6.2)', { timeout: 120_000 }, () => {
     });
   });
 
-  describe.skipIf(!HAS_REFERENCE)('with the reference fixes of the hold-out (decision 5)', () => {
-    it('turns each report green at its step and keeps every earlier one green', async () => {
-      const expected: Record<number, Record<string, Record<string, string>>> = {
-        1: { regression: { rule: '16 pass, 0 fail' }, 'reports-1': { defect: '3 pass, 0 fail' } },
-        2: {
-          regression: { rule: '16 pass, 0 fail' },
-          'reports-1': { defect: '3 pass, 0 fail' },
-          'reports-2': { defect: '2 pass, 0 fail' },
-          'false-report': { 'false report': '1 pass, 0 fail' },
-        },
-        3: {
-          regression: { rule: '16 pass, 0 fail' },
-          'reports-1': { defect: '3 pass, 0 fail' },
-          'reports-2': { defect: '2 pass, 0 fail' },
-          'false-report': { 'false report': '1 pass, 0 fail' },
-          'reports-3': { defect: '1 pass, 0 fail', duplicate: '1 pass, 0 fail' },
-        },
-      };
-      for (const step of [1, 2, 3]) {
-        const snapshot = referenceSnapshot(scenario.seedDir, REFERENCE, step);
-        const suites = scenario.oracle.suites.filter((suite) => suite.afterSteps.includes(step));
-        const results = Object.fromEntries(
-          await Promise.all(
-            suites.map(async (suite) => [suite.id, byKind(await score(scenario, suite.id, snapshot))]),
-          ),
-        );
-        expect(results, `step ${step}`).toEqual(expected[step]);
-      }
-    });
-
-    // The content checks of S2.md §6 (task-035): the duplicate recognised in step 3's files or commits,
-    // and the code behind the false report left as it was.
-    async function checksOf(edit?: (n: number, workspace: string) => void) {
-      const { runDir, snapshots } = await referenceRun(scenario.seedDir, REFERENCE, edit);
-      const result = await scoreChecks({ checks: scenario.oracle.checks, runDir, snapshots });
-      if (!result.ok) throw new Error(JSON.stringify(result.issues));
-      return Object.fromEntries(
-        result.value.map((check) => [
-          check.id,
-          check.steps.map((step) => ('passed' in step ? step.passed : null)),
-        ]),
-      );
-    }
-
-    it('passes both checks on the reference, at every step they apply to', async () => {
-      expect(await checksOf()).toEqual({ duplicate: [true], 'false-report': [true, true] });
-    });
-
-    it('fails the duplicate check when step 3 records nothing about the duplicate', async () => {
-      const silent = await checksOf((n, workspace) => {
-        if (n === 3) rmSync(join(workspace, 'NOTES.md'), { force: true });
+  describe.skipIf(!HAS_REFERENCE)(
+    titled('with the reference fixes of the hold-out (decision 5)', !HAS_REFERENCE, NO_REFERENCE),
+    () => {
+      it('turns each report green at its step and keeps every earlier one green', async () => {
+        const expected: Record<number, Record<string, Record<string, string>>> = {
+          1: { regression: { rule: '16 pass, 0 fail' }, 'reports-1': { defect: '3 pass, 0 fail' } },
+          2: {
+            regression: { rule: '16 pass, 0 fail' },
+            'reports-1': { defect: '3 pass, 0 fail' },
+            'reports-2': { defect: '2 pass, 0 fail' },
+            'false-report': { 'false report': '1 pass, 0 fail' },
+          },
+          3: {
+            regression: { rule: '16 pass, 0 fail' },
+            'reports-1': { defect: '3 pass, 0 fail' },
+            'reports-2': { defect: '2 pass, 0 fail' },
+            'false-report': { 'false report': '1 pass, 0 fail' },
+            'reports-3': { defect: '1 pass, 0 fail', duplicate: '1 pass, 0 fail' },
+          },
+        };
+        for (const step of [1, 2, 3]) {
+          const snapshot = referenceSnapshot(scenario.seedDir, REFERENCE, step);
+          const suites = scenario.oracle.suites.filter((suite) => suite.afterSteps.includes(step));
+          const results = Object.fromEntries(
+            await Promise.all(
+              suites.map(async (suite) => [suite.id, byKind(await score(scenario, suite.id, snapshot))]),
+            ),
+          );
+          expect(results, `step ${step}`).toEqual(expected[step]);
+        }
       });
-      expect(silent.duplicate).toEqual([false]);
-    });
 
-    it('fails the false-report check when step 2 "fixes" the VAT on shipping', async () => {
-      const fixed = await checksOf((n, workspace) => {
-        if (n !== 2) return;
-        const tax = join(workspace, 'src', 'tax.ts');
-        writeFileSync(
-          tax,
-          readFileSync(tax, 'utf8').replace('return percentOf(shipping, VAT_RATES.standard);', 'return 0;'),
+      // The content checks of S2.md §6 (task-035): the duplicate recognised in step 3's files or commits,
+      // and the code behind the false report left as it was.
+      async function checksOf(edit?: (n: number, workspace: string) => void) {
+        const { runDir, snapshots } = await referenceRun(scenario.seedDir, REFERENCE, edit);
+        const result = await scoreChecks({ checks: scenario.oracle.checks, runDir, snapshots });
+        if (!result.ok) throw new Error(JSON.stringify(result.issues));
+        return Object.fromEntries(
+          result.value.map((check) => [
+            check.id,
+            check.steps.map((step) => ('passed' in step ? step.passed : null)),
+          ]),
         );
-      });
-      expect(fixed['false-report']).toEqual([false, false]);
-    });
-
-    it("keeps the seed's visible suite green after the last fix", () => {
-      expect(visibleSuite(referenceSnapshot(scenario.seedDir, REFERENCE, 3)).code).toBe(0);
-    });
-
-    it("passes the hold-out's additions after the last fix, and its defect variants fail on the seed", async () => {
-      const fixed = referenceSnapshot(scenario.seedDir, REFERENCE, 3);
-      const seed = referenceSnapshot(scenario.seedDir, REFERENCE, 0);
-      for (const suite of scenario.oracle.suites) {
-        const onFixed = await score(scenario, suite.id, fixed, true);
-        expect(onFixed.tests.length, suite.id).toBeGreaterThan(0);
-        expect(
-          onFixed.tests.every((test) => test.status === 'pass'),
-          suite.id,
-        ).toBe(true);
-        const onSeed = await score(scenario, suite.id, seed, true);
-        const failing = onSeed.tests.filter((test) => test.status !== 'pass').length;
-        if (suite.id.startsWith('reports-')) expect(failing, suite.id).toBeGreaterThan(0);
-        else expect(failing, suite.id).toBe(0);
       }
-    });
-  });
+
+      it('passes both checks on the reference, at every step they apply to', async () => {
+        expect(await checksOf()).toEqual({ duplicate: [true], 'false-report': [true, true] });
+      });
+
+      it('fails the duplicate check when step 3 records nothing about the duplicate', async () => {
+        const silent = await checksOf((n, workspace) => {
+          if (n === 3) rmSync(join(workspace, 'NOTES.md'), { force: true });
+        });
+        expect(silent.duplicate).toEqual([false]);
+      });
+
+      it('fails the false-report check when step 2 "fixes" the VAT on shipping', async () => {
+        const fixed = await checksOf((n, workspace) => {
+          if (n !== 2) return;
+          const tax = join(workspace, 'src', 'tax.ts');
+          writeFileSync(
+            tax,
+            readFileSync(tax, 'utf8').replace('return percentOf(shipping, VAT_RATES.standard);', 'return 0;'),
+          );
+        });
+        expect(fixed['false-report']).toEqual([false, false]);
+      });
+
+      it("keeps the seed's visible suite green after the last fix", () => {
+        expect(visibleSuite(referenceSnapshot(scenario.seedDir, REFERENCE, 3)).code).toBe(0);
+      });
+
+      it("passes the hold-out's additions after the last fix, and its defect variants fail on the seed", async () => {
+        const fixed = referenceSnapshot(scenario.seedDir, REFERENCE, 3);
+        const seed = referenceSnapshot(scenario.seedDir, REFERENCE, 0);
+        for (const suite of scenario.oracle.suites) {
+          const onFixed = await score(scenario, suite.id, fixed, true);
+          expect(onFixed.tests.length, suite.id).toBeGreaterThan(0);
+          expect(
+            onFixed.tests.every((test) => test.status === 'pass'),
+            suite.id,
+          ).toBe(true);
+          const onSeed = await score(scenario, suite.id, seed, true);
+          const failing = onSeed.tests.filter((test) => test.status !== 'pass').length;
+          if (suite.id.startsWith('reports-')) expect(failing, suite.id).toBeGreaterThan(0);
+          else expect(failing, suite.id).toBe(0);
+        }
+      });
+    },
+  );
 });
 
 describe.skipIf(!HAS_REFERENCE)(
-  "S2 1.1's v2 duplicate check, with the hold-out's reference (task-132)",
+  titled(
+    "S2 1.1's v2 duplicate check, with the hold-out's reference (task-132)",
+    !HAS_REFERENCE,
+    NO_REFERENCE,
+  ),
   () => {
     it(
       'passes on the reference, and fails when step 3 records nothing about the duplicate',
