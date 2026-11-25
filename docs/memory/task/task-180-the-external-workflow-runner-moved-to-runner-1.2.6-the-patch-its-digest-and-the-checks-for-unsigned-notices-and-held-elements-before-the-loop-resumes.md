@@ -76,8 +76,8 @@ names it, and `launch.allow` still names `work-item` alone.
 1.2.6's check for unsigned blocks carrying the runner's key should find none. If it opens a security notice, the
 notice is read and reported to the approver, and nothing is closed on the agent's own initiative.
 
-**Held elements (AC4).** No task declares `needs`, and the only blocked runs on record answered before 1.2.4, so no
-element should be held. The dry run shows it.
+**Held elements (AC4).** No task declares `needs`. A run that answered blocked on a raised or needed id would hold its
+element too: the dry run shows whether any element is held.
 
 ## Execution notes
 
