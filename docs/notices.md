@@ -8,6 +8,20 @@ runner's home; a notice is never edited by hand.
 
 <!-- runner:open -->
 
+<!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move -->
+### N-015 · 2026-11-25 · trunk:task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move
+
+- **Status:** open
+- **Kind:** gate
+- **Opened:** 2026-11-25T10:05:20Z
+- **Line:** trunk
+- **Element:** trunk:task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move
+- **Reason:** work-item.real-agent-check@task:task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move waits for the approver
+- **Ready:** yes
+- **Head:** cb0f9121
+- **Evidence:** no run recorded on this element
+- **Unblock:** `cd <runner home> && node scripts/runner/gate.mjs --line trunk N-015 --reason 'Approved work-item.real-agent-check@task:task-179-sibling-repositories-located-by-a-local-setting-never-by-a-folder-name-the-wingfoil-clone-and-the-hold-out-before-the-folder-move at cb0f9121: no run recorded on this element'`
+
 <!-- key:gate-trunk-plan-006-release-v0.4-work-item.real-agent-check@task:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it -->
 ### N-009 · 2026-11-24 · trunk:task-178-the-external-workflow-runner-moved-to-runner-1.2.4-the-patch-its-digest-the-skipped-tests-restored-and-the-notices-opened-before-it
 
