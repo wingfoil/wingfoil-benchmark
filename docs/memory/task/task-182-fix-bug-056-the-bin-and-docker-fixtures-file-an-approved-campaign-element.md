@@ -2,7 +2,7 @@
 id: task-182-fix-bug-056-the-bin-and-docker-fixtures-file-an-approved-campaign-element
 type: task
 title: "Fix bug-056: the bin and docker fixtures file an approved campaign element"
-status: pending
+status: backlog
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
