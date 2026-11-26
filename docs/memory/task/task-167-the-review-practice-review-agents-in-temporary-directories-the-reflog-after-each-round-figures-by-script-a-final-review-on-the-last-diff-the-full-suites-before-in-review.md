@@ -9,6 +9,7 @@ features: []          # e.g. [F1.1, F3.1]
 acceptance: []        # e.g. [campaign.feature, scenarios.feature]
 requirements: [REQ-NFR-04]
 fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
+needs: [bug-056-the-campaign-gate-refuses-every-campaign-of-test-bin-and-test-docker-whose-fixtures-name-no-campaign-element]
 tags: ["process","review","v0.4"]
 ---
 
